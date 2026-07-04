@@ -65,7 +65,7 @@ export class ProofFetcher {
     const ts = BigInt((json.ts ?? json.timestamp ?? 0) as string | number);
     const epochDay =
       Number(json.epoch_day ?? json.epochDay ?? 0) ||
-      Number(ts / 86_400n); // fallback: seconds -> days
+      Number(ts / 86_400_000n); // fallback: TxLINE ts is MILLISECONDS -> days (verified vs devnet binary)
 
     return {
       ts,

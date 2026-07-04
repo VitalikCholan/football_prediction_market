@@ -2,6 +2,10 @@
 members = [
     "programs/*",
     "tests",
+    # LiteSVM-only mock of the TxLINE oracle (test fixture; built to .so with
+    # `cargo build-sbf --manifest-path tests/mock-txoracle/Cargo.toml`,
+    # deliberately OUTSIDE programs/ so `anchor build` never touches it).
+    "tests/mock-txoracle",
 ]
 resolver = "2"
 

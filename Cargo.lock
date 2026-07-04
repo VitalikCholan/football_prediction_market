@@ -1811,6 +1811,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mock-txoracle"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+]
+
+[[package]]
 name = "num"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4238,6 +4245,7 @@ dependencies = [
  "amm",
  "anchor-lang",
  "litesvm",
+ "mock-txoracle",
  "solana-account",
  "solana-clock",
  "solana-instruction",

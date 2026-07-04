@@ -6,9 +6,14 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './activateMarket';
 export * from './buy';
+export * from './closeMarket';
 export * from './createMarketConfig';
+export * from './freezeMarket';
 export * from './initializeConfig';
 export * from './initMarket';
 export * from './openPosition';
+export * from './redeem';
+export * from './resolve';
 export * from './sell';

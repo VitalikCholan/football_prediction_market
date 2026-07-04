@@ -1,0 +1,20 @@
+{
+  "name": "@fpm/surfpool-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:surfpool": "tsx run.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fpm/idl": "workspace:*",
+    "@fpm/shared": "workspace:*",
+    "@solana/kit": "^2"
+  },
+  "devDependencies": {
+    "@fpm/tsconfig": "workspace:*",
+    "@types/node": "^24",
+    "tsx": "^4"
+  }
+}

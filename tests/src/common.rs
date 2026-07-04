@@ -22,7 +22,10 @@ use solana_signer::Signer;
 use solana_transaction::Transaction;
 use spl_associated_token_account::get_associated_token_address;
 
-use amm::constants::{CONFIG_SEED, MARKET_SEED, MKT_CONFIG_SEED, POSITION_SEED, VAULT_SEED};
+use amm::constants::{
+    CONFIG_SEED, DAILY_SCORES_ROOTS_SEED, MARKET_SEED, MKT_CONFIG_SEED, POSITION_SEED,
+    MILLIS_PER_DAY, VAULT_SEED,
+};
 
 pub const BASE_TS: i64 = 1_700_000_000;
 pub const USDC_DECIMALS: u8 = 6;
@@ -40,6 +43,13 @@ pub fn token_program_id() -> Pubkey {
 /// A convenient fabricated USDC mint address (arbitrary — we own its bytes).
 pub fn usdc_mint() -> Pubkey {
     Pubkey::new_from_array([7u8; 32])
+}
+
+/// The TxLINE program id used in Phase-2 tests = the mock's `declare_id!`
+/// (which itself is the real TxLINE **devnet** id, so PDA derivations match
+/// production byte-for-byte).
+pub fn txline_id() -> Pubkey {
+    mock_txoracle::ID
 }
 
 /// Test harness bundle.
@@ -72,6 +82,17 @@ impl Harness {
         h
     }
 
+    /// `new()` + the mock TxLINE oracle loaded at the real TxLINE devnet id
+    /// (Phase-2 resolution tests). Requires `target/deploy/mock_txoracle.so`
+    /// (`cargo build-sbf --manifest-path tests/mock-txoracle/Cargo.toml`).
+    pub fn new_with_oracle() -> Self {
+        let mut h = Self::new();
+        let so = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../target/deploy/mock_txoracle.so");
+        h.svm.add_program_from_file(txline_id(), so).unwrap();
+        h
+    }
+
     pub fn set_time(&mut self, ts: i64) {
         let mut clock: Clock = self.svm.get_sysvar();
         clock.unix_timestamp = ts;
@@ -96,9 +117,7 @@ impl Harness {
     }
 
     pub fn send(&mut self, signers: &[&Keypair], payer: &Pubkey, ix: Instruction) -> TransactionResult {
-        let msg = Message::new(&[ix], Some(payer));
-        let tx = Transaction::new(signers, msg, self.svm.latest_blockhash());
-        self.svm.send_transaction(tx)
+        send_tx(&mut self.svm, signers, payer, ix)
     }
 }
 
@@ -110,6 +129,9 @@ pub fn send_tx(
     payer: &Pubkey,
     ix: Instruction,
 ) -> TransactionResult {
+    // Rotate the blockhash so a byte-identical retry (double-resolve /
+    // double-redeem tests) isn't deduplicated as `AlreadyProcessed`.
+    svm.expire_blockhash();
     let msg = Message::new(&[ix], Some(payer));
     let tx = Transaction::new(signers, msg, svm.latest_blockhash());
     svm.send_transaction(tx)
@@ -384,6 +406,192 @@ pub fn sys_program() -> Pubkey {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 2 — TxLINE mock-oracle fixtures (plan §10.1 cases 9–11)
+// ---------------------------------------------------------------------------
+
+/// `epoch_day` for a TxLINE timestamp, exactly as `resolve` re-derives it.
+/// TxLINE `ts` is in MILLISECONDS: `epoch_day = ts / 86_400_000`.
+pub fn epoch_day(ts: i64) -> u16 {
+    u16::try_from(ts.div_euclid(MILLIS_PER_DAY)).unwrap()
+}
+
+/// TxLINE `daily_scores_merkle_roots` PDA for an epoch day (under `owner_id`).
+pub fn daily_roots_pda(owner_id: &Pubkey, day: u16) -> Pubkey {
+    Pubkey::find_program_address(&[DAILY_SCORES_ROOTS_SEED, &day.to_le_bytes()], owner_id).0
+}
+
+/// Fabricate the roots account at the canonical PDA, owned by `owner_id`.
+/// `first_byte` = 0x00 for normal mode; `mock_txoracle::ERROR_MODE_SENTINEL`
+/// (0xFF) flips the mock into its RootNotAvailable(6007) error mode.
+pub fn write_roots_account(svm: &mut LiteSVM, owner_id: &Pubkey, day: u16, first_byte: u8) -> Pubkey {
+    let pda = daily_roots_pda(owner_id, day);
+    let mut data = vec![0u8; 64];
+    data[0] = first_byte;
+    svm.set_account(
+        pda,
+        Account {
+            lamports: 1_000_000_000,
+            data,
+            owner: *owner_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+    pda
+}
+
+/// Proof/summary/stat args for `resolve`, shaped for `default_fee_params()`
+/// (stat_key_a=1 home goals, stat_key_b=2 away goals, op=Subtract,
+/// predicate `home - away > 0`). The mock treats proofs as valid and
+/// evaluates the predicate against these goal values.
+pub struct ResolveArgs {
+    pub ts: i64,
+    pub fixture_summary: amm::txline_types::ScoresBatchSummary,
+    pub fixture_proof: Vec<amm::txline_types::ProofNode>,
+    pub main_tree_proof: Vec<amm::txline_types::ProofNode>,
+    pub stat_a: amm::txline_types::StatTerm,
+    pub stat_b: Option<amm::txline_types::StatTerm>,
+    pub op: Option<amm::txline_types::BinaryExpression>,
+}
+
+pub fn resolve_args(fixture_id: i64, ts: i64, home_goals: i32, away_goals: i32) -> ResolveArgs {
+    use amm::txline_types as tt;
+    let stat = |key: u32, value: i32| tt::StatTerm {
+        stat_to_prove: tt::ScoreStat { key, value, period: 0 },
+        event_stat_root: [0u8; 32],
+        stat_proof: vec![tt::ProofNode { hash: [1u8; 32], is_right_sibling: false }],
+    };
+    ResolveArgs {
+        ts,
+        fixture_summary: tt::ScoresBatchSummary {
+            fixture_id,
+            update_stats: tt::ScoresUpdateStats {
+                update_count: 1,
+                min_timestamp: ts,
+                max_timestamp: ts,
+            },
+            events_sub_tree_root: [2u8; 32],
+        },
+        fixture_proof: vec![tt::ProofNode { hash: [3u8; 32], is_right_sibling: true }],
+        main_tree_proof: vec![tt::ProofNode { hash: [4u8; 32], is_right_sibling: false }],
+        stat_a: stat(1, home_goals),
+        stat_b: Some(stat(2, away_goals)),
+        op: Some(tt::BinaryExpression::Subtract),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — instruction builders
+// ---------------------------------------------------------------------------
+
+pub fn ix_activate_market(keeper: &Pubkey, fixture_id: i64) -> Instruction {
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::ActivateMarket {
+            keeper: *keeper,
+            global: config_pda(),
+            market: market_pda(fixture_id),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::ActivateMarket {}.data(),
+    }
+}
+
+pub fn ix_freeze_market(keeper: &Pubkey, fixture_id: i64) -> Instruction {
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::FreezeMarket {
+            keeper: *keeper,
+            global: config_pda(),
+            market: market_pda(fixture_id),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::FreezeMarket {}.data(),
+    }
+}
+
+/// `resolve` with overridable txline program / roots account for the
+/// negative-path tests (wrong callee, wrong roots owner/address).
+#[allow(clippy::too_many_arguments)]
+pub fn ix_resolve(
+    keeper: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    outcome_hint: amm::Side,
+    args: ResolveArgs,
+    txline_program: &Pubkey,
+    daily_scores_merkle_roots: &Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::Resolve {
+            keeper: *keeper,
+            global: config_pda(),
+            market: market_pda(fixture_id),
+            market_config: market_config_pda(config_id),
+            txline_program: *txline_program,
+            daily_scores_merkle_roots: *daily_scores_merkle_roots,
+        }
+        .to_account_metas(None),
+        data: amm::instruction::Resolve {
+            outcome_hint,
+            ts: args.ts,
+            fixture_summary: args.fixture_summary,
+            fixture_proof: args.fixture_proof,
+            main_tree_proof: args.main_tree_proof,
+            stat_a: args.stat_a,
+            stat_b: args.stat_b,
+            op: args.op,
+        }
+        .data(),
+    }
+}
+
+pub fn ix_redeem(owner: &Pubkey, fixture_id: i64, mint: &Pubkey, owner_ata: &Pubkey) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::Redeem {
+            owner: *owner,
+            market,
+            position: position_pda(&market, owner),
+            vault: vault_pda(&market),
+            owner_usdc: *owner_ata,
+            usdc_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::Redeem {}.data(),
+    }
+}
+
+pub fn ix_close_market(
+    authority: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    mint: &Pubkey,
+    authority_ata: &Pubkey,
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::CloseMarket {
+            authority: *authority,
+            global: config_pda(),
+            market,
+            market_config: market_config_pda(config_id),
+            vault: vault_pda(&market),
+            authority_usdc: *authority_ata,
+            usdc_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::CloseMarket {}.data(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Assertions
 // ---------------------------------------------------------------------------
 
@@ -397,6 +605,21 @@ pub fn assert_amm_error(res: &TransactionResult, err: amm::error::AmmError) {
             assert!(
                 s.contains(&format!("Custom({expected})")),
                 "expected Custom({expected}), got: {s}"
+            );
+        }
+    }
+}
+
+/// Assert a failed tx carried an arbitrary custom code (e.g. a propagated
+/// TxLINE/mock error like RootNotAvailable = 6007).
+pub fn assert_custom_error(res: &TransactionResult, code: u32) {
+    match res {
+        Ok(_) => panic!("expected failure with Custom({code}), got success"),
+        Err(failed) => {
+            let s = format!("{:?}", failed.err);
+            assert!(
+                s.contains(&format!("Custom({code})")),
+                "expected Custom({code}), got: {s}"
             );
         }
     }

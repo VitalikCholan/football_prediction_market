@@ -30,6 +30,22 @@ pub const POSITION_SEED: &[u8] = b"position";
 pub const VAULT_SEED: &[u8] = b"vault";
 
 // ---------------------------------------------------------------------------
+// TxLINE PDA seeds (their program — we only READ this PDA; plan §11.1)
+// ---------------------------------------------------------------------------
+
+/// TxLINE `daily_scores_merkle_roots` PDA — seeds
+/// `[b"daily_scores_roots", epoch_day: u16 LE]`, owned by the TxLINE program.
+pub const DAILY_SCORES_ROOTS_SEED: &[u8] = b"daily_scores_roots";
+
+/// Milliseconds per epoch day (`epoch_day = ts / 86_400_000`).
+///
+/// **TxLINE timestamps are MILLISECONDS** — verified empirically against the
+/// real devnet `txoracle` binary (2026-07-04, Surfpool fork): its seeds
+/// constraint derives the daily roots PDA as `ts / 86_400_000`. A
+/// seconds-based derivation can never match (caught by the §10.2 test).
+pub const MILLIS_PER_DAY: i64 = 86_400_000;
+
+// ---------------------------------------------------------------------------
 // Fixed-point denominators (see plan §5)
 // ---------------------------------------------------------------------------
 

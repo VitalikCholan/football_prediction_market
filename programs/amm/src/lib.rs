@@ -4,6 +4,7 @@ pub mod fee;
 pub mod instructions;
 pub mod math;
 pub mod state;
+pub mod txline_types;
 
 use anchor_lang::prelude::*;
 
@@ -13,6 +14,10 @@ pub use instructions::*;
 pub use state::*;
 
 declare_id!("H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY");
+
+// Typed CPI client for the TxLINE oracle, generated from idls/txline.json
+// (txoracle v1.5.2, devnet). Used only by `resolve` — see instructions/resolve.rs.
+declare_program!(txline);
 
 #[program]
 pub mod amm {
@@ -77,5 +82,53 @@ pub mod amm {
         min_usdc_out: u64,
     ) -> Result<()> {
         sell::handler(ctx, side, tokens_in, min_usdc_out)
+    }
+
+    /// Keeper-gated, clock-guarded `Open -> Trading` at kickoff.
+    pub fn activate_market(ctx: Context<ActivateMarket>) -> Result<()> {
+        activate_market::handler(ctx)
+    }
+
+    /// Keeper-gated, clock-guarded `Trading -> Locked` at the final whistle.
+    pub fn freeze_market(ctx: Context<FreezeMarket>) -> Result<()> {
+        freeze_market::handler(ctx)
+    }
+
+    /// Verify the outcome via CPI into TxLINE `validate_stat` (Merkle proof
+    /// against on-chain oracle roots) and set `Resolved`. The predicate is the
+    /// STORED one from `MarketConfig` (or its sound negation for a NO hint).
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve(
+        ctx: Context<Resolve>,
+        outcome_hint: Side,
+        ts: i64,
+        fixture_summary: txline_types::ScoresBatchSummary,
+        fixture_proof: Vec<txline_types::ProofNode>,
+        main_tree_proof: Vec<txline_types::ProofNode>,
+        stat_a: txline_types::StatTerm,
+        stat_b: Option<txline_types::StatTerm>,
+        op: Option<txline_types::BinaryExpression>,
+    ) -> Result<()> {
+        resolve::handler(
+            ctx,
+            outcome_hint,
+            ts,
+            fixture_summary,
+            fixture_proof,
+            main_tree_proof,
+            stat_a,
+            stat_b,
+            op,
+        )
+    }
+
+    /// Redeem a resolved position: 1 winning token = 1 USDT; Void refunds stake.
+    pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
+        redeem::handler(ctx)
+    }
+
+    /// Admin teardown after the grace window: sweep vault, close accounts.
+    pub fn close_market(ctx: Context<CloseMarket>) -> Result<()> {
+        close_market::handler(ctx)
     }
 }

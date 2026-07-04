@@ -7,7 +7,7 @@
  */
 
 import { assertIsInstructionWithAccounts, containsBytes, fixEncoderSize, getBytesEncoder, type Address, type Instruction, type InstructionWithData, type ReadonlyUint8Array } from '@solana/kit';
-import { parseBuyInstruction, parseCreateMarketConfigInstruction, parseInitializeConfigInstruction, parseInitMarketInstruction, parseOpenPositionInstruction, parseSellInstruction, type ParsedBuyInstruction, type ParsedCreateMarketConfigInstruction, type ParsedInitializeConfigInstruction, type ParsedInitMarketInstruction, type ParsedOpenPositionInstruction, type ParsedSellInstruction } from '../instructions';
+import { parseActivateMarketInstruction, parseBuyInstruction, parseCloseMarketInstruction, parseCreateMarketConfigInstruction, parseFreezeMarketInstruction, parseInitializeConfigInstruction, parseInitMarketInstruction, parseOpenPositionInstruction, parseRedeemInstruction, parseResolveInstruction, parseSellInstruction, type ParsedActivateMarketInstruction, type ParsedBuyInstruction, type ParsedCloseMarketInstruction, type ParsedCreateMarketConfigInstruction, type ParsedFreezeMarketInstruction, type ParsedInitializeConfigInstruction, type ParsedInitMarketInstruction, type ParsedOpenPositionInstruction, type ParsedRedeemInstruction, type ParsedResolveInstruction, type ParsedSellInstruction } from '../instructions';
 
 export const AMM_PROGRAM_ADDRESS = 'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY' as Address<'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY'>;
 
@@ -22,25 +22,35 @@ if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Arr
 throw new Error("The provided account could not be identified as a amm account.")
 }
 
-export enum AmmInstruction { Buy, CreateMarketConfig, InitMarket, InitializeConfig, OpenPosition, Sell }
+export enum AmmInstruction { ActivateMarket, Buy, CloseMarket, CreateMarketConfig, FreezeMarket, InitMarket, InitializeConfig, OpenPosition, Redeem, Resolve, Sell }
 
 export function identifyAmmInstruction(instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array): AmmInstruction {
 const data = 'data' in instruction ? instruction.data : instruction;
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([10, 26, 197, 116, 113, 99, 72, 89])), 0)) { return AmmInstruction.ActivateMarket; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([102, 6, 61, 18, 1, 218, 235, 234])), 0)) { return AmmInstruction.Buy; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([88, 154, 248, 186, 48, 14, 123, 244])), 0)) { return AmmInstruction.CloseMarket; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([33, 94, 138, 19, 111, 112, 91, 111])), 0)) { return AmmInstruction.CreateMarketConfig; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([184, 154, 237, 98, 127, 82, 217, 180])), 0)) { return AmmInstruction.FreezeMarket; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([33, 253, 15, 116, 89, 25, 127, 236])), 0)) { return AmmInstruction.InitMarket; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([208, 127, 21, 1, 194, 190, 196, 70])), 0)) { return AmmInstruction.InitializeConfig; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([135, 128, 47, 77, 15, 152, 240, 49])), 0)) { return AmmInstruction.OpenPosition; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([184, 12, 86, 149, 70, 196, 97, 225])), 0)) { return AmmInstruction.Redeem; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([246, 150, 236, 206, 108, 63, 58, 10])), 0)) { return AmmInstruction.Resolve; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([51, 230, 133, 164, 1, 127, 131, 173])), 0)) { return AmmInstruction.Sell; }
 throw new Error("The provided instruction could not be identified as a amm instruction.")
 }
 
 export type ParsedAmmInstruction<TProgram extends string = 'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY'> =
+| { instructionType: AmmInstruction.ActivateMarket } & ParsedActivateMarketInstruction<TProgram>
 | { instructionType: AmmInstruction.Buy } & ParsedBuyInstruction<TProgram>
+| { instructionType: AmmInstruction.CloseMarket } & ParsedCloseMarketInstruction<TProgram>
 | { instructionType: AmmInstruction.CreateMarketConfig } & ParsedCreateMarketConfigInstruction<TProgram>
+| { instructionType: AmmInstruction.FreezeMarket } & ParsedFreezeMarketInstruction<TProgram>
 | { instructionType: AmmInstruction.InitMarket } & ParsedInitMarketInstruction<TProgram>
 | { instructionType: AmmInstruction.InitializeConfig } & ParsedInitializeConfigInstruction<TProgram>
 | { instructionType: AmmInstruction.OpenPosition } & ParsedOpenPositionInstruction<TProgram>
+| { instructionType: AmmInstruction.Redeem } & ParsedRedeemInstruction<TProgram>
+| { instructionType: AmmInstruction.Resolve } & ParsedResolveInstruction<TProgram>
 | { instructionType: AmmInstruction.Sell } & ParsedSellInstruction<TProgram>
 
 
@@ -50,16 +60,26 @@ export type ParsedAmmInstruction<TProgram extends string = 'H59qQz8DXzUWWc3L528i
         ): ParsedAmmInstruction<TProgram> {
             const instructionType = identifyAmmInstruction(instruction);
             switch (instructionType) {
-                case AmmInstruction.Buy: { assertIsInstructionWithAccounts(instruction);
+                case AmmInstruction.ActivateMarket: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.ActivateMarket, ...parseActivateMarketInstruction(instruction) }; }
+case AmmInstruction.Buy: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.Buy, ...parseBuyInstruction(instruction) }; }
+case AmmInstruction.CloseMarket: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.CloseMarket, ...parseCloseMarketInstruction(instruction) }; }
 case AmmInstruction.CreateMarketConfig: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.CreateMarketConfig, ...parseCreateMarketConfigInstruction(instruction) }; }
+case AmmInstruction.FreezeMarket: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.FreezeMarket, ...parseFreezeMarketInstruction(instruction) }; }
 case AmmInstruction.InitMarket: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.InitMarket, ...parseInitMarketInstruction(instruction) }; }
 case AmmInstruction.InitializeConfig: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.InitializeConfig, ...parseInitializeConfigInstruction(instruction) }; }
 case AmmInstruction.OpenPosition: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.OpenPosition, ...parseOpenPositionInstruction(instruction) }; }
+case AmmInstruction.Redeem: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.Redeem, ...parseRedeemInstruction(instruction) }; }
+case AmmInstruction.Resolve: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.Resolve, ...parseResolveInstruction(instruction) }; }
 case AmmInstruction.Sell: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.Sell, ...parseSellInstruction(instruction) }; }
                 default: throw new Error(`Unrecognized instruction type: ${instructionType as string}`);

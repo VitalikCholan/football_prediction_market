@@ -244,6 +244,27 @@ pub struct MarketFrozen {
 }
 
 #[event]
+pub struct MarketResolved {
+    pub fixture_id: i64,
+    pub outcome: Outcome,
+}
+
+#[event]
+pub struct Redeemed {
+    pub fixture_id: i64,
+    pub owner: Pubkey,
+    pub outcome: Outcome,
+    pub payout: u64,
+}
+
+#[event]
+pub struct MarketClosed {
+    pub fixture_id: i64,
+    /// Residual vault USDC swept to the admin.
+    pub swept: u64,
+}
+
+#[event]
 pub struct Trade {
     pub fixture_id: i64,
     pub owner: Pubkey,

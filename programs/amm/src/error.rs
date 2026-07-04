@@ -59,4 +59,16 @@ pub enum AmmError {
     ProofRejected,
     #[msg("Already redeemed")]
     AlreadyRedeemed,
+    #[msg("Proof fixture id does not match this market")]
+    FixtureMismatch,
+    #[msg("Timestamp maps to an invalid epoch day")]
+    InvalidEpochDay,
+    #[msg("daily_scores_merkle_roots owner/PDA mismatch")]
+    InvalidMerkleRootsAccount,
+    #[msg("Stat keys / operator do not match the stored resolution predicate")]
+    PredicateMismatch,
+    #[msg("Stored predicate cannot be soundly negated (EqualTo)")]
+    PredicateNotNegatable,
+    #[msg("Resolution grace period has not elapsed yet")]
+    GraceNotElapsed,
 }

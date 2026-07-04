@@ -2,11 +2,13 @@ packages:
   - "apps/*"
   - "libs/*"
   - "packages/*"
+  - "tests/surfpool"
 
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
   '@swc/core': true
+  esbuild: true
   prisma: true
   sharp: false
   unrs-resolver: false

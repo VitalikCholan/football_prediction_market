@@ -11,7 +11,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "anchor:build": "anchor build",
-    "anchor:test": "NO_DNA=1 anchor test"
+    "anchor:test": "NO_DNA=1 anchor test",
+    "test:surfpool": "pnpm --filter @fpm/surfpool-tests test:surfpool"
   },
   "devDependencies": {
     "prettier": "^3",

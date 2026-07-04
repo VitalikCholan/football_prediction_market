@@ -10,6 +10,10 @@ amm = { version = "0.1.0", path = "../programs/amm", features = ["no-entrypoint"
 
 [dev-dependencies]
 anchor-lang = "1.0.2"
+# Mock TxLINE oracle (test fixture). The crate is a workspace member for
+# `cargo check/test`; the .so the harness loads comes from
+# `cargo build-sbf --manifest-path tests/mock-txoracle/Cargo.toml`.
+mock-txoracle = { path = "mock-txoracle", features = ["no-entrypoint"] }
 litesvm = "0.13"
 solana-account = "3"
 solana-instruction = "3"

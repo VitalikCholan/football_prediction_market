@@ -6,6 +6,11 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './binaryExpression';
 export * from './marketState';
 export * from './outcome';
+export * from './proofNode';
+export * from './scoreStat';
+export * from './scoresUpdateStats';
 export * from './side';
+export * from './statTerm';
