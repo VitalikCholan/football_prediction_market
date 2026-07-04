@@ -1,0 +1,384 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   TXL·Markets design tokens — verbatim from DESIGN_SPEC.md (Prediction
+   Market Wireframes). Lo-fi reference → hi-fi build; same palette, hierarchy.
+   ========================================================================== */
+
+:root {
+  /* Surfaces */
+  --page: #eceae4;
+  --surface: #ffffff;
+  --ink: #1f1d1a;
+  --muted: #8f8b83;
+
+  /* Card + box strokes */
+  --card-border: #d7d3ca;
+  --box-border: #dcd8cf;
+  --dash: #c7c1b6;
+  --skeleton: #efece6;
+
+  /* YES / positive */
+  --yes: #2f9e5f;
+  --yes-strong: #1c7a45;
+  --yes-chip-bg: #f2faf5;
+  --yes-chip-border: #bfe3cd;
+  --yes-btn-bg: #e9f5ee;
+
+  /* NO / negative */
+  --no: #d1495b;
+  --no-strong: #a8303f;
+  --no-chip-bg: #fdf4f5;
+  --no-chip-border: #f0c9ce;
+  --no-btn-bg: #fbecee;
+
+  /* Accent / links / tags */
+  --link: #2a78d6;
+  --tag-bg: #eef3fb;
+  --live-bg: #fbecee;
+  --live-fg: #c53b4a;
+
+  /* Verified */
+  --verified-fg: #1c7a45;
+  --verified-bg: #eef7f1;
+  --verified-border: #cfe8d9;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-card-border: var(--card-border);
+  --color-box-border: var(--box-border);
+  --color-dash: var(--dash);
+  --color-skeleton: var(--skeleton);
+  --color-yes: var(--yes);
+  --color-yes-strong: var(--yes-strong);
+  --color-yes-chip-bg: var(--yes-chip-bg);
+  --color-yes-chip-border: var(--yes-chip-border);
+  --color-yes-btn-bg: var(--yes-btn-bg);
+  --color-no: var(--no);
+  --color-no-strong: var(--no-strong);
+  --color-no-chip-bg: var(--no-chip-bg);
+  --color-no-chip-border: var(--no-chip-border);
+  --color-no-btn-bg: var(--no-btn-bg);
+  --color-link: var(--link);
+  --color-tag-bg: var(--tag-bg);
+  --color-live-bg: var(--live-bg);
+  --color-live-fg: var(--live-fg);
+  --color-verified-fg: var(--verified-fg);
+  --color-verified-bg: var(--verified-bg);
+  --color-verified-border: var(--verified-border);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-hand: var(--font-kalam), var(--font-inter), cursive;
+}
+
+* {
+  border-color: var(--box-border);
+}
+
+html {
+  background: var(--page);
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* All prices / odds / countdowns use tabular figures so nothing jitters. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* --- Reusable component classes mirroring the wireframe --- */
+
+.scr {
+  background: var(--surface);
+  border: 1.5px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.box {
+  border: 1.5px solid var(--box-border);
+  border-radius: 9px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--tag-bg);
+  color: var(--link);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.tag-live {
+  background: var(--live-bg);
+  color: var(--live-fg);
+}
+
+.verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--verified-fg);
+  background: var(--verified-bg);
+  border: 1px solid var(--verified-border);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid var(--card-border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+  white-space: nowrap;
+}
+.pill:hover {
+  border-color: var(--muted);
+}
+.pill-on {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1.5px solid #2b2926;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  cursor: pointer;
+  transition:
+    transform 0.06s ease,
+    background 0.12s ease,
+    opacity 0.12s ease;
+}
+.btn:hover {
+  background: #f6f4ef;
+}
+.btn:active {
+  transform: translateY(0.5px);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-p {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+.btn-p:hover {
+  background: #322e29;
+}
+
+.btn-y {
+  background: var(--yes-btn-bg);
+  border-color: var(--yes);
+  color: var(--yes-strong);
+}
+.btn-y:hover {
+  background: #ddf0e4;
+}
+.btn-n {
+  background: var(--no-btn-bg);
+  border-color: var(--no);
+  color: var(--no-strong);
+}
+.btn-n:hover {
+  background: #f7dfe2;
+}
+
+/* Outcome price cell */
+.chip {
+  border: 1.5px solid var(--box-border);
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 8px 10px;
+  text-align: left;
+}
+.chip.yc {
+  background: var(--yes-chip-bg);
+  border-color: var(--yes-chip-border);
+}
+.chip.nc {
+  background: var(--no-chip-bg);
+  border-color: var(--no-chip-border);
+}
+
+.th {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.td {
+  font-size: 13px;
+}
+.pos {
+  color: var(--yes-strong);
+}
+.neg {
+  color: var(--no-strong);
+}
+
+.link {
+  color: var(--link);
+  cursor: pointer;
+}
+.link:hover {
+  text-decoration: underline;
+}
+
+/* Live dot */
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--live-fg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dot-pulse {
+    animation: dotpulse 1.6s ease-in-out infinite;
+  }
+}
+@keyframes dotpulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.82);
+  }
+}
+
+/* Odds-tape flip flash (signature). Applied briefly on price change. */
+@media (prefers-reduced-motion: no-preference) {
+  .flash-up {
+    animation: flashUp 0.55s ease-out;
+  }
+  .flash-down {
+    animation: flashDown 0.55s ease-out;
+  }
+}
+@keyframes flashUp {
+  0% {
+    background: color-mix(in srgb, var(--yes) 28%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+@keyframes flashDown {
+  0% {
+    background: color-mix(in srgb, var(--no) 28%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* Card reveal on load (single stagger). */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    animation: reveal 0.42s ease-out both;
+  }
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Slide-in trade panel */
+@media (prefers-reduced-motion: no-preference) {
+  .slide-in {
+    animation: slideIn 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+}
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* Focus ring — visible keyboard focus everywhere */
+:where(a, button, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Field placeholder input */
+.field {
+  border: 1.5px solid var(--box-border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  padding: 9px 12px;
+}
+.field::placeholder {
+  color: var(--muted);
+}
+.field:focus {
+  outline: none;
+  border-color: var(--link);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d7d3ca;
+  border-radius: 999px;
+  border: 3px solid var(--page);
+}

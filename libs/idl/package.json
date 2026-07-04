@@ -1,0 +1,24 @@
+{
+  "name": "@fpm/idl",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/generated/index.ts",
+  "types": "src/generated/index.ts",
+  "exports": {
+    ".": "./src/generated/index.ts"
+  },
+  "scripts": {
+    "codegen": "node ./scripts/codegen.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@solana/kit": "^2"
+  },
+  "devDependencies": {
+    "codama": "^1",
+    "@codama/nodes-from-anchor": "^1",
+    "@codama/renderers-js": "^1",
+    "@types/node": "^24"
+  }
+}

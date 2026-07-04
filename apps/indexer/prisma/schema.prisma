@@ -1,0 +1,115 @@
+// Prisma schema for the @fpm/indexer service.
+//
+// Datasource = PostgreSQL (the deployment target — Railway Postgres).
+//
+// DEV FALLBACK: if Postgres is not reachable locally, switch `provider` to
+// "sqlite" and set DATABASE_URL="file:./dev.db". The models below are written
+// for Postgres semantics — the `@db.*` native types are Postgres-only and must
+// be dropped when running on SQLite (SQLite maps Decimal -> numeric text). The
+// generated client API is identical either way.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// One row per on-chain Market PDA. Denormalized snapshot for fast list/detail
+/// reads; mirrors the fields the UI needs from the decoded Market account.
+model Market {
+  id            String   @id // market PDA (base58)
+  fixtureId     BigInt   @unique @map("fixture_id") // i64 TxLINE fixture id
+  configId      String   @map("config_id") // MarketConfig PDA (base58)
+  state         String // Open | Trading | Locked | Resolved | Closed
+  outcome       Int? // null until resolved (0 = NO, 1 = YES)
+
+  yesReserve    Decimal  @map("yes_reserve") @db.Decimal(40, 0)
+  noReserve     Decimal  @map("no_reserve") @db.Decimal(40, 0)
+  yesSupply     Decimal  @default(0) @map("yes_supply") @db.Decimal(40, 0)
+  noSupply      Decimal  @default(0) @map("no_supply") @db.Decimal(40, 0)
+
+  yesPriceBps   Int      @map("yes_price_bps") // 0..10000, mirrors last_price_bps
+  baseFeeBps    Int?     @map("base_fee_bps")
+  currentFeeBps Int?     @map("current_fee_bps") // derived from v_acc if computed
+
+  totalVolume   Decimal  @default(0) @map("total_volume") @db.Decimal(40, 0) // cumulative collateral base units
+
+  homeTeam      String?  @map("home_team") // enrichment from TxLINE fixtures
+  awayTeam      String?  @map("away_team")
+  kickoffTs     DateTime? @map("kickoff_ts")
+  freezeTs      DateTime? @map("freeze_ts")
+
+  updatedSlot   BigInt   @map("updated_slot")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  pricePoints   PricePoint[]
+  volumePoints  VolumePoint[]
+  trades        Trade[]
+
+  @@map("markets")
+}
+
+/// Append-only time-series of YES price snapshots for charts.
+model PricePoint {
+  id          BigInt   @id @default(autoincrement())
+  marketId    String   @map("market_id")
+  market      Market   @relation(fields: [marketId], references: [id])
+  ts          DateTime
+  slot        BigInt
+  yesPriceBps Int      @map("yes_price_bps")
+  yesReserve  Decimal  @map("yes_reserve") @db.Decimal(40, 0)
+  noReserve   Decimal  @map("no_reserve") @db.Decimal(40, 0)
+  feeBps      Int?     @map("fee_bps")
+
+  @@index([marketId, ts], map: "idx_price_points_market_ts")
+  @@map("price_points")
+}
+
+/// Append-only time-series of trade volume buckets for charts.
+model VolumePoint {
+  id       BigInt   @id @default(autoincrement())
+  marketId String   @map("market_id")
+  market   Market   @relation(fields: [marketId], references: [id])
+  ts       DateTime
+  slot     BigInt
+  volume   Decimal  @db.Decimal(40, 0) // collateral base units in this bucket
+
+  @@index([marketId, ts], map: "idx_volume_points_market_ts")
+  @@map("volume_points")
+}
+
+/// Individual Buy/Sell events decoded from program logs. Idempotent on
+/// (signature, event_index) so replay/backfill never double-inserts.
+model Trade {
+  id           BigInt   @id @default(autoincrement())
+  marketId     String   @map("market_id")
+  market       Market   @relation(fields: [marketId], references: [id])
+  signature    String
+  eventIndex   Int      @map("event_index") // position within the tx
+  trader       String
+  side         Int // 0 = NO, 1 = YES
+  action       String // buy | sell
+  usdcIn       Decimal  @map("usdc_in") @db.Decimal(40, 0) // collateral in (buy)
+  usdcOut      Decimal  @map("usdc_out") @db.Decimal(40, 0) // collateral out (sell)
+  tokensAmount Decimal  @map("tokens_amount") @db.Decimal(40, 0)
+  priceBps     Int      @map("price_bps") // YES price after trade
+  feeBps       Int      @map("fee_bps")
+  ts           DateTime
+  slot         BigInt
+
+  @@unique([signature, eventIndex], map: "uq_trades_sig_event")
+  @@index([marketId, ts], map: "idx_trades_market_ts")
+  @@map("trades")
+}
+
+/// Single-row replay checkpoint so the indexer resumes after downtime.
+model IndexerCursor {
+  id                   Boolean @id @default(true)
+  lastIndexedSignature String? @map("last_indexed_signature")
+  lastIndexedSlot      BigInt? @map("last_indexed_slot")
+
+  @@map("indexer_cursor")
+}

@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast JS checks. The generated @fpm/idl client is committed (not gitignored),
+  # so lint/typecheck/test do NOT need the Anchor toolchain here.
+  js:
+    name: JS · lint · typecheck · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # turbo --affected needs history
+      - uses: pnpm/action-setup@v4 # reads packageManager from package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: turbo affected (lint · typecheck · test)
+        run: pnpm turbo run lint typecheck test --affected
+        env:
+          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+
+  # Anchor program build + confirm the committed client matches the IDL.
+  anchor:
+    name: Anchor · build · idl-fresh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Solana CLI 3.1.10
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.10/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - uses: dtolnay/rust-toolchain@stable # actual version pinned by rust-toolchain.toml
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Anchor 1.0.2 (avm)
+        run: |
+          cargo install --git https://github.com/solana-foundation/anchor avm --locked
+          avm install 1.0.2
+          avm use 1.0.2
+      - name: anchor build
+        run: NO_DNA=1 anchor build
+      - name: cargo test (LiteSVM)
+        run: cargo test --workspace
+      # Regenerate the client and fail if the committed output drifted from the IDL.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm codegen
+      - name: Verify @fpm/idl is up to date
+        run: |
+          git diff --exit-code libs/idl/src/generated \
+            || (echo "::error::libs/idl/src/generated is stale — run 'anchor build && pnpm codegen' and commit the result" && exit 1)

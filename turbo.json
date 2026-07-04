@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "codegen": {
+      "inputs": ["../../target/idl/amm.json", "scripts/**"],
+      "outputs": ["src/generated/**"]
+    },
+    "typecheck": { "dependsOn": ["@fpm/idl#codegen"] },
+    "dev": { "dependsOn": ["@fpm/idl#codegen"], "cache": false, "persistent": true },
+    "build": { "dependsOn": ["@fpm/idl#codegen"], "outputs": ["dist/**", ".next/**"] },
+    "lint": {},
+    "test": { "dependsOn": ["@fpm/idl#codegen"] }
+  }
+}

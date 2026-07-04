@@ -1,0 +1,27 @@
+[package]
+name = "tests"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+rust-version = "1.89.0"
+
+[dependencies]
+amm = { version = "0.1.0", path = "../programs/amm", features = ["no-entrypoint"] }
+
+[dev-dependencies]
+anchor-lang = "1.0.2"
+litesvm = "0.13"
+solana-account = "3"
+solana-instruction = "3"
+solana-keypair = "3"
+solana-pubkey = "3"
+solana-signer = "3"
+solana-message = "3"
+solana-transaction = "3"
+solana-transaction-error = "3"
+solana-program-pack = "3"
+solana-program-option = "3"
+solana-clock = "3"
+solana-native-token = "3"
+spl-token = "9"
+spl-associated-token-account = "8"

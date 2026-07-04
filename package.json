@@ -1,0 +1,21 @@
+{
+  "name": "football-pm-amm",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "codegen": "turbo run codegen",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "anchor:build": "anchor build",
+    "anchor:test": "NO_DNA=1 anchor test"
+  },
+  "devDependencies": {
+    "prettier": "^3",
+    "turbo": "^2",
+    "typescript": "^5"
+  }
+}
