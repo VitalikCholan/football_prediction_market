@@ -1,4 +1,5 @@
-import { address, type KeyPairSigner } from "@solana/kit";
+import type { Address, KeyPairSigner } from "@solana/kit";
+import { fetchMaybeMarket, MarketState, type Market } from "@fpm/idl";
 import type { KeeperConfig } from "../config.ts";
 import type { SolanaClients } from "../solana/rpc.ts";
 import type { TxSender } from "../solana/txSender.ts";
@@ -11,30 +12,20 @@ export interface ActionContext {
   txSender: TxSender;
 }
 
-/** On-chain Market states we care about for idempotency guards. */
-export type OnChainMarketState =
-  | "Open"
-  | "Trading"
-  | "Locked"
-  | "Resolved"
-  | "Closed";
-
 /**
- * Read the current on-chain Market.state so every action can no-op if the
- * transition already happened.
- *
- * TODO(program-team IDL): replace with the Codama `fetchMarket` decoder from
- * `@fpm/idl` once the Market account is in the IDL. Returns null when the
- * account doesn't exist yet.
+ * Fetch + decode the on-chain Market account (Codama decoder from `@fpm/idl`)
+ * so every action can no-op if the transition already happened. Returns null
+ * when the account doesn't exist yet.
  */
-export async function readMarketState(
+export async function readMarket(
   ctx: ActionContext,
-  market: string,
-): Promise<OnChainMarketState | null> {
-  const { value } = await ctx.clients.rpc
-    .getAccountInfo(address(market), { encoding: "base64" })
-    .send();
-  if (!value) return null;
-  // TODO: decode with getMarketDecoder() from @fpm/idl and read `.state`.
-  return "Open";
+  market: Address,
+): Promise<Market | null> {
+  const maybe = await fetchMaybeMarket(ctx.clients.rpc, market);
+  return maybe.exists ? maybe.data : null;
+}
+
+/** Human-readable name of a MarketState enum value (for logs). */
+export function marketStateName(state: MarketState): string {
+  return MarketState[state] ?? `Unknown(${state})`;
 }

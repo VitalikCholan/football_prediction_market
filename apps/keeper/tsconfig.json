@@ -2,6 +2,17 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "@fpm/tsconfig/service.json",
   "compilerOptions": {
+    // Bundler resolution (not NodeNext): the Codama-generated @fpm/idl client
+    // uses extensionless directory imports (`export * from './accounts'`),
+    // which only resolve bundler-style (same workaround as tests/surfpool).
+    // At runtime, hooks/register.mjs teaches node's ESM loader the same trick.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // The generated @fpm/idl client declares TS `enum`s (Side, MarketState…),
+    // which are not erasable. Keeper SOURCE still follows the erasable-only
+    // conventions (no parameter properties/decorators/enums); the runtime uses
+    // node --experimental-transform-types to handle the generated enums.
+    "erasableSyntaxOnly": false,
     "types": ["node"]
   },
   "include": ["src/**/*.ts"]

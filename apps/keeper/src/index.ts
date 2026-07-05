@@ -6,7 +6,10 @@
  * end-time fallback both drive resolve; all actions are idempotent against the
  * on-chain Market.state.
  *
- * Run: node --experimental-strip-types src/index.ts  (buildless).
+ * Run: node --experimental-transform-types --import ./hooks/register.mjs src/index.ts
+ * (buildless; transform-types + resolve hook because the generated @fpm/idl
+ * client uses TS enums and extensionless imports). `--smoke` / SMOKE=1 runs
+ * the devnet smoke check instead (simulate-only, never sends).
  */
 import { loadConfig } from "./config.ts";
 import { log } from "./log.ts";
@@ -17,11 +20,25 @@ import { TxlineAuth } from "./txline/auth.ts";
 import { ScoreStream, type EndedEvent } from "./txline/scoreStream.ts";
 import { ProofFetcher } from "./txline/proof.ts";
 import { StaticFixtureSource } from "./txline/fixtures.ts";
+import { HistoryClient } from "./txline/history.ts";
 import { LifecycleStateMachine } from "./lifecycle/stateMachine.ts";
 import { Scheduler } from "./lifecycle/scheduler.ts";
+import { runSmoke } from "./smoke.ts";
+import { runSmokeTxline } from "./smokeTxline.ts";
 import type { ActionContext } from "./actions/context.ts";
 
 async function main(): Promise<void> {
+  // TxLINE API smoke: live SSE + historical + stat-validation parser proof.
+  if (process.argv.includes("--smoke-txline") || process.env.SMOKE_TXLINE === "1") {
+    await runSmokeTxline();
+    return;
+  }
+  // Devnet smoke mode: prove wiring against the live program, simulate-only.
+  if (process.argv.includes("--smoke") || process.env.SMOKE === "1") {
+    await runSmoke();
+    return;
+  }
+
   const config = loadConfig();
   log.info(
     { cluster: config.cluster, dryRun: config.dryRun, rpc: config.rpcUrls[0] },
@@ -44,11 +61,12 @@ async function main(): Promise<void> {
   // --- TxLINE wiring ---
   const auth = new TxlineAuth(config);
   const proofFetcher = new ProofFetcher(config, auth);
+  const history = new HistoryClient(config, auth);
   const fixtures = new StaticFixtureSource([]); // seed for demo / replace with live source
   const fsm = new LifecycleStateMachine();
 
   // --- Lifecycle scheduler (activate/freeze/resolve at boundaries) ---
-  const scheduler = new Scheduler(ctx, fixtures, fsm, proofFetcher);
+  const scheduler = new Scheduler(ctx, fixtures, fsm, proofFetcher, history);
   scheduler.start();
   log.info({ tickMs: config.schedulerTickMs }, "lifecycle scheduler started");
 
@@ -57,11 +75,16 @@ async function main(): Promise<void> {
     const stream = new ScoreStream(config, auth);
     stream.on("ended", (e: EndedEvent) => {
       log.info(
-        { fixtureId: e.fixtureId.toString(), phaseId: e.phaseId },
-        "SSE match-end detected -> resolve",
+        {
+          fixtureId: e.fixtureId.toString(),
+          seq: e.seq,
+          statusId: e.statusId,
+          action: e.action,
+        },
+        "SSE match-end detected (StatusId 100 / game_finalised) -> resolve",
       );
-      fsm.markEnded(e.fixtureId);
-      void scheduler.tryResolve(e.fixtureId);
+      fsm.markEnded(e.fixtureId, e.seq);
+      void scheduler.tryResolve(e.fixtureId, e.seq);
     });
     stream.on("error", (err) => log.warn({ err }, "score-stream error"));
     void stream.start();

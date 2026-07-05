@@ -19,10 +19,19 @@ export type MatchPhase =
 export interface MatchTracker {
   fixtureId: bigint;
   phase: MatchPhase;
-  /** Set once we detect kickoff (SSE phase change or scheduled time). */
+  /** Set once we detect kickoff (SSE status change or scheduled time). */
   activatedAt?: number;
-  /** Set once we detect the final whistle (phase ∈ {5,10,13} or end time). */
+  /**
+   * Set once we detect the final whistle — StatusId === 100 or
+   * Action === "game_finalised" (or the end-time fallback).
+   */
   endedAt?: number;
+  /**
+   * Seq of the score event that finalised the match — REQUIRED by
+   * /api/scores/stat-validation. Undefined when ended via the end-time
+   * fallback (the resolver then recovers it from the historical replay).
+   */
+  endedSeq?: number;
   /** Set once resolve lands on-chain. */
   resolvedAt?: number;
   /** Count of resolve attempts (for RootNotAvailable backoff). */
@@ -54,12 +63,14 @@ export class LifecycleStateMachine {
     }
   }
 
-  markEnded(fixtureId: bigint): void {
+  markEnded(fixtureId: bigint, seq?: number): void {
     const t = this.get(fixtureId);
     if (t.phase === "Scheduled" || t.phase === "Live") {
       t.phase = "Ended";
       t.endedAt = Date.now();
     }
+    // Carry the finalising Seq through to resolve (stat-validation needs it).
+    if (seq !== undefined) t.endedSeq = seq;
   }
 
   markResolved(fixtureId: bigint): void {

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@fpm/tsconfig/base.json",
+  "compilerOptions": {
+    // Bundler resolution (not NodeNext): the Codama-generated @fpm/idl client
+    // uses extensionless directory imports (`export * from './accounts'`),
+    // which only resolve bundler-style. That is also why this package runs
+    // through tsx (esbuild resolution) instead of node --experimental-strip-types.
+    // (Same rationale as tests/surfpool/tsconfig.json.)
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"]
+  },
+  "include": ["*.ts"]
+}

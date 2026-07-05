@@ -1,0 +1,22 @@
+{
+  "name": "@fpm/devnet-scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "devnet:init": "tsx devnet-init.ts",
+    "full-circle": "tsx full-circle.ts",
+    "txline:token": "tsx txline-token.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fpm/idl": "workspace:*",
+    "@fpm/shared": "workspace:*",
+    "@solana/kit": "^2"
+  },
+  "devDependencies": {
+    "@fpm/tsconfig": "workspace:*",
+    "@types/node": "^24",
+    "tsx": "^4"
+  }
+}

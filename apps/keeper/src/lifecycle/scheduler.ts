@@ -5,6 +5,7 @@ import type { ActionContext } from "../actions/context.ts";
 import { log } from "../log.ts";
 import type { ProofFetcher, StatValidationQuery } from "../txline/proof.ts";
 import type { FixtureSource } from "../txline/fixtures.ts";
+import type { HistoryClient } from "../txline/history.ts";
 import { statKey, Period, StatBase } from "../txline/scoreStream.ts";
 import type { LifecycleStateMachine } from "./stateMachine.ts";
 
@@ -20,6 +21,7 @@ export class Scheduler {
   private readonly fixtures: FixtureSource;
   private readonly fsm: LifecycleStateMachine;
   private readonly proofFetcher: ProofFetcher;
+  private readonly history: HistoryClient;
   private timer?: NodeJS.Timeout;
 
   constructor(
@@ -27,11 +29,13 @@ export class Scheduler {
     fixtures: FixtureSource,
     fsm: LifecycleStateMachine,
     proofFetcher: ProofFetcher,
+    history: HistoryClient,
   ) {
     this.ctx = ctx;
     this.fixtures = fixtures;
     this.fsm = fsm;
     this.proofFetcher = proofFetcher;
+    this.history = history;
   }
 
   start(): void {
@@ -72,16 +76,30 @@ export class Scheduler {
     }
   }
 
-  /** Trigger the resolve pipeline for a fixture (safe to call repeatedly). */
-  async tryResolve(fixtureId: bigint): Promise<void> {
+  /**
+   * Trigger the resolve pipeline for a fixture (safe to call repeatedly).
+   * `seq` (the Seq of the finalising score event) is REQUIRED by
+   * stat-validation; when the end came from the end-time fallback (no SSE
+   * frame seen) it is recovered from the historical replay.
+   */
+  async tryResolve(fixtureId: bigint, seq?: number): Promise<void> {
     const tracker = this.fsm.get(fixtureId);
     if (tracker.phase === "Resolved") return;
     this.fsm.incrementResolveAttempts(fixtureId);
     try {
+      const endSeq = seq ?? tracker.endedSeq ?? (await this.recoverEndSeq(fixtureId));
+      if (endSeq === undefined) {
+        log.warn(
+          { fixtureId: fixtureId.toString() },
+          "resolve deferred: no finalising Seq yet (match not finalised in historical)",
+        );
+        return; // next tick / SSE frame retries
+      }
+      this.fsm.markEnded(fixtureId, endSeq);
       const sig = await resolveMarket(
         this.ctx,
         fixtureId,
-        { statQuery: defaultStatQuery(fixtureId) },
+        { statQuery: defaultStatQuery(fixtureId, endSeq) },
         this.proofFetcher,
       );
       if (sig !== null) this.fsm.markResolved(fixtureId);
@@ -90,16 +108,29 @@ export class Scheduler {
       this.fsm.markFailed(fixtureId);
     }
   }
+
+  /** End-time-fallback path: recover the finalising Seq from the replay. */
+  private async recoverEndSeq(fixtureId: bigint): Promise<number | undefined> {
+    const end = await this.history.findMatchEnd(fixtureId);
+    if (!end) return undefined;
+    log.info(
+      { fixtureId: fixtureId.toString(), seq: end.seq, action: end.action },
+      "recovered finalising Seq from historical replay",
+    );
+    return end.seq;
+  }
 }
 
 /**
  * Default "home win" stat query: stat_a = P1 goals, stat_b = P2 goals,
  * op = Subtract; the on-chain predicate (threshold 0, GreaterThan) decides the
- * outcome. Per-market stat keys should come from MarketConfig once available.
+ * outcome. `seq` = the finalising score event's Seq (REQUIRED by the API).
+ * Per-market stat keys should come from MarketConfig once available.
  */
-function defaultStatQuery(fixtureId: bigint): StatValidationQuery {
+function defaultStatQuery(fixtureId: bigint, seq: number): StatValidationQuery {
   return {
     fixtureId,
+    seq,
     statKey: statKey(Period.FULL, StatBase.P1_GOALS),
     statKey2: statKey(Period.FULL, StatBase.P2_GOALS),
     op: "Subtract",

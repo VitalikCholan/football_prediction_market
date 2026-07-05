@@ -56,6 +56,23 @@ export interface TxSender {
 const DEFAULT_CU_LIMIT = 400_000;
 
 /**
+ * Thrown when the pre-send simulation fails. Carries the raw RPC error AND the
+ * program logs so callers (resolve's outcome-hint ladder, the error
+ * discriminator) can attribute the failure to our program vs the TxLINE CPI.
+ */
+export class TxSimulationError extends Error {
+  readonly simErr: unknown;
+  readonly logs?: readonly string[];
+
+  constructor(simErr: unknown, logs?: readonly string[]) {
+    super(`simulation failed: ${JSON.stringify(simErr)}`);
+    this.name = "TxSimulationError";
+    this.simErr = simErr;
+    this.logs = logs;
+  }
+}
+
+/**
  * Kit-native TxSender:
  *  - simulate-before-send (never sends a tx that fails simulation)
  *  - dynamic priority fee via getRecentPrioritizationFees (p75, clamped)
@@ -115,7 +132,7 @@ export class KitTxSender implements TxSender {
         { err: sim.err, logs: sim.logs },
         "simulation failed — aborting send",
       );
-      throw new Error(`simulation failed: ${JSON.stringify(sim.err)}`);
+      throw new TxSimulationError(sim.err, sim.logs);
     }
 
     const cuLimit =

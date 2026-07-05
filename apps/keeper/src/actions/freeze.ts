@@ -1,35 +1,42 @@
-import type { Instruction } from "@solana/kit";
+import { getFreezeMarketInstructionAsync, MarketState } from "@fpm/idl";
 import { findMarketPda } from "@fpm/shared";
 import { log } from "../log.ts";
-import { readMarketState, type ActionContext } from "./context.ts";
+import { marketStateName, readMarket, type ActionContext } from "./context.ts";
 
 /**
  * freeze_market: Trading -> Locked, fired at the final whistle.
  *
- * Idempotent: no-ops if the market is already Locked/Resolved/Closed.
+ * Accounts: keeper signer, global config PDA (auto-derived by the generated
+ * builder), market PDA (derived from fixtureId). Idempotent: no-ops if the
+ * market is already Locked/Resolved/Closed.
  */
 export async function freezeMarket(
   ctx: ActionContext,
   fixtureId: bigint,
 ): Promise<string | null> {
   const [market] = await findMarketPda(fixtureId);
-  const state = await readMarketState(ctx, market);
-  if (state && state !== "Open" && state !== "Trading") {
-    log.info({ fixtureId: fixtureId.toString(), state }, "freeze: already advanced, skipping");
+  const state = (await readMarket(ctx, market))?.state;
+  if (state === undefined) {
+    log.warn(
+      { fixtureId: fixtureId.toString(), market },
+      "freeze: market account not found, skipping",
+    );
+    return null;
+  }
+  if (state !== MarketState.Open && state !== MarketState.Trading) {
+    log.info(
+      { fixtureId: fixtureId.toString(), state: marketStateName(state) },
+      "freeze: already advanced, skipping",
+    );
     return null;
   }
 
-  const instructions = buildFreezeInstructions();
+  const ix = await getFreezeMarketInstructionAsync({
+    keeper: ctx.signer,
+    market,
+  });
   return ctx.txSender.sendAndConfirm({
-    instructions,
+    instructions: [ix],
     writableAccounts: [market],
   });
-}
-
-/**
- * TODO(program-team IDL): build via getFreezeMarketInstruction(...) from
- * `@fpm/idl`. Returns [] until the instruction exists so the pipeline typechecks.
- */
-function buildFreezeInstructions(): Instruction[] {
-  return [];
 }

@@ -21,8 +21,8 @@ const schema = z.object({
   KEEPER_KEYPAIR: z.string().optional(),
   KEEPER_KEYPAIR_PATH: z.string().optional(),
 
-  // TxLINE API.
-  TXLINE_BASE_URL: z.string().default("https://txline.txodds.com"),
+  // TxLINE API. Devnet origin is the default (mainnet: https://txline.txodds.com).
+  TXLINE_BASE_URL: z.string().default("https://txline-dev.txodds.com"),
   // X-Api-Token from /api/token/activate (guest JWT is fetched at runtime).
   TXLINE_API_TOKEN: z.string().optional(),
 

@@ -12,7 +12,9 @@
     "test": "turbo run test",
     "anchor:build": "anchor build",
     "anchor:test": "NO_DNA=1 anchor test",
-    "test:surfpool": "pnpm --filter @fpm/surfpool-tests test:surfpool"
+    "test:surfpool": "pnpm --filter @fpm/surfpool-tests test:surfpool",
+    "devnet:init": "pnpm --filter @fpm/devnet-scripts devnet:init",
+    "txline:token": "pnpm --filter @fpm/devnet-scripts txline:token"
   },
   "devDependencies": {
     "prettier": "^3",

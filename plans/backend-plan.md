@@ -174,6 +174,15 @@ apps/keeper/
 
 ### 2.4 TxLINE SSE score-stream + match-end detection (CONFIRMED)
 
+> **REAL API shapes — correction (verified LIVE 2026-07-04; the docs/OpenAPI below were wrong; keeper parsers now implement this):**
+> - Score events (SSE stream AND `/api/scores/historical/{id}` — historical is **SSE-framed text** too, `data:`/`id:` lines, not JSON) use **PascalCase** fields: `FixtureId, Seq, Ts, Action, StatusId, GameState, Stats, Clock, Score`. `Ts` is milliseconds.
+> - `Stats` is a **map** `{"<key>": value}` with key = period*1000+base (e.g. `"1":1,"2":0` = home 1, away 0) — NOT an array of `{key,value,period}`.
+> - **There is NO Game Phase / phase_id.** Lifecycle = `StatusId` 1..5 in-play stages, **100 = finalised**; `Action` strings (`kickoff`, `goal`, `halftime_finalised`, `game_finalised`, ...). `GameState` stays `"scheduled"` even in play — never trust it.
+> - **Match-end rule (replaces Game Phase {5,10,13}): `StatusId === 100` OR `Action === "game_finalised"`.**
+> - Heartbeats: SSE `event: heartbeat` + `data: {"Ts":...}` (~every 15s). `historical` returns a literal `null`/empty body for fixtures with no data or still in play.
+> - Two origins: devnet `https://txline-dev.txodds.com` (default), mainnet `https://txline.txodds.com`.
+> - undici `request()` does **not** auto-decompress — don't send `Accept-Encoding: gzip` on the SSE stream (a gunzip pipe swallows disconnect errors).
+
 - **Endpoint:** `GET https://txline.txodds.com/api/scores/stream`. Auth headers (both required): `Authorization: Bearer <guest-jwt>` (guest JWT from `POST /auth/guest/start`) **and** `X-Api-Token: <apiToken>` (from `/api/token/activate`). Plus `Accept: text/event-stream`, `Cache-Control: no-cache`. Send `Accept-Encoding: gzip` (cuts bandwidth 70–80%). (Odds stream is the sibling `GET /api/odds/stream` with the same auth — not needed for resolution. **v1 (STAGED):** it feeds the LeveragePool **mark-price ingestion** job, §2.1 item 6; an odds **snapshots** endpoint also exists.)
 - Use `undici`'s fetch with a streaming body or a small `EventSource` client. **SSE events are generic/unnamed** — parse each `message.data` as JSON into a discriminated union `MatchEvent` (`Score`, `StatusChange`, `Ended`, `Heartbeat`). The parser carries a `retry` field. **Exact inner JSON field names are still generic in the docs** — normalize defensively in `scoreStream.ts` (see remaining note in §8).
 - **fixture_id is `i64`** (e.g. `17588316`) — the match id used across the whole system (on-chain `match_id`, DB `match_id`, REST `:id`).
@@ -253,6 +262,11 @@ interface TxSender {
 - **Token-2022 (D-6, OPEN):** if the collateral mint is TxLINE's devnet USDT (Token-2022) rather than classic-SPL USDC, any keeper token handling must use `TOKEN_2022_PROGRAM_ID` — derive ATAs against the Token-2022 program and use `transfer_checked` (decimals-aware). TxLINE itself uses `TOKEN_2022_PROGRAM_ID` for all its token ops. For the hackathon the keeper does not move collateral, but if a helper ever does (e.g. seeding demo liquidity) it must branch on the mint's owning program.
 
 ### 2.8 Resolution flow — proof fetch + CPI-return-bool model (CONFIRMED, resolves O4)
+
+> **REAL API shapes — correction (verified LIVE 2026-07-04; keeper `proof.ts` implements this):**
+> - `GET /api/scores/stat-validation` — **`seq` is REQUIRED** (404 without it); take it from the `Seq` of the score event that finalised the match (`game_finalised`), or recover it from the historical replay.
+> - The response is **FLAT** camelCase JSON (hashes as `number[32]`): `{ ts, statToProve, eventStatRoot, summary{ fixtureId, updateStats{updateCount,minTimestamp,maxTimestamp}, eventStatsSubTreeRoot }, statProof, subTreeProof, mainTreeProof, statToProve2?, statProof2? }`. Final stats carry `period: 100`.
+> - Mapping to our resolve args: `statA = {statToProve, eventStatRoot, statProof}`; `statB = {statToProve2, eventStatRoot (SHARED root), statProof2}`; `fixtureSummary = {summary.fixtureId, summary.updateStats, eventsSubTreeRoot: summary.eventStatsSubTreeRoot}`; `fixtureProof = subTreeProof`; `mainTreeProof = mainTreeProof`; `ts = ts` (ms; `epochDay = ts / 86_400_000`).
 
 Our AMM `resolve` **CPIs into TxLINE `validate_stat` and reads the returned bool** — TxLINE does the Merkle verification, our program acts on the result. `validate_stat` is **read-only**:
 
@@ -539,8 +553,8 @@ Keeps the contract buildless and single-sourced; web imports `@fpm/shared` types
 - [ ] K4. `txline/auth.ts` (guest JWT + `X-Api-Token`) + `txline/scoreStream.ts` SSE client (`/api/scores/stream`, reconnect/backoff, gzip) → typed `MatchEvent`; match-end via Game Phase {5,10,13}; stat-key decoding (`period*1000+base`).
 - [ ] K5. `txline/proof.ts` (`GET /api/scores/stat-validation` → resolve args), `txline/history.ts` (`/api/scores/historical/{fixtureId}` for replay/fee-calibration), `txline/fixtures.ts`.
 - [ ] K6. `lifecycle/stateMachine.ts` + `scheduler.ts` (setInterval, idempotent).
-- [ ] K7. `actions/activate.ts`, `freeze.ts`, `resolve.ts` (build→simulate→send via TxSender). `resolve.ts` supplies the stat-validation proof args (our program CPIs `validate_stat`); implement the `RootNotAvailable (6007)` retry-until-root-posted loop and distinct logging for `PredicateFailed/InvalidStatProof/InvalidMainTreeProof/ProofTooLarge`.
-- [ ] K8. Idempotency: each action re-reads on-chain `Market.state` and no-ops if already advanced.
+- [x] K7. `actions/activate.ts`, `freeze.ts`, `resolve.ts` (build→simulate→send via TxSender). `resolve.ts` supplies the stat-validation proof args (our program CPIs `validate_stat`); implement the `RootNotAvailable (6007)` retry-until-root-posted loop and distinct logging for `PredicateFailed/InvalidStatProof/InvalidMainTreeProof/ProofTooLarge`. — **DONE 2026-07-04**: wired to the generated `@fpm/idl` builders (`getActivateMarketInstructionAsync` / `getFreezeMarketInstructionAsync` / `getResolveInstructionAsync`; `ts` in MILLISECONDS, `daily_scores_roots` PDA per `epoch_day = ts/86_400_000` under the TxLINE program). Outcome-hint ladder Yes→No→proof-refetch (bounded); `solana/errors.ts` discriminates our codes vs TxLINE CPI codes from program logs (the 6xxx spaces overlap); terminal proof errors get alert-level (`fatal`) logs. Devnet smoke (`pnpm --filter @fpm/keeper smoke`, simulate-only) verified GlobalConfig fetch, market listing by discriminator, and activate simulation + error discrimination against the LIVE program.
+- [x] K8. Idempotency: each action re-reads on-chain `Market.state` and no-ops if already advanced. — **DONE 2026-07-04**: `readMarket` decodes the real `Market` via Codama `fetchMaybeMarket`; all actions guard on `MarketState`, and resolve treats a concurrent `InvalidMarketState`→already-Resolved as success.
 - [ ] K9. (Optional) BullMQ/Redis retry queue behind `REDIS_URL`.
 - [ ] K10. Keeper tests (unit FSM/parse; Surfpool integration for resolve).
 

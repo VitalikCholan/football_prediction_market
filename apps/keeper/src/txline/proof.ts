@@ -8,6 +8,7 @@ import type {
   ResolveProofArgs,
   ScoreStat,
   ScoresBatchSummary,
+  ScoresUpdateStats,
   StatTerm,
 } from "./types.ts";
 
@@ -17,12 +18,28 @@ import type {
  *
  *   GET /api/scores/stat-validation?fixtureId=X&seq=Y&statKey=Z&statKey2=W
  *
- * The response is directly usable as validate_stat args; we normalize its
- * (docs-generic) field names into the typed ResolveProofArgs.
+ * VERIFIED live 2026-07-04 (docs/OpenAPI were wrong):
+ *   - `seq` is REQUIRED (404 without it) — take it from the score event that
+ *     ended the match (`Seq` field, or HistoryClient.findMatchEnd);
+ *   - the response is FLAT camelCase JSON:
+ *       { ts, statToProve, eventStatRoot, summary{ fixtureId,
+ *         updateStats{updateCount,minTimestamp,maxTimestamp},
+ *         eventStatsSubTreeRoot }, statProof, subTreeProof, mainTreeProof,
+ *         statToProve2?, statProof2? }
+ *     with hashes as number[32]. Final stats carry `period: 100`.
+ *   - mapping to ResolveProofArgs:
+ *       statA          = { statToProve, eventStatRoot, statProof }
+ *       statB (if statKey2) = { statToProve2, eventStatRoot (SHARED root), statProof2 }
+ *       fixtureSummary = { summary.fixtureId, summary.updateStats,
+ *                          eventsSubTreeRoot: summary.eventStatsSubTreeRoot }
+ *       fixtureProof   = subTreeProof
+ *       mainTreeProof  = mainTreeProof
+ *       ts             = ts (MILLISECONDS; epochDay = ts / 86_400_000)
  */
 export interface StatValidationQuery {
   fixtureId: bigint;
-  seq?: number;
+  /** REQUIRED — the Seq of the score event that finalised the match. */
+  seq: number;
   statKey: number;
   statKey2?: number;
   op?: BinaryExpression;
@@ -41,7 +58,7 @@ export class ProofFetcher {
     const headers = await this.auth.headers();
     const params = new URLSearchParams();
     params.set("fixtureId", query.fixtureId.toString());
-    if (query.seq !== undefined) params.set("seq", String(query.seq));
+    params.set("seq", String(query.seq));
     params.set("statKey", String(query.statKey));
     if (query.statKey2 !== undefined)
       params.set("statKey2", String(query.statKey2));
@@ -53,34 +70,49 @@ export class ProofFetcher {
       throw new Error(`stat-validation failed (${res.statusCode}): ${body}`);
     }
     const json = (await res.body.json()) as Record<string, unknown>;
-    log.debug({ fixtureId: query.fixtureId.toString() }, "fetched stat proof");
+    log.debug(
+      { fixtureId: query.fixtureId.toString(), seq: query.seq },
+      "fetched stat proof",
+    );
     return this.mapResponse(json, query);
   }
 
-  /** Normalize the (generic) response into typed ResolveProofArgs. */
+  /** Map the (verified-flat) response into typed ResolveProofArgs. */
   private mapResponse(
     json: Record<string, unknown>,
     query: StatValidationQuery,
   ): ResolveProofArgs {
     const ts = BigInt((json.ts ?? json.timestamp ?? 0) as string | number);
-    const epochDay =
-      Number(json.epoch_day ?? json.epochDay ?? 0) ||
-      Number(ts / 86_400_000n); // fallback: TxLINE ts is MILLISECONDS -> days (verified vs devnet binary)
+    // TxLINE ts is MILLISECONDS -> epoch days (verified vs devnet binary).
+    const epochDay = Number(ts / 86_400_000n);
+
+    // Both stat terms share the SAME eventStatRoot (one root per fixture batch).
+    const eventStatRoot = this.toBytes(json.eventStatRoot);
+    const statA: StatTerm = {
+      statToProve: this.mapStat(json.statToProve),
+      eventStatRoot,
+      statProof: this.mapProof(json.statProof),
+    };
+    const hasStatB =
+      query.statKey2 !== undefined &&
+      json.statToProve2 !== undefined &&
+      json.statToProve2 !== null;
+    const statB: StatTerm | undefined = hasStatB
+      ? {
+          statToProve: this.mapStat(json.statToProve2),
+          eventStatRoot,
+          statProof: this.mapProof(json.statProof2),
+        }
+      : undefined;
 
     return {
       ts,
       epochDay,
-      fixtureSummary: this.mapSummary(
-        json.fixture_summary ?? json.fixtureSummary,
-        query.fixtureId,
-      ),
-      fixtureProof: this.mapProof(json.fixture_proof ?? json.fixtureProof),
-      mainTreeProof: this.mapProof(json.main_tree_proof ?? json.mainTreeProof),
-      statA: this.mapStatTerm(json.stat_a ?? json.statA),
-      statB:
-        json.stat_b ?? json.statB
-          ? this.mapStatTerm(json.stat_b ?? json.statB)
-          : undefined,
+      fixtureSummary: this.mapSummary(json.summary, query.fixtureId),
+      fixtureProof: this.mapProof(json.subTreeProof), // <-- subTreeProof on the wire
+      mainTreeProof: this.mapProof(json.mainTreeProof),
+      statA,
+      statB,
       op: query.op ?? (json.op as BinaryExpression | undefined),
     };
   }
@@ -91,18 +123,9 @@ export class ProofFetcher {
       const o = n as Record<string, unknown>;
       return {
         hash: this.toBytes(o.hash),
-        isRightSibling: Boolean(o.is_right_sibling ?? o.isRightSibling),
+        isRightSibling: Boolean(o.isRightSibling ?? o.is_right_sibling),
       };
     });
-  }
-
-  private mapStatTerm(raw: unknown): StatTerm {
-    const o = (raw ?? {}) as Record<string, unknown>;
-    return {
-      statToProve: this.mapStat(o.stat_to_prove ?? o.statToProve),
-      eventStatRoot: this.toBytes(o.event_stat_root ?? o.eventStatRoot),
-      statProof: this.mapProof(o.stat_proof ?? o.statProof),
-    };
   }
 
   private mapStat(raw: unknown): ScoreStat {
@@ -110,24 +133,37 @@ export class ProofFetcher {
     return {
       key: Number(o.key ?? 0),
       value: Number(o.value ?? 0),
-      period: Number(o.period ?? 0),
+      period: Number(o.period ?? 0), // final stats carry period 100
     };
   }
 
   private mapSummary(raw: unknown, fixtureId: bigint): ScoresBatchSummary {
     const o = (raw ?? {}) as Record<string, unknown>;
     return {
-      fixtureId: o.fixture_id
-        ? BigInt(o.fixture_id as string | number)
-        : fixtureId,
-      updateStats: { raw: o.update_stats ?? o.updateStats ?? null },
-      eventsSubTreeRoot: this.toBytes(
-        o.events_sub_tree_root ?? o.eventsSubTreeRoot,
+      fixtureId:
+        o.fixtureId !== undefined && o.fixtureId !== null
+          ? BigInt(o.fixtureId as string | number)
+          : fixtureId,
+      updateStats: this.mapUpdateStats(o.updateStats),
+      eventsSubTreeRoot: this.toBytes(o.eventStatsSubTreeRoot),
+    };
+  }
+
+  /** Typed `ScoresUpdateStats` — forwarded verbatim into the resolve ix. */
+  private mapUpdateStats(raw: unknown): ScoresUpdateStats {
+    const o = (raw ?? {}) as Record<string, unknown>;
+    return {
+      updateCount: Number(o.updateCount ?? o.update_count ?? 0),
+      minTimestamp: BigInt(
+        (o.minTimestamp ?? o.min_timestamp ?? 0) as string | number,
+      ),
+      maxTimestamp: BigInt(
+        (o.maxTimestamp ?? o.max_timestamp ?? 0) as string | number,
       ),
     };
   }
 
-  /** Coerce a hash field (hex string, base64, or number[]) into 32 bytes. */
+  /** Coerce a hash field (number[32] on the wire; hex/base64 tolerated). */
   private toBytes(raw: unknown): Uint8Array {
     if (raw instanceof Uint8Array) return raw;
     if (Array.isArray(raw)) return Uint8Array.from(raw as number[]);

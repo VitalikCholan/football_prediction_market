@@ -9,3 +9,5 @@ test-ledger/
 .env
 .env.local
 .claude/settings.local.json
+.continue/
+skills-lock.json

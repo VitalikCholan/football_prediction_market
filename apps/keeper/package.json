@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch --experimental-strip-types src/index.ts",
-    "start": "node --experimental-strip-types src/index.ts",
+    "dev": "node --watch --experimental-transform-types --import ./hooks/register.mjs src/index.ts",
+    "start": "node --experimental-transform-types --import ./hooks/register.mjs src/index.ts",
+    "smoke": "node --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke",
+    "smoke:txline": "node --env-file-if-exists=.env --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke-txline",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
