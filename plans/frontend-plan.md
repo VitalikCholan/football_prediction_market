@@ -297,27 +297,30 @@ Coordinate with keeper/indexer owners on: a stable replay dataset on devnet, and
 
 ## 11. Sequenced task breakdown (maps to milestone phase 5: Frontend, ~3 days)
 
-Ordered checklist. **F1 is blocked on the wallet-stack decision (top of doc).**
+Ordered checklist. Wallet-stack decision resolved: **framework-kit** (as recommended).
 
 **Day 1 — foundation & data**
-- [ ] **F0.** Confirm the interface contracts with teammates: exact zod DTO field names in `@fpm/shared`, `@fpm/idl` instruction/account signatures, indexer base URL + history point shape.
-- [ ] **F1.** Scaffold `apps/web` (Next.js app-router, TS, Tailwind), init shadcn/ui. Prefer `create-solana-dapp` kit/framework-kit template as a base. Wire `@fpm/shared` + `@fpm/idl` workspace imports.
-- [ ] **F2.** Design tokens: `globals.css` CSS vars + `tailwind.config.ts` palette + self-hosted fonts (§0, §9).
-- [ ] **F3.** `providers.tsx`: framework-kit `SolanaProvider` + client (devnet); `lib/solana.ts` cluster/program config; `ConnectButton`.
-- [ ] **F4.** `lib/api.ts` typed fetch with zod DTOs; `hooks/useMarkets`, `useMarket`, `useMarketHistory` (with polling).
+- [x] **F0.** Confirm the interface contracts with teammates: exact zod DTO field names in `@fpm/shared`, `@fpm/idl` instruction/account signatures, indexer base URL + history point shape. *(done — DTOs in `libs/shared/src/dto`, indexer on :3900)*
+- [x] **F1.** Scaffold `apps/web` (Next.js app-router, TS, Tailwind). Wire `@fpm/shared` + `@fpm/idl` workspace imports. *(done first pass; shadcn skipped — hand-rolled primitives per DESIGN_SPEC)*
+- [x] **F2.** Design tokens: `globals.css` CSS vars (DESIGN_SPEC token set, not the §0 draft palette).
+- [x] **F3.** `providers.tsx`: framework-kit `SolanaProvider` (devnet); `lib/solana.ts` cluster/program config; `WalletChip`/`ConnectModal`.
+- [x] **F4.** Typed fetch with zod DTOs in `lib/data.ts` (demo-fixture ↔ live seam). **2026-07-05:** client polling added in `lib/use-live.ts` — market 5s, balances/positions 10–15s, plus a `notifyTxConfirmed()` bus so every view revalidates after a confirmed tx; timers pause while the tab is hidden.
 
 **Day 2 — screens & trading**
-- [ ] **F5.** Market list `/` + `MarketCard` + `StateBadge` + `OddsTape` (signature element).
-- [ ] **F6.** Market detail `/markets/[id]`: header, odds tape, `FeeBar`, `ResolutionPanel`; server shell + client islands.
-- [ ] **F7.** `PriceChart` (lightweight-charts, dynamic import) fed by history; live tail; lock/resolution markers.
-- [ ] **F8.** `lib/quote.ts` client CPMM + dynamic-fee mirror; `PriceImpact`; `SlippageControl` → `min_out`.
-- [ ] **F9.** `lib/tx/` build (buy/sell) + `send.ts` (simulate → review → sign+send); `TxReviewDialog`; wire `TradePanel`. Verify a live buy on devnet.
+- [x] **F5.** Market list `/` + `MatchCard` + `StateBadge` + `OddsTape`. *(2026-07-05: null-team fallback → "Fixture <id>" for real devnet markets)*
+- [x] **F6.** Market detail `/markets/[id]`: header, odds tape, `ResolutionPanel`; server shell + client islands. **2026-07-05:** SSR market/history hydrate, then live-poll; chart series refetches when `updatedSlot` advances.
+- [x] **F7.** Price chart (lightweight-charts, dynamic import) fed by `/markets/:id/history`.
+- [x] **F8.** `lib/quote.ts` client CPMM quote + slippage → `min_out` (1d summary box).
+- [x] **F9.** **2026-07-05 — REAL transactions.** `lib/tx.ts` rewritten on the `@fpm/idl` builders: buy = (openPosition if missing) + buy(side, usdcIn, minOut); sell(side, tokensIn, minUsdcOut); redeem. PDAs from `@fpm/shared`. Flow = build → compile unsigned → `simulateTransaction` (sigVerify:false, post-state account capture → the EXACT simulated shares/USDC out rendered in the 1d box) → user confirms → sign (wallet session or demo keypair) → send → bounded confirm poll → toast with devnet-explorer link. Anchor errors decoded via `getAmmErrorMessage`. Demo data mode keeps the stubbed settle path (CI/Vercel-safe). Note: `@solana/client` is kit v5 while the workspace is kit v2 — all tx code stays on kit v2; the wallet-session `signTransaction` boundary is one structural cast (`WalletTxSession` in lib/tx.ts).
 
 **Day 3 — positions, demo, polish, deploy**
-- [ ] **F10.** `/positions`: on-chain `Position` reads, `PositionRow`, `RedeemButton` (build redeem → review → send).
-- [ ] **F11.** Historical Replay affordance (`useDemoReplay`): observe lifecycle transitions, chart markers, fee-spike moment (§8).
-- [ ] **F12.** Polish: skeletons, empty/error states, toasts, accessibility (focus, `aria-live`, reduced motion), mobile responsive (split → stacked).
-- [ ] **F13.** Deploy to Vercel with env vars pointing at devnet + Railway indexer (§10); record the demo.
+- [x] **F10.** **2026-07-05.** `/positions` live mode decodes on-chain `Position` PDAs (`fetchAllMaybePosition`, one batched RPC): open-positions table (per-side rows, mark value from live odds, P/L vs collateral basis), Claims tab with Redeem (simulate → send), portfolio header from the real USDT balance. Demo mode still renders fixtures. Trade ticket + 1g panel read the same live position (held YES/NO, redeemed flag).
+- [x] **F10b.** **2026-07-05 — trader onboarding.** "Get test USDT" (trade ticket when balance 0, wallet modal, portfolio header) → devnet-SOL gas check/airdrop + idempotent ATA create + TxLINE `request_devnet_faucet` (100 USDT; wiring from scripts/full-circle.ts). Demo custodial wallet upgraded from a fake address to a REAL persisted Ed25519 keypair (localStorage seed, devnet-only custody) that signs every flow. Top-nav balance pill shows the real USDT balance in live mode.
+- [ ] **F11.** Historical Replay affordance (`useDemoReplay`): observe lifecycle transitions, chart markers, fee-spike moment (§8). *(pending — needs the keeper-driven replay dataset)*
+- [x] **F12.** Polish: skeletons, empty/error states, toasts, accessibility (focus, `aria-live`, reduced motion), mobile responsive. *(first pass; live-mode empty/claim states added 2026-07-05)*
+- [ ] **F13.** Deploy to Vercel with env vars pointing at devnet + Railway indexer (§10); record the demo. *(pending; gitignored `apps/web/.env.local` documents the exact vars — `NEXT_PUBLIC_USE_LIVE_DATA`, `NEXT_PUBLIC_INDEXER_URL`, `NEXT_PUBLIC_SOLANA_RPC_URL`, `NEXT_PUBLIC_CLUSTER`; no API keys committed — Helius RPC via env only)*
+
+**2026-07-05 gates:** `pnpm --filter @fpm/web typecheck/build/lint` green (with AND without `.env.local` — demo mode intact for CI/Vercel), `pnpm -r typecheck` 7/7. SSR curls against the live indexer rendered both real devnet markets (fixture 18179549 Resolved · Yes won with the 1g claim panel; 17588316 Trading) on `/` and `/markets/[id]`. tsconfig `target` bumped ES2017→ES2020 (bigint literals required by kit).
 
 **Dependencies:** F5–F7 need the indexer live (or a mock server against the DTOs) — build a `msw`/static-fixture mock from `@fpm/shared` so frontend isn't blocked waiting on the indexer. F9–F11 need the program on devnet + `@fpm/idl` generated.
 

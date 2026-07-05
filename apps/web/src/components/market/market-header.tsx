@@ -15,7 +15,9 @@ export function MarketHeader({ market }: { market: MarketDto }) {
         <span>Group C</span>
         <span>›</span>
         <span className="text-ink">
-          {market.homeTeam} vs {market.awayTeam}
+          {market.homeTeam
+            ? `${market.homeTeam} vs ${market.awayTeam ?? "Away"}`
+            : `Fixture ${market.fixtureId}`}
         </span>
       </nav>
 
@@ -27,8 +29,14 @@ export function MarketHeader({ market }: { market: MarketDto }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[24px] font-700 tracking-tight">
-            {market.homeTeam} <span className="text-muted">vs</span>{" "}
-            {market.awayTeam}
+            {market.homeTeam ? (
+              <>
+                {market.homeTeam} <span className="text-muted">vs</span>{" "}
+                {market.awayTeam ?? "Away"}
+              </>
+            ) : (
+              <>Fixture {market.fixtureId}</>
+            )}
           </h1>
           <p className="text-[13px] text-muted">Who wins the match?</p>
         </div>

@@ -59,8 +59,14 @@ export function MatchCard({
 
       <div>
         <div className="text-[16px] font-700 leading-tight">
-          {market.homeTeam} <span className="text-muted">vs</span>{" "}
-          {market.awayTeam}
+          {market.homeTeam ? (
+            <>
+              {market.homeTeam} <span className="text-muted">vs</span>{" "}
+              {market.awayTeam ?? "Away"}
+            </>
+          ) : (
+            <>Fixture {market.fixtureId}</>
+          )}
         </div>
         <div className="mt-0.5 text-[12px] text-muted">
           Match winner · settles at full time

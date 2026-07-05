@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { WalletChip } from "@/components/wallet/wallet-chip";
+import { useAccountAddress } from "@/components/wallet/use-account";
+import { useUsdtBalance } from "@/lib/use-live";
+import { dataMode } from "@/lib/data";
 import { usd } from "@/lib/format";
 import { PORTFOLIO } from "@/lib/fixtures";
 
@@ -29,6 +32,18 @@ export function TopNav() {
   const pathname = usePathname();
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
+
+  // Balance pill (1b): REAL USDT balance in live mode, fixture cash in demo.
+  const address = useAccountAddress();
+  const { balanceBase } = useUsdtBalance(address);
+  const live = dataMode === "live";
+  const pill = live
+    ? address
+      ? balanceBase === null
+        ? "…"
+        : usd(Number(balanceBase) / 1_000_000)
+      : null
+    : usd(PORTFOLIO.cash);
 
   return (
     <header className="sticky top-0 z-40 border-b border-card-border bg-page/85 backdrop-blur-sm">
@@ -63,9 +78,14 @@ export function TopNav() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <span className="hidden items-center rounded-full border border-card-border bg-surface px-3 py-1.5 text-[13px] font-600 tnum sm:inline-flex">
-            {usd(PORTFOLIO.cash)}
-          </span>
+          {pill !== null ? (
+            <span
+              className="hidden items-center rounded-full border border-card-border bg-surface px-3 py-1.5 text-[13px] font-600 tnum sm:inline-flex"
+              title={live ? "USDT balance (devnet)" : "Demo balance"}
+            >
+              {pill}
+            </span>
+          ) : null}
           <WalletChip />
         </div>
       </div>

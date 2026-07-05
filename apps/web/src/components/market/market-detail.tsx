@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MarketDto, HistoryPointDto } from "@fpm/shared";
+import { fetchHistory, dataMode } from "@/lib/data";
+import { useLiveMarket } from "@/lib/use-live";
 import { MarketHeader } from "@/components/market/market-header";
 import { OddsTape } from "@/components/market/odds-tape";
 import { ChartCard } from "@/components/market/chart-card";
@@ -12,17 +14,31 @@ import { ResolutionPanel } from "@/components/market/resolution-panel";
 import { TradePanel, type TradeIntent } from "@/components/trade/trade-panel";
 
 /**
- * Match detail (DESIGN_SPEC 1c) client shell. Server passes the market +
- * history; this wires the trade ticket slide-in and swaps to the resolved
- * (1g) layout when the market has settled.
+ * Match detail (DESIGN_SPEC 1c) client shell. Server passes the SSR market +
+ * history for fast first paint; in live mode the market re-polls every 5s
+ * (plus after every confirmed tx) and the chart series refetches whenever the
+ * on-chain snapshot advances (frontend-plan §6.2 reconcile).
  */
 export function MarketDetail({
-  market,
-  points,
+  market: initialMarket,
+  points: initialPoints,
 }: {
   market: MarketDto;
   points: HistoryPointDto[];
 }) {
+  const market = useLiveMarket(initialMarket);
+
+  const [freshPoints, setFreshPoints] = useState<HistoryPointDto[] | null>(
+    null,
+  );
+  const points = freshPoints ?? initialPoints;
+  useEffect(() => {
+    if (dataMode !== "live") return;
+    fetchHistory(initialMarket.id, { fresh: true })
+      .then((h) => setFreshPoints(h.points))
+      .catch(() => {});
+  }, [initialMarket.id, market.updatedSlot]);
+
   const [intent, setIntent] = useState<TradeIntent | null>(null);
   const resolved = market.state === "Resolved";
 

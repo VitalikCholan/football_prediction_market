@@ -19,14 +19,28 @@ import {
   getFixtureHistory,
 } from "@/lib/fixtures";
 
-const USE_LIVE = process.env.NEXT_PUBLIC_USE_LIVE_DATA === "true";
+const USE_LIVE =
+  process.env.NEXT_PUBLIC_USE_LIVE_DATA === "true" ||
+  process.env.NEXT_PUBLIC_USE_LIVE_DATA === "1";
 const BASE = process.env.NEXT_PUBLIC_INDEXER_URL ?? "";
+
+/** Server components use the 5s revalidate cache; client polls bypass it. */
+export interface FetchOpts {
+  fresh?: boolean;
+}
+
+function fetchInit(opts?: FetchOpts): RequestInit {
+  return opts?.fresh
+    ? { cache: "no-store" }
+    : { next: { revalidate: 5 } };
+}
 
 async function getJson<T>(
   path: string,
   schema: { parse: (v: unknown) => T },
+  opts?: FetchOpts,
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { next: { revalidate: 5 } });
+  const res = await fetch(`${BASE}${path}`, fetchInit(opts));
   if (!res.ok) throw new Error(`Indexer ${res.status} for ${path}`);
   return schema.parse(await res.json());
 }
@@ -34,6 +48,7 @@ async function getJson<T>(
 /** GET /markets — list of markets. */
 export async function fetchMarkets(
   query?: Partial<MarketListQuery>,
+  opts?: FetchOpts,
 ): Promise<MarketListDto> {
   if (!USE_LIVE) {
     let markets = MARKET_LIST.markets;
@@ -45,25 +60,31 @@ export async function fetchMarkets(
   if (query?.limit) params.set("limit", String(query.limit));
   if (query?.offset) params.set("offset", String(query.offset));
   const qs = params.toString();
-  return getJson(`/markets${qs ? `?${qs}` : ""}`, MarketListDto);
+  return getJson(`/markets${qs ? `?${qs}` : ""}`, MarketListDto, opts);
 }
 
 /** GET /markets/:id — single market. Returns null when not found. */
-export async function fetchMarket(id: string): Promise<MarketDto | null> {
+export async function fetchMarket(
+  id: string,
+  opts?: FetchOpts,
+): Promise<MarketDto | null> {
   if (!USE_LIVE) {
     const m = getFixtureMarket(id);
     return m ? MarketDto.parse(m) : null;
   }
-  const res = await fetch(`${BASE}/markets/${id}`, { next: { revalidate: 5 } });
+  const res = await fetch(`${BASE}/markets/${id}`, fetchInit(opts));
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Indexer ${res.status} for /markets/${id}`);
   return MarketDto.parse(await res.json());
 }
 
 /** GET /markets/:id/history — price/volume series for the hero chart. */
-export async function fetchHistory(id: string): Promise<HistoryResponseDto> {
+export async function fetchHistory(
+  id: string,
+  opts?: FetchOpts,
+): Promise<HistoryResponseDto> {
   if (!USE_LIVE) return HistoryResponseDto.parse(getFixtureHistory(id));
-  return getJson(`/markets/${id}/history`, HistoryResponseDto);
+  return getJson(`/markets/${id}/history`, HistoryResponseDto, opts);
 }
 
 export const dataMode = USE_LIVE ? "live" : "demo";

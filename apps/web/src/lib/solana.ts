@@ -3,6 +3,7 @@
  * defaults (deploy target). The program id and PDA derivations live in
  * `@fpm/shared` — never hardcode a seed or id here.
  */
+import { createSolanaRpc, type Rpc, type SolanaRpcApi } from "@solana/kit";
 import { AMM_PROGRAM_ID } from "@fpm/shared";
 
 export const PROGRAM_ID = AMM_PROGRAM_ID;
@@ -23,4 +24,15 @@ export const CHAIN =
 export function explorerTx(signature: string): string {
   const suffix = CLUSTER === "mainnet-beta" ? "" : `?cluster=${CLUSTER}`;
   return `https://explorer.solana.com/tx/${signature}${suffix}`;
+}
+
+/**
+ * Shared Kit RPC (kit ^2, same version as `@fpm/idl` / `@fpm/shared`, so
+ * generated fetchers and PDA helpers plug in with no type seams). Lazy module
+ * singleton — created on first on-chain read/tx, reused everywhere after.
+ */
+let _rpc: Rpc<SolanaRpcApi> | null = null;
+export function getRpc(): Rpc<SolanaRpcApi> {
+  if (!_rpc) _rpc = createSolanaRpc(RPC_URL);
+  return _rpc;
 }
