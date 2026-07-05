@@ -2,19 +2,21 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "@fpm/tsconfig/nestjs.json",
   "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "resolvePackageJsonExports": true,
+    // Bundler resolution (not NodeNext): the Codama-generated @fpm/idl client
+    // uses extensionless directory imports (`export * from './accounts'`),
+    // which only resolve bundler-style (same workaround as keeper/tests).
+    // Emit is handled by swc (`nest build -b swc` -> CommonJS dist); tsc is
+    // typecheck-only here, and the runtime loads @fpm/idl via
+    // hooks/register.mjs + --experimental-transform-types (see package.json).
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "isolatedModules": true,
-    "declaration": true,
-    "removeComments": true,
     "allowSyntheticDefaultImports": true,
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "incremental": true,
-    "noEmit": false,
+    "noEmit": true,
     "forceConsistentCasingInFileNames": true,
     "strictBindCallApply": true,
     "noFallthroughCasesInSwitch": true,

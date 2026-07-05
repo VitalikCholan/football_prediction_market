@@ -6,9 +6,9 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "dev": "nest start --watch -b swc",
-    "build": "nest build",
-    "start": "node dist/main.js",
+    "dev": "NODE_OPTIONS='--experimental-transform-types --import ./hooks/register.mjs' nest start --watch -b swc",
+    "build": "nest build -b swc",
+    "start": "node --experimental-transform-types --import ./hooks/register.mjs dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
@@ -16,9 +16,9 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:push": "prisma db push",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start:dev": "NODE_OPTIONS='--experimental-transform-types --import ./hooks/register.mjs' nest start --watch -b swc",
+    "start:debug": "NODE_OPTIONS='--experimental-transform-types --import ./hooks/register.mjs' nest start --debug --watch -b swc",
+    "start:prod": "node --experimental-transform-types --import ./hooks/register.mjs dist/main.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -78,7 +78,15 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "module": "node16",
+            "moduleResolution": "node16"
+          }
+        }
+      ]
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"

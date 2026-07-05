@@ -1,18 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AMM_PROGRAM_ID, BPS_DENOM } from '@fpm/shared';
+import { decodeAmmEventsFromLogs, EventOutcome, type AmmEvent } from './events';
 import type { IndexedEvent } from './indexer.types';
 
 /**
  * Decodes Anchor program logs into normalized domain events.
  *
- * Anchor emits `emit!` events as base64 "Program data:" log lines carrying an
- * 8-byte event discriminator + Borsh-encoded fields. Once the program team
- * finalizes the event structs, wire the Codama-generated event decoders from
- * `@fpm/idl` here (the `identify*`/`parse*` helpers) keyed by discriminator.
- *
- * For now this is a structured skeleton: it isolates the "Program data:" lines
- * for our program and exposes the price-derivation helper so the wiring point is
- * a single, obvious TODO.
+ * The heavy lifting (invoke-frame attribution + discriminator matching + borsh
+ * decode) lives in the pure functions of `events.ts`; this class maps the raw
+ * decoded events onto the persister's `IndexedEvent` envelope (signature, slot,
+ * block time, event index).
  */
 @Injectable()
 export class LogParser {
@@ -22,7 +19,7 @@ export class LogParser {
   /**
    * Parse the log lines of a single transaction into domain events.
    *
-   * @param logs        transaction log messages (from logsSubscribe / getTransaction)
+   * @param logs        transaction log messages (from getTransaction)
    * @param signature   tx signature
    * @param slot        slot the tx landed in
    * @param blockTime   block time (unix seconds) or null
@@ -33,33 +30,81 @@ export class LogParser {
     slot: bigint,
     blockTime: number | null,
   ): IndexedEvent[] {
-    const events: IndexedEvent[] = [];
     const ts = new Date((blockTime ?? Math.floor(Date.now() / 1000)) * 1000);
-    let eventIndex = 0;
+    const raw = decodeAmmEventsFromLogs(logs, this.programId);
+    const events: IndexedEvent[] = [];
 
-    for (const line of logs) {
-      const data = this.extractProgramData(line);
-      if (!data) continue;
-      // TODO(program-team IDL): decode `data` (base64 -> bytes) with the Codama
-      // event decoders from `@fpm/idl`, match the 8-byte discriminator to
-      // Buy/Sell/Activate/Freeze/Resolve, and push the mapped IndexedEvent.
-      // Skeleton keeps the index advancing so downstream idempotency keys line up.
-      this.logger.debug(
-        `program data on ${signature} @ ${eventIndex} (${data.length}b) — decoder not yet wired`,
-      );
-      eventIndex += 1;
-    }
-
-    void ts; // used once events are actually constructed
+    raw.forEach((ev, eventIndex) => {
+      const mapped = this.toIndexedEvent(ev, {
+        signature,
+        eventIndex,
+        slot,
+        ts,
+      });
+      if (mapped) events.push(mapped);
+    });
     return events;
   }
 
-  /** Return the base64 payload of an Anchor "Program data:" line, else null. */
-  private extractProgramData(line: string): string | null {
-    const marker = 'Program data: ';
-    const idx = line.indexOf(marker);
-    if (idx === -1) return null;
-    return line.slice(idx + marker.length).trim();
+  private toIndexedEvent(
+    ev: AmmEvent,
+    base: { signature: string; eventIndex: number; slot: bigint; ts: Date },
+  ): IndexedEvent | null {
+    switch (ev.name) {
+      case 'MarketCreated':
+        return {
+          kind: 'created',
+          ...base,
+          fixtureId: ev.fixtureId,
+          config: ev.config,
+          yesReserve: ev.yesReserve,
+          noReserve: ev.noReserve,
+          yesPriceBps: ev.priceBps,
+        };
+      case 'Trade':
+        return {
+          kind: ev.isBuy ? 'buy' : 'sell',
+          ...base,
+          fixtureId: ev.fixtureId,
+          trader: ev.owner,
+          side: ev.sideYes ? 1 : 0,
+          usdcIn: ev.isBuy ? ev.usdc : 0n,
+          usdcOut: ev.isBuy ? 0n : ev.usdc,
+          tokensAmount: ev.tokens,
+          feeBps: ev.feeBps,
+          yesPriceBps: ev.priceBps,
+        };
+      case 'MarketActivated':
+        return { kind: 'activate', ...base, fixtureId: ev.fixtureId };
+      case 'MarketFrozen':
+        return { kind: 'freeze', ...base, fixtureId: ev.fixtureId };
+      case 'MarketResolved':
+        return {
+          kind: 'resolve',
+          ...base,
+          fixtureId: ev.fixtureId,
+          outcome:
+            ev.outcome === EventOutcome.Yes
+              ? 1
+              : ev.outcome === EventOutcome.No
+                ? 0
+                : null, // Void / Unset
+        };
+      case 'MarketClosed':
+        return { kind: 'close', ...base, fixtureId: ev.fixtureId };
+      case 'Redeemed':
+        return {
+          kind: 'redeem',
+          ...base,
+          fixtureId: ev.fixtureId,
+          owner: ev.owner,
+          outcome: ev.outcome === EventOutcome.Yes ? 1 : 0,
+          payout: ev.payout,
+        };
+      default:
+        this.logger.warn(`unhandled amm event on ${base.signature}`);
+        return null;
+    }
   }
 
   /**

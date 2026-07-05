@@ -48,6 +48,7 @@ model Market {
   pricePoints   PricePoint[]
   volumePoints  VolumePoint[]
   trades        Trade[]
+  redemptions   Redemption[]
 
   @@map("markets")
 }
@@ -103,6 +104,25 @@ model Trade {
   @@unique([signature, eventIndex], map: "uq_trades_sig_event")
   @@index([marketId, ts], map: "idx_trades_market_ts")
   @@map("trades")
+}
+
+/// Winner payouts decoded from `Redeemed` program events. Idempotent on
+/// (signature, event_index) like trades.
+model Redemption {
+  id         BigInt   @id @default(autoincrement())
+  marketId   String   @map("market_id")
+  market     Market   @relation(fields: [marketId], references: [id])
+  signature  String
+  eventIndex Int      @map("event_index")
+  owner      String
+  outcome    Int // 0 = NO, 1 = YES (the resolved side being redeemed)
+  payout     Decimal  @db.Decimal(40, 0) // collateral base units paid out
+  ts         DateTime
+  slot       BigInt
+
+  @@unique([signature, eventIndex], map: "uq_redemptions_sig_event")
+  @@index([marketId, ts], map: "idx_redemptions_market_ts")
+  @@map("redemptions")
 }
 
 /// Single-row replay checkpoint so the indexer resumes after downtime.
