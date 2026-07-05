@@ -2,18 +2,25 @@ import { Module, type OnModuleInit } from '@nestjs/common';
 import { BackfillService } from './backfill.service';
 import { LogParser } from './log-parser';
 import { EventPersister } from './persister.service';
-import { SubscriberService } from './subscriber.service';
+import { RpcService } from './rpc.service';
+import { TailService } from './tail.service';
 
 /**
- * Background indexing worker. Runs in-process with the API (no separate
- * deployable for the hackathon). On boot it runs a full backfill (program
- * history -> cursor) + an authoritative Market-account refresh, then the
- * SubscriberService keeps a poll-based tail running on an interval.
+ * Background indexing worker (write path). Runs in-process with the API (no
+ * separate deployable for the hackathon). On boot it runs a full backfill
+ * (program history -> cursor) + an authoritative Market-account refresh, then
+ * the TailService keeps a poll-based tail running on an interval.
  */
 @Module({
-  providers: [LogParser, EventPersister, SubscriberService, BackfillService],
+  providers: [
+    RpcService,
+    LogParser,
+    EventPersister,
+    TailService,
+    BackfillService,
+  ],
 })
-export class IndexerModule implements OnModuleInit {
+export class IngestModule implements OnModuleInit {
   constructor(private readonly backfill: BackfillService) {}
 
   async onModuleInit(): Promise<void> {

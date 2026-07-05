@@ -1,13 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  address,
-  createSolanaRpc,
-  type Address,
-  type Rpc,
-  type Signature,
-  type SolanaRpcApi,
-} from '@solana/kit';
-import { AMM_PROGRAM_ID } from '@fpm/shared';
+import { address, type Signature } from '@solana/kit';
 import {
   fetchAllMaybeMarket,
   fetchAllMaybeMarketConfig,
@@ -15,9 +7,9 @@ import {
   Outcome as OnchainOutcome,
 } from '@fpm/idl';
 import { PrismaService } from '../db/prisma.service';
-import { loadIndexerConfig, type IndexerConfig } from './indexer.config';
 import { LogParser } from './log-parser';
 import { EventPersister } from './persister.service';
+import { RpcService } from './rpc.service';
 
 interface SignatureInfo {
   signature: string;
@@ -35,39 +27,23 @@ interface SignatureInfo {
  * then refresh every known Market/MarketConfig account via the Codama decoders
  * for authoritative state (reserves, supplies, state, outcome, timestamps).
  *
- * `tailOnce()` (called by SubscriberService on an interval): the same
+ * `tailOnce()` (called by TailService on an interval): the same
  * signature walk bounded to "newer than the cursor" — this is the poll-based
  * live tail.
  *
- * All RPC calls go through `withRetry` (exponential backoff + endpoint
- * rotation) because public devnet is rate-limited.
+ * All RPC calls go through `RpcService.withRetry` (exponential backoff +
+ * endpoint rotation) because public devnet is rate-limited.
  */
 @Injectable()
 export class BackfillService {
   private readonly logger = new Logger(BackfillService.name);
-  private readonly config: IndexerConfig;
-  private readonly rpcs: Rpc<SolanaRpcApi>[];
-  private readonly programId: Address;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly parser: LogParser,
     private readonly persister: EventPersister,
-  ) {
-    this.config = loadIndexerConfig(process.env);
-    this.rpcs = this.config.rpcUrls.map((url) => createSolanaRpc(url));
-    this.programId = this.config.ammProgramId
-      ? address(this.config.ammProgramId)
-      : AMM_PROGRAM_ID;
-  }
-
-  get enabled(): boolean {
-    return this.config.enabled;
-  }
-
-  get pollMs(): number {
-    return this.config.pollMs;
-  }
+    private readonly rpc: RpcService,
+  ) {}
 
   // ---- cursor ---------------------------------------------------------------
 
@@ -100,7 +76,7 @@ export class BackfillService {
 
   /** Boot-time catch-up: full replay to cursor + account refresh. */
   async run(): Promise<void> {
-    if (!this.config.enabled) {
+    if (!this.rpc.enabled) {
       this.logger.warn('INDEXER_ENABLED off — skipping backfill');
       return;
     }
@@ -155,9 +131,9 @@ export class BackfillService {
     const all: SignatureInfo[] = [];
     let before: string | undefined;
     for (;;) {
-      const page = await this.withRetry((rpc) =>
+      const page = await this.rpc.withRetry((rpc) =>
         rpc
-          .getSignaturesForAddress(this.programId, {
+          .getSignaturesForAddress(this.rpc.programId, {
             ...(before ? { before: before as Signature } : {}),
             ...(until ? { until: until as Signature } : {}),
             limit: 1000,
@@ -179,7 +155,7 @@ export class BackfillService {
 
   /** Fetch one tx, decode its logs, persist. Returns the event count. */
   private async replayTransaction(sig: SignatureInfo): Promise<number> {
-    const tx = await this.withRetry((rpc) =>
+    const tx = await this.rpc.withRetry((rpc) =>
       rpc
         .getTransaction(sig.signature as Signature, {
           maxSupportedTransactionVersion: 0,
@@ -213,8 +189,8 @@ export class BackfillService {
     });
     if (rows.length === 0) return;
 
-    const slot = await this.withRetry((rpc) => rpc.getSlot().send());
-    const accounts = await this.withRetry((rpc) =>
+    const slot = await this.rpc.withRetry((rpc) => rpc.getSlot().send());
+    const accounts = await this.rpc.withRetry((rpc) =>
       fetchAllMaybeMarket(
         rpc,
         rows.map((r) => address(r.id)),
@@ -222,7 +198,7 @@ export class BackfillService {
     );
 
     const configIds = [...new Set(rows.map((r) => r.configId))];
-    const configs = await this.withRetry((rpc) =>
+    const configs = await this.rpc.withRetry((rpc) =>
       fetchAllMaybeMarketConfig(
         rpc,
         configIds.map((c) => address(c)),
@@ -266,33 +242,5 @@ export class BackfillService {
     this.logger.log(
       `refreshed ${accounts.filter((a) => a.exists).length}/${rows.length} market account(s) from chain`,
     );
-  }
-
-  // ---- rpc resilience ---------------------------------------------------------
-
-  /**
-   * Run an RPC call with exponential backoff, rotating through the configured
-   * endpoints (primary first) — public devnet 429s are expected.
-   */
-  private async withRetry<T>(
-    fn: (rpc: Rpc<SolanaRpcApi>) => Promise<T>,
-  ): Promise<T> {
-    const maxAttempts = 3 * this.rpcs.length;
-    let delayMs = 500;
-    let lastErr: unknown;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const rpc = this.rpcs[attempt % this.rpcs.length];
-      try {
-        return await fn(rpc);
-      } catch (err) {
-        lastErr = err;
-        this.logger.debug(
-          `rpc attempt ${attempt + 1}/${maxAttempts} failed: ${(err as Error).message}; retrying in ${delayMs}ms`,
-        );
-        await new Promise((r) => setTimeout(r, delayMs));
-        delayMs = Math.min(delayMs * 2, 15_000);
-      }
-    }
-    throw lastErr;
   }
 }

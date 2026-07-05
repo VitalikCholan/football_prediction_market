@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { BackfillService } from './backfill.service';
+import { RpcService } from './rpc.service';
 
 /**
  * Live tail (backend-plan §3.2). Poll-based: every `INDEXER_POLL_MS` run one
@@ -20,23 +21,26 @@ import { BackfillService } from './backfill.service';
  * Gated behind INDEXER_ENABLED so the REST API can run standalone.
  */
 @Injectable()
-export class SubscriberService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(SubscriberService.name);
+export class TailService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(TailService.name);
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
 
-  constructor(private readonly backfill: BackfillService) {}
+  constructor(
+    private readonly backfill: BackfillService,
+    private readonly rpc: RpcService,
+  ) {}
 
   onModuleInit(): void {
-    if (!this.backfill.enabled) {
+    if (!this.rpc.enabled) {
       this.logger.warn(
         'INDEXER_ENABLED is off — live tail NOT started ' +
           '(set INDEXER_ENABLED=1 to enable live indexing).',
       );
       return;
     }
-    this.logger.log(`live tail polling every ${this.backfill.pollMs}ms`);
-    this.timer = setInterval(() => void this.tick(), this.backfill.pollMs);
+    this.logger.log(`live tail polling every ${this.rpc.pollMs}ms`);
+    this.timer = setInterval(() => void this.tick(), this.rpc.pollMs);
   }
 
   onModuleDestroy(): void {

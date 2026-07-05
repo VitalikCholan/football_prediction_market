@@ -9,7 +9,7 @@ import {
   decodeAmmEventsFromLogs,
   EventOutcome,
   extractProgramDataPayloads,
-} from './events';
+} from './events.decoder';
 import { bigintSqrt, deriveReservesFromPrice } from './reserve-math';
 
 const PROGRAM = 'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY';

@@ -2,14 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { findMarketPda } from '@fpm/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../db/prisma.service';
-import { deriveReservesFromPrice } from './reserve-math';
+import { deriveReservesFromPrice } from '../chain/reserve-math';
 import type {
   IndexedEvent,
   LifecycleIndexedEvent,
   MarketCreatedIndexedEvent,
   RedeemIndexedEvent,
   TradeIndexedEvent,
-} from './indexer.types';
+} from '../chain/indexed-events.types';
 
 /**
  * Shared, idempotent event -> DB sink used by both the startup backfill and
