@@ -81,6 +81,7 @@ export class TxSimulationError extends Error {
  *
  * Fee escalation on retry is applied by the caller re-invoking sendAndConfirm
  * (idempotent actions make that safe).
+ * 
  */
 export class KitTxSender implements TxSender {
   private readonly clients: SolanaClients;

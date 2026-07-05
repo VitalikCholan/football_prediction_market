@@ -104,10 +104,29 @@ export class Scheduler {
       );
       if (sig !== null) this.fsm.markResolved(fixtureId);
     } catch (err) {
-      log.error({ fixtureId: fixtureId.toString(), err }, "resolve failed");
-      this.fsm.markFailed(fixtureId);
+      // Transient failures (TxLINE/RPC transport timeouts, dropped
+      // connections) must NOT strand resolution in the terminal `Failed`
+      // phase — the tracker stays in `Ended` so the next tick retries.
+      // Only after MAX_RESOLVE_ATTEMPTS consecutive failures do we give up
+      // (full-circle run 2026-07-04: two ConnectTimeoutErrors would have
+      // permanently stranded an otherwise-resolvable market).
+      if (tracker.resolveAttempts >= Scheduler.MAX_RESOLVE_ATTEMPTS) {
+        log.fatal(
+          { fixtureId: fixtureId.toString(), attempts: tracker.resolveAttempts, err },
+          "resolve failed permanently — attempts exhausted",
+        );
+        this.fsm.markFailed(fixtureId);
+      } else {
+        log.warn(
+          { fixtureId: fixtureId.toString(), attempts: tracker.resolveAttempts, err },
+          "resolve attempt failed — will retry next tick",
+        );
+      }
     }
   }
+
+  /** Give up on a fixture after this many failed resolve attempts. */
+  private static readonly MAX_RESOLVE_ATTEMPTS = 10;
 
   /** End-time-fallback path: recover the finalising Seq from the replay. */
   private async recoverEndSeq(fixtureId: bigint): Promise<number | undefined> {

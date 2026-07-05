@@ -19,7 +19,7 @@ import { KitTxSender } from "./solana/txSender.ts";
 import { TxlineAuth } from "./txline/auth.ts";
 import { ScoreStream, type EndedEvent } from "./txline/scoreStream.ts";
 import { ProofFetcher } from "./txline/proof.ts";
-import { StaticFixtureSource } from "./txline/fixtures.ts";
+import { StaticFixtureSource, parseFixturesEnv } from "./txline/fixtures.ts";
 import { HistoryClient } from "./txline/history.ts";
 import { LifecycleStateMachine } from "./lifecycle/stateMachine.ts";
 import { Scheduler } from "./lifecycle/scheduler.ts";
@@ -62,7 +62,22 @@ async function main(): Promise<void> {
   const auth = new TxlineAuth(config);
   const proofFetcher = new ProofFetcher(config, auth);
   const history = new HistoryClient(config, auth);
-  const fixtures = new StaticFixtureSource([]); // seed for demo / replace with live source
+  // Fixture seed: FIXTURES="fixtureId:kickoffTs:expectedEndTs[,...]" (unix
+  // seconds) for demo/ops runs; replace with a live source for production.
+  const seedFixtures = parseFixturesEnv(process.env.FIXTURES);
+  if (seedFixtures.length > 0) {
+    log.info(
+      {
+        fixtures: seedFixtures.map((f) => ({
+          fixtureId: f.fixtureId.toString(),
+          kickoffTs: f.kickoffTs,
+          expectedEndTs: f.expectedEndTs,
+        })),
+      },
+      "static fixture seed loaded from FIXTURES",
+    );
+  }
+  const fixtures = new StaticFixtureSource(seedFixtures);
   const fsm = new LifecycleStateMachine();
 
   // --- Lifecycle scheduler (activate/freeze/resolve at boundaries) ---

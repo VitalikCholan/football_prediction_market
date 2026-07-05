@@ -35,6 +35,31 @@ export class StaticFixtureSource implements FixtureSource {
 }
 
 /**
+ * Parse the FIXTURES env seed — `fixtureId:kickoffTs:expectedEndTs[,...]`
+ * (unix SECONDS) — so an ops/demo run can point the scheduler at specific
+ * on-chain markets without a live fixture source. Team names are cosmetic
+ * here (only ids and boundaries drive the lifecycle FSM).
+ */
+export function parseFixturesEnv(raw: string | undefined): Fixture[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [id, kickoff, end] = entry.split(":");
+      const kickoffTs = Number(kickoff);
+      const expectedEndTs = Number(end);
+      if (!id || !Number.isFinite(kickoffTs) || !Number.isFinite(expectedEndTs)) {
+        throw new Error(
+          `FIXTURES entry "${entry}" must be fixtureId:kickoffTs:expectedEndTs (unix seconds)`,
+        );
+      }
+      return { fixtureId: BigInt(id), homeTeam: "", awayTeam: "", kickoffTs, expectedEndTs };
+    });
+}
+
+/**
  * One row of GET /api/fixtures/snapshot (VERIFIED live 2026-07-04 — fields are
  * PascalCase: FixtureId, Participant1/2, StartTime (ms), Ts, Competition, ...).
  */
