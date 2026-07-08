@@ -47,6 +47,24 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v === "1" || v === "true"),
+
+  // Auto-seed: periodically poll the TxLINE fixtures snapshot and init_market
+  // for strictly-future fixtures that have no Market PDA yet. OFF by default
+  // (opt-in — sending init_market spends SOL for account rent + a USDT seed).
+  ENABLE_AUTO_SEED: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
+  // How often the auto-seed loop runs (ms). Default hourly — the TxLINE
+  // fixtures feed refreshes roughly hourly, so more often just wastes RPC.
+  AUTO_SEED_INTERVAL_MS: z.coerce.number().int().default(3_600_000),
+  // Hard per-run cap on how many new markets to seed (SOL-drain guard).
+  MAX_SEED_PER_RUN: z.coerce.number().int().default(5),
+  // Dry-run the seeder: list what it WOULD create and send NOTHING.
+  AUTO_SEED_DRY_RUN: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
 });
 
 export interface KeeperConfig {
@@ -67,6 +85,10 @@ export interface KeeperConfig {
   schedulerTickMs: number;
   dryRun: boolean;
   enableScoreStream: boolean;
+  enableAutoSeed: boolean;
+  autoSeedIntervalMs: number;
+  maxSeedPerRun: number;
+  autoSeedDryRun: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
@@ -101,5 +123,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     schedulerTickMs: p.SCHEDULER_TICK_MS,
     dryRun: Boolean(p.DRY_RUN),
     enableScoreStream: Boolean(p.ENABLE_SCORE_STREAM),
+    enableAutoSeed: Boolean(p.ENABLE_AUTO_SEED),
+    autoSeedIntervalMs: p.AUTO_SEED_INTERVAL_MS,
+    maxSeedPerRun: p.MAX_SEED_PER_RUN,
+    autoSeedDryRun: Boolean(p.AUTO_SEED_DRY_RUN),
   };
 }

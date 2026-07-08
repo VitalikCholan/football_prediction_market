@@ -23,11 +23,18 @@ import { StaticFixtureSource, parseFixturesEnv } from "./txline/fixtures.ts";
 import { HistoryClient } from "./txline/history.ts";
 import { LifecycleStateMachine } from "./lifecycle/stateMachine.ts";
 import { Scheduler } from "./lifecycle/scheduler.ts";
+import { MarketSeeder } from "./lifecycle/seeder.ts";
 import { runSmoke } from "./smoke.ts";
 import { runSmokeTxline } from "./smokeTxline.ts";
+import { runSmokeSeed } from "./smokeSeed.ts";
 import type { ActionContext } from "./actions/context.ts";
 
 async function main(): Promise<void> {
+  // Auto-seed dry-run: list what init_market WOULD create, send NOTHING.
+  if (process.argv.includes("--smoke-seed") || process.env.SMOKE_SEED === "1") {
+    await runSmokeSeed();
+    return;
+  }
   // TxLINE API smoke: live SSE + historical + stat-validation parser proof.
   if (process.argv.includes("--smoke-txline") || process.env.SMOKE_TXLINE === "1") {
     await runSmokeTxline();
@@ -85,6 +92,28 @@ async function main(): Promise<void> {
   scheduler.start();
   log.info({ tickMs: config.schedulerTickMs }, "lifecycle scheduler started");
 
+  // --- Auto-seed loop (opt-in): new upcoming markets self-appear on-chain ---
+  let seeder: MarketSeeder | undefined;
+  if (config.enableAutoSeed) {
+    seeder = new MarketSeeder(config, clients, signer, txSender, auth);
+    seeder.start();
+    log.info(
+      {
+        intervalMs: config.autoSeedIntervalMs,
+        maxPerRun: config.maxSeedPerRun,
+        dryRun: config.autoSeedDryRun,
+      },
+      config.autoSeedDryRun
+        ? "auto-seed loop started (DRY-RUN — will send nothing)"
+        : "auto-seed loop started",
+    );
+  } else {
+    log.info(
+      "ENABLE_AUTO_SEED off — auto-seed loop NOT started (no init_market spend). " +
+        "Set ENABLE_AUTO_SEED=1 to have upcoming markets self-appear.",
+    );
+  }
+
   // --- SSE score stream: match-end -> resolve ---
   if (config.enableScoreStream) {
     const stream = new ScoreStream(config, auth);
@@ -108,10 +137,16 @@ async function main(): Promise<void> {
     process.on("SIGINT", () => {
       stream.stop();
       scheduler.stop();
+      seeder?.stop();
       process.exit(0);
     });
   } else {
     log.warn("ENABLE_SCORE_STREAM off — SSE not started (scheduler still runs).");
+    process.on("SIGINT", () => {
+      scheduler.stop();
+      seeder?.stop();
+      process.exit(0);
+    });
   }
 }
 

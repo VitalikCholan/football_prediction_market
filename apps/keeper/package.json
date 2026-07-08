@@ -8,6 +8,7 @@
     "start": "node --experimental-transform-types --import ./hooks/register.mjs src/index.ts",
     "smoke": "node --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke",
     "smoke:txline": "node --env-file-if-exists=.env --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke-txline",
+    "smoke:seed": "node --env-file-if-exists=.env --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke-seed",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
