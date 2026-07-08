@@ -19,8 +19,12 @@ export function MarketHeader({ market }: { market: MarketDto }) {
         <Link href="/" className="link no-underline">
           Markets
         </Link>
-        <span>›</span>
-        <span>Group C</span>
+        {market.competition ? (
+          <>
+            <span>›</span>
+            <span>{market.competition}</span>
+          </>
+        ) : null}
         <span>›</span>
         <span className="text-ink">
           {market.homeTeam
