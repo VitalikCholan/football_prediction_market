@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "close:market": "tsx close-market.ts",
     "devnet:init": "tsx devnet-init.ts",
     "full-circle": "tsx full-circle.ts",
     "seed-markets": "tsx seed-markets.ts",
