@@ -65,7 +65,14 @@ export async function fetchMarkets(
       MarketListDto,
       opts,
     );
-    return { ...list, offline: false };
+    // Hide no-feed markets from listings: a fixture whose TxLINE feed never
+    // yields team names (homeTeam null) renders as "Fixture <id> · ? – ?" and
+    // carries no match context, so it's noise in the grid. The market still
+    // exists on-chain and is reachable by direct URL (fetchMarket) — this is a
+    // presentation filter, not a data one.
+    const markets = list.markets.filter((m) => m.homeTeam);
+    const hidden = list.markets.length - markets.length;
+    return { ...list, markets, total: list.total - hidden, offline: false };
   } catch {
     return { markets: [], total: 0, offline: true };
   }
