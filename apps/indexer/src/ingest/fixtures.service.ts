@@ -40,6 +40,12 @@ export interface FixtureTeams {
   competition?: string;
 }
 
+/** Competition metadata for a fixture, from the TxLINE fixtures snapshot. */
+export interface FixtureCompetition {
+  competition: string;
+  competitionId: number | null;
+}
+
 /** Live/final score pulled from the TxLINE scores snapshot. */
 export interface FixtureScore {
   homeScore: number;
@@ -73,6 +79,15 @@ export class FixturesService {
   /** fixtureId (string) -> resolved teams, or null for a known miss. */
   private readonly cache = new Map<string, FixtureTeams | null>();
 
+  /**
+   * fixtureId (string) -> competition, built ONCE from the fixtures snapshot
+   * window (which lists every current fixture with Competition + CompetitionId).
+   * Reused for every getCompetition call this run so we fetch the snapshot at
+   * most once. Undefined until the first fetch; a fixture absent from the window
+   * simply isn't a key (miss -> null).
+   */
+  private competitionByFixture?: Map<string, FixtureCompetition>;
+
   private jwt?: string;
   private jwtExpiresAt = 0; // epoch ms
 
@@ -104,6 +119,52 @@ export class FixturesService {
       this.logger.warn(`no team names found for fixture ${key}`);
     }
     return teams;
+  }
+
+  /**
+   * Resolve the competition ("World Cup", "Friendlies", ...) for a fixture from
+   * the TxLINE fixtures snapshot. The snapshot is a moving window listing every
+   * current fixture with both Competition + CompetitionId, so we fetch it ONCE
+   * and index it by fixture id, then serve every lookup from that map. Returns
+   * null on any miss or error — never throws.
+   */
+  async getCompetition(
+    fixtureId: bigint,
+  ): Promise<FixtureCompetition | null> {
+    const map = await this.competitionMap();
+    return map.get(fixtureId.toString()) ?? null;
+  }
+
+  /** Build (once) the fixtureId -> competition map from the snapshot window. */
+  private async competitionMap(): Promise<Map<string, FixtureCompetition>> {
+    if (this.competitionByFixture) return this.competitionByFixture;
+    const map = new Map<string, FixtureCompetition>();
+    if (!this.config.txlineApiToken) {
+      this.competitionByFixture = map;
+      return map;
+    }
+    try {
+      const headers = await this.authHeaders();
+      const url = `${this.config.txlineBaseUrl}/api/fixtures/snapshot`;
+      const json = await this.getJson(url, headers);
+      const rows = Array.isArray(json) ? json : [];
+      for (const row of rows) {
+        const o = row as Record<string, unknown>;
+        const id = this.str(o.FixtureId ?? o.fixtureId);
+        const competition = this.str(o.Competition ?? o.competition);
+        if (!id || !competition) continue;
+        const competitionId = this.num(o.CompetitionId ?? o.competitionId);
+        map.set(id, { competition, competitionId });
+      }
+      this.logger.log(`competition snapshot cached (${map.size} fixture(s))`);
+    } catch (err) {
+      this.logger.warn(
+        `competition snapshot fetch failed: ${(err as Error).message}`,
+      );
+      // Cache the empty map so we don't refetch on every poll this run.
+    }
+    this.competitionByFixture = map;
+    return map;
   }
 
   // ---- live score -----------------------------------------------------------

@@ -4,41 +4,100 @@ import { useMemo, useState } from "react";
 import type { MarketDto } from "@fpm/shared";
 import { MatchCard } from "@/components/market/match-card";
 
-type Filter = "all" | "group" | "knockout" | "live";
 type Sort = "volume" | "closing";
 
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "all", label: "All markets" },
-  { id: "group", label: "Group stage" },
-  { id: "knockout", label: "Knockout" },
-  { id: "live", label: "● Live now" },
-];
+// A filter is either the "all" catch-all, a state predicate (Live/Resolved),
+// or a competition-name match. Encoded as a tagged id so the pill list can be
+// built dynamically from the loaded markets.
+type Filter =
+  | { kind: "all" }
+  | { kind: "state"; state: MarketDto["state"] }
+  | { kind: "competition"; competition: string };
+
+interface Pill {
+  id: string;
+  label: string;
+  filter: Filter;
+}
+
+const ALL_PILL: Pill = { id: "all", label: "All markets", filter: { kind: "all" } };
+
+/** Build the pill list from the markets actually loaded (null-safe, no empties). */
+function buildPills(markets: MarketDto[]): Pill[] {
+  const pills: Pill[] = [ALL_PILL];
+
+  // One pill per distinct non-null competition, in first-seen order.
+  const seen = new Set<string>();
+  for (const m of markets) {
+    const c = m.competition;
+    if (!c || seen.has(c)) continue;
+    seen.add(c);
+    pills.push({
+      id: `competition:${c}`,
+      label: c,
+      filter: { kind: "competition", competition: c },
+    });
+  }
+
+  // State pills — only shown when at least one market qualifies.
+  if (markets.some((m) => m.state === "Trading")) {
+    pills.push({
+      id: "live",
+      label: "● Live now",
+      filter: { kind: "state", state: "Trading" },
+    });
+  }
+  if (markets.some((m) => m.state === "Resolved")) {
+    pills.push({
+      id: "resolved",
+      label: "Resolved",
+      filter: { kind: "state", state: "Resolved" },
+    });
+  }
+
+  return pills;
+}
+
+function matches(m: MarketDto, filter: Filter): boolean {
+  switch (filter.kind) {
+    case "all":
+      return true;
+    case "state":
+      return m.state === filter.state;
+    case "competition":
+      return m.competition === filter.competition;
+  }
+}
 
 export function MarketsBrowse({ markets }: { markets: MarketDto[] }) {
-  const [filter, setFilter] = useState<Filter>("all");
+  const [activeId, setActiveId] = useState<string>(ALL_PILL.id);
   const [sort, setSort] = useState<Sort>("volume");
 
+  const pills = useMemo(() => buildPills(markets), [markets]);
+
+  // Fall back to "all" if the active pill vanished (e.g. markets reloaded).
+  const active =
+    pills.find((p) => p.id === activeId)?.filter ?? ALL_PILL.filter;
+
   const shown = useMemo(() => {
-    let list = markets;
-    if (filter === "live") list = list.filter((m) => m.state === "Trading");
-    list = [...list].sort((a, b) =>
+    const list = markets.filter((m) => matches(m, active));
+    return [...list].sort((a, b) =>
       sort === "volume"
         ? Number(b.totalVolume) - Number(a.totalVolume)
         : (a.freezeTs ?? Infinity) - (b.freezeTs ?? Infinity),
     );
-    return list;
-  }, [markets, filter, sort]);
+  }, [markets, active, sort]);
 
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center gap-2">
-        {FILTERS.map((f) => (
+        {pills.map((p) => (
           <button
-            key={f.id}
-            className={`pill ${filter === f.id ? "pill-on" : ""}`}
-            onClick={() => setFilter(f.id)}
+            key={p.id}
+            className={`pill ${activeId === p.id ? "pill-on" : ""}`}
+            onClick={() => setActiveId(p.id)}
           >
-            {f.label}
+            {p.label}
           </button>
         ))}
         <div className="ml-auto">

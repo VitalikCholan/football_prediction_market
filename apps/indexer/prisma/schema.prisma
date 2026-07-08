@@ -39,6 +39,8 @@ model Market {
 
   homeTeam      String?  @map("home_team") // enrichment from TxLINE fixtures
   awayTeam      String?  @map("away_team")
+  competition   String?  @map("competition") // e.g. "World Cup" (TxLINE snapshot)
+  competitionId Int?     @map("competition_id")
   kickoffTs     DateTime? @map("kickoff_ts")
   freezeTs      DateTime? @map("freeze_ts")
 

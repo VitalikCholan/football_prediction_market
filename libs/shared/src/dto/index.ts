@@ -43,6 +43,9 @@ export const MarketDto = z.object({
   totalVolume: z.string(),
   homeTeam: z.string().nullable(),
   awayTeam: z.string().nullable(),
+  // Competition enrichment from the TxLINE fixtures snapshot (e.g. "World Cup").
+  competition: z.string().nullable(),
+  competitionId: z.number().int().nullable(),
   kickoffTs: z.number().int().nullable(),
   freezeTs: z.number().int().nullable(),
   // Live/final match score + status from the TxLINE scores snapshot.

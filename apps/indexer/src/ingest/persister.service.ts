@@ -44,30 +44,60 @@ export class EventPersister {
   async enrichTeams(id: string, fixtureId: bigint): Promise<void> {
     const row = await this.prisma.market.findUnique({
       where: { id },
-      select: { homeTeam: true },
+      select: { homeTeam: true, competition: true },
     });
-    if (row?.homeTeam) return; // already enriched
-    const teams = await this.fixtures.getTeams(fixtureId);
-    if (!teams) return;
-    await this.prisma.market.update({
-      where: { id },
-      data: { homeTeam: teams.home, awayTeam: teams.away },
-    });
+    if (row?.homeTeam && row?.competition) return; // already fully enriched
+    const data: Prisma.MarketUpdateInput = {};
+    if (!row?.homeTeam) {
+      const teams = await this.fixtures.getTeams(fixtureId);
+      if (teams) {
+        data.homeTeam = teams.home;
+        data.awayTeam = teams.away;
+      }
+    }
+    if (!row?.competition) {
+      const comp = await this.fixtures.getCompetition(fixtureId);
+      if (comp) {
+        data.competition = comp.competition;
+        data.competitionId = comp.competitionId;
+      }
+    }
+    if (Object.keys(data).length === 0) return;
+    await this.prisma.market.update({ where: { id }, data });
   }
 
-  /** Enrich every market row that still lacks team names (boot backfill). */
+  /**
+   * Enrich every market row that still lacks team names OR competition (boot
+   * backfill). One-shot: rows are only touched while a field is null.
+   */
   async enrichMissingTeams(): Promise<void> {
     const rows = await this.prisma.market.findMany({
-      where: { homeTeam: null },
-      select: { id: true, fixtureId: true },
+      where: { OR: [{ homeTeam: null }, { competition: null }] },
+      select: {
+        id: true,
+        fixtureId: true,
+        homeTeam: true,
+        competition: true,
+      },
     });
     for (const r of rows) {
-      const teams = await this.fixtures.getTeams(r.fixtureId);
-      if (!teams) continue;
-      await this.prisma.market.update({
-        where: { id: r.id },
-        data: { homeTeam: teams.home, awayTeam: teams.away },
-      });
+      const data: Prisma.MarketUpdateInput = {};
+      if (!r.homeTeam) {
+        const teams = await this.fixtures.getTeams(r.fixtureId);
+        if (teams) {
+          data.homeTeam = teams.home;
+          data.awayTeam = teams.away;
+        }
+      }
+      if (!r.competition) {
+        const comp = await this.fixtures.getCompetition(r.fixtureId);
+        if (comp) {
+          data.competition = comp.competition;
+          data.competitionId = comp.competitionId;
+        }
+      }
+      if (Object.keys(data).length === 0) continue;
+      await this.prisma.market.update({ where: { id: r.id }, data });
     }
   }
 

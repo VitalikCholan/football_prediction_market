@@ -73,6 +73,8 @@ export function toMarketDto(m: Market): MarketDto {
     totalVolume: m.totalVolume.toFixed(0),
     homeTeam: m.homeTeam,
     awayTeam: m.awayTeam,
+    competition: m.competition,
+    competitionId: m.competitionId,
     kickoffTs: m.kickoffTs ? Math.floor(m.kickoffTs.getTime() / 1000) : null,
     freezeTs: m.freezeTs ? Math.floor(m.freezeTs.getTime() / 1000) : null,
     homeScore: m.homeScore,
