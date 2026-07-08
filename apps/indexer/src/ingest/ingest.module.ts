@@ -1,5 +1,6 @@
 import { Module, type OnModuleInit } from '@nestjs/common';
 import { BackfillService } from './backfill.service';
+import { FixturesService } from './fixtures.service';
 import { LogParser } from './log-parser';
 import { EventPersister } from './persister.service';
 import { RpcService } from './rpc.service';
@@ -15,6 +16,7 @@ import { TailService } from './tail.service';
   providers: [
     RpcService,
     LogParser,
+    FixturesService,
     EventPersister,
     TailService,
     BackfillService,

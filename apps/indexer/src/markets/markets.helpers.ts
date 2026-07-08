@@ -75,6 +75,20 @@ export function toMarketDto(m: Market): MarketDto {
     awayTeam: m.awayTeam,
     kickoffTs: m.kickoffTs ? Math.floor(m.kickoffTs.getTime() / 1000) : null,
     freezeTs: m.freezeTs ? Math.floor(m.freezeTs.getTime() / 1000) : null,
+    homeScore: m.homeScore,
+    awayScore: m.awayScore,
+    statusId: m.statusId,
+    matchClock: m.matchClock,
+    gameState: m.gameState,
+    marketOdds:
+      m.oddsHomeBps != null && m.oddsDrawBps != null && m.oddsAwayBps != null
+        ? {
+            homeBps: m.oddsHomeBps,
+            drawBps: m.oddsDrawBps,
+            awayBps: m.oddsAwayBps,
+            ts: m.oddsTs != null ? Number(m.oddsTs) : null,
+          }
+        : null,
     outcome,
     updatedSlot: Number(m.updatedSlot),
     updatedAt: Math.floor(m.updatedAt.getTime() / 1000),

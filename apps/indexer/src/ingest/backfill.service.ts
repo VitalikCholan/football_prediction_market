@@ -83,6 +83,8 @@ export class BackfillService {
     const replayed = await this.tailOnce();
     this.logger.log(`Backfill replayed ${replayed} transaction(s)`);
     await this.refreshMarkets();
+    // Backfill team names for any pre-existing rows still missing them.
+    await this.persister.enrichMissingTeams();
   }
 
   /**
@@ -242,5 +244,19 @@ export class BackfillService {
     this.logger.log(
       `refreshed ${accounts.filter((a) => a.exists).length}/${rows.length} market account(s) from chain`,
     );
+
+    // Best-effort live score + reference odds enrichment. Runs after the
+    // authoritative state write so it sees fresh Trading/Resolved states. Never
+    // throws (internally resilient); a flaky TxLINE feed must not break the poll.
+    await this.persister.enrichScoreAndOdds();
+  }
+
+  /**
+   * Off-chain-only refresh for the no-new-tx poll path: live score + reference
+   * odds move even when no on-chain trade lands, so the tail refreshes them
+   * every cycle (throttled per fixture inside the persister). No RPC calls.
+   */
+  async refreshLiveData(): Promise<void> {
+    await this.persister.enrichScoreAndOdds();
   }
 }

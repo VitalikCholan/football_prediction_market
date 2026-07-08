@@ -20,6 +20,11 @@ const schema = z.object({
     .transform((v) => v === '1' || v === 'true'),
   // Poll interval for the signature tail (ms).
   INDEXER_POLL_MS: z.coerce.number().int().min(1000).default(15_000),
+
+  // TxLINE fixtures API (team-name enrichment). Devnet origin is the default;
+  // guest JWT is fetched at runtime, X-Api-Token comes from the env token.
+  TXLINE_BASE_URL: z.string().default('https://txline-dev.txodds.com'),
+  TXLINE_API_TOKEN: z.string().optional(),
 });
 
 export type IndexerConfig = {
@@ -28,6 +33,8 @@ export type IndexerConfig = {
   ammProgramId?: string;
   enabled: boolean;
   pollMs: number;
+  txlineBaseUrl: string;
+  txlineApiToken?: string;
 };
 
 export function loadIndexerConfig(env: NodeJS.ProcessEnv): IndexerConfig {
@@ -46,5 +53,7 @@ export function loadIndexerConfig(env: NodeJS.ProcessEnv): IndexerConfig {
     ammProgramId: parsed.AMM_PROGRAM_ID,
     enabled: Boolean(parsed.INDEXER_ENABLED),
     pollMs: parsed.INDEXER_POLL_MS,
+    txlineBaseUrl: parsed.TXLINE_BASE_URL,
+    txlineApiToken: parsed.TXLINE_API_TOKEN,
   };
 }

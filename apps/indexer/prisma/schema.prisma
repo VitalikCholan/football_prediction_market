@@ -42,6 +42,21 @@ model Market {
   kickoffTs     DateTime? @map("kickoff_ts")
   freezeTs      DateTime? @map("freeze_ts")
 
+  // Live-score enrichment from TxLINE scores snapshot (refreshed while Trading;
+  // captured once when Locked/Resolved). Null until the score feed has data.
+  homeScore     Int?     @map("home_score")
+  awayScore     Int?     @map("away_score")
+  statusId      Int?     @map("status_id") // TxLINE StatusId (100 = finalised)
+  matchClock    String?  @map("match_clock") // human clock, e.g. "77:26"
+  gameState     String?  @map("game_state") // TxLINE GameState string
+
+  // Reference market odds from TxLINE demargined StablePrice feed (implied
+  // probabilities in basis points). Null until the odds feed returns 1X2.
+  oddsHomeBps   Int?     @map("odds_home_bps")
+  oddsDrawBps   Int?     @map("odds_draw_bps")
+  oddsAwayBps   Int?     @map("odds_away_bps")
+  oddsTs        BigInt?  @map("odds_ts") // snapshot ts (ms epoch) of the odds row
+
   updatedSlot   BigInt   @map("updated_slot")
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
 

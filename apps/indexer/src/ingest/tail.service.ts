@@ -56,6 +56,11 @@ export class TailService implements OnModuleInit, OnModuleDestroy {
       if (processed > 0) {
         this.logger.log(`tail indexed ${processed} new transaction(s)`);
         await this.backfill.refreshMarkets();
+      } else {
+        // No new chain activity, but live score/odds still move — refresh them
+        // every poll (throttled per fixture inside the persister). Resilient:
+        // never throws, so a flaky TxLINE feed can't stall the tail.
+        await this.backfill.refreshLiveData();
       }
     } catch (err) {
       this.logger.error(`tail poll failed: ${(err as Error).message}`);

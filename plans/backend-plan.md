@@ -340,6 +340,8 @@ Two complementary sources, both via `@solana/kit` subscriptions (`createSolanaRp
 - **Resilience:** subscriptions auto-reconnect; on reconnect, run a bounded backfill to close the gap. Persist a `last_indexed_signature` / `last_indexed_slot` cursor.
 - **Price derivation:** `price(YES) = no_reserve / (yes_reserve + no_reserve)` (matches on-chain math §4.3) — compute in the parser so `PricePoint` stores the same value the contract uses (`last_price_bps` from the decoded account is the cross-check).
 
+- **Team-name enrichment** (`ingest/fixtures.service.ts`): the on-chain `Market` carries only `fixture_id`, so `markets.home_team`/`away_team` are populated from TxLINE. Source (authed, reuses the keeper's guest-JWT + `X-Api-Token` pattern; env `TXLINE_BASE_URL` / `TXLINE_API_TOKEN`, token only in the gitignored `.env`): (1) `GET /api/fixtures/snapshot` for currently-featured fixtures (direct `Participant1`/`Participant2` names), else (2) `GET /api/scores/historical/{id}` — the SSE `Action:"lineups"` frame carries `Lineups[0/1].preferredName` (`Lineups[0]` = `Participant1`; `Participant1IsHome` picks home). The public `/api/schedule` is not a usable no-auth fallback (401 without a token). Resilience: `getTeams` **never throws**, memoizes positive *and* negative results per fixture (the 15s poll never refetches), and is only called when `home_team` is null — enrichment is one-shot per market. Called from the persister on `MarketCreated` and via a boot backfill (`enrichMissingTeams`) for pre-existing rows. A fixture with no feed data (empty historical body) stays null and the web falls back to `"Fixture <id>"`.
+
 ### 3.3 Postgres schema
 
 ```sql
@@ -420,6 +422,12 @@ All responses validated/serialized through the `libs/shared` zod DTOs (§4).
 - `/history` `resolution` = candle interval (`1m|5m|1h|raw`); `from`/`to` = unix seconds. Shape targets TradingView `lightweight-charts` (array of `{ time, value }` or OHLC).
 - Add `GET /health` for Railway health checks.
 - Enable CORS for the web origin.
+
+**TxLINE enrichment on `MarketDto` (Phase 4, DONE 2026-07-07):** the indexer decorates each Market row with off-chain TxLINE data beside the on-chain state.
+- *Team names* — one-shot, static (`FixturesService.getTeams`, `/api/fixtures/snapshot` → `/api/scores/historical/{id}` lineups).
+- *Live score* — `getScore` reads `/api/scores/snapshot/{id}` (array of per-action rows; prefers the last `StatusId==100` finalised row). Goals from the `Stats` map (`"1"`=home, `"2"`=away goals) with `Score.*.Total.Goals` fallback → `home_score/away_score/status_id/match_clock/game_state`.
+- *Reference odds* — `getOdds` reads `/api/odds/snapshot/{id}` (demargined StablePrice); the freshest 1X2 row's aligned `PriceNames`/`Prices` → implied probabilities in bps → `odds_home_bps/odds_draw_bps/odds_away_bps/odds_ts`. Surfaced on the DTO as `marketOdds` (null unless a full 1X2 triple exists).
+- *Refresh cadence* — score/odds CHANGE for live markets, so they refetch every poll for `Trading` markets (throttled ≥30s/fixture inside the persister) and are captured once for `Locked`/`Resolved`; teams stay one-shot. Driven from the tail poll (`refreshMarkets` on new txs, `refreshLiveData` otherwise). All TxLINE calls never throw — a dead feed leaves columns untouched and never stalls indexing. Devnet note: the demo fixtures' odds feed returns `[]`, so `marketOdds` is null there; `18179549` resolves score 1–0, `statusId` 100.
 
 ---
 

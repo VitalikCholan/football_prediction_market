@@ -3,6 +3,7 @@ import { findMarketPda } from '@fpm/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../db/prisma.service';
 import { deriveReservesFromPrice } from '../chain/reserve-math';
+import { FixturesService } from './fixtures.service';
 import type {
   IndexedEvent,
   LifecycleIndexedEvent,
@@ -18,13 +19,117 @@ import type {
  * PricePoint/VolumePoint rows, which are only written when the Trade row is
  * first inserted).
  */
+/** Min gap between live score/odds refetches for one fixture (ms). */
+const SCORE_ODDS_THROTTLE_MS = 30_000;
+
 @Injectable()
 export class EventPersister {
   private readonly logger = new Logger(EventPersister.name);
   /** fixtureId (string) -> market PDA (base58). */
   private readonly pdaCache = new Map<string, string>();
+  /** fixtureId (string) -> last score/odds fetch epoch ms (throttle for live). */
+  private readonly lastScoreOddsFetch = new Map<string, number>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fixtures: FixturesService,
+  ) {}
+
+  /**
+   * Populate homeTeam/awayTeam from TxLINE fixtures — only when they are still
+   * null (one-shot per market; the FixturesService caches per fixture so the
+   * 15s poll never refetches). Resilient: getTeams never throws; on a miss the
+   * columns stay null and the web falls back to "Fixture <id>".
+   */
+  async enrichTeams(id: string, fixtureId: bigint): Promise<void> {
+    const row = await this.prisma.market.findUnique({
+      where: { id },
+      select: { homeTeam: true },
+    });
+    if (row?.homeTeam) return; // already enriched
+    const teams = await this.fixtures.getTeams(fixtureId);
+    if (!teams) return;
+    await this.prisma.market.update({
+      where: { id },
+      data: { homeTeam: teams.home, awayTeam: teams.away },
+    });
+  }
+
+  /** Enrich every market row that still lacks team names (boot backfill). */
+  async enrichMissingTeams(): Promise<void> {
+    const rows = await this.prisma.market.findMany({
+      where: { homeTeam: null },
+      select: { id: true, fixtureId: true },
+    });
+    for (const r of rows) {
+      const teams = await this.fixtures.getTeams(r.fixtureId);
+      if (!teams) continue;
+      await this.prisma.market.update({
+        where: { id: r.id },
+        data: { homeTeam: teams.home, awayTeam: teams.away },
+      });
+    }
+  }
+
+  /**
+   * Enrich live score + reference odds on the Market rows. Unlike team names
+   * (one-shot, static), score/odds CHANGE for live markets — so:
+   *
+   *   - `Trading` markets: refetch every poll cycle, but throttled per fixture
+   *     (>= SCORE_ODDS_THROTTLE_MS between fetches) so we never hammer TxLINE.
+   *   - `Locked` / `Resolved`: capture the FINAL score/odds once — skip once we
+   *     already have a home_score (final rows don't change). Odds usually
+   *     disappear after full-time, so a null odds result never clobbers a value
+   *     already captured.
+   *
+   * Fully resilient: getScore/getOdds never throw; a dead TxLINE call leaves the
+   * columns untouched and never breaks the poll cycle. This is invoked from the
+   * authoritative account refresh (once per poll, after on-chain state is set).
+   */
+  async enrichScoreAndOdds(): Promise<void> {
+    if (!this.fixtures) return;
+    const rows = await this.prisma.market.findMany({
+      select: { id: true, fixtureId: true, state: true, homeScore: true },
+    });
+    const now = Date.now();
+    for (const r of rows) {
+      const key = r.fixtureId.toString();
+      const isLive = r.state === 'Trading';
+      const isFinal = r.state === 'Locked' || r.state === 'Resolved';
+
+      if (isLive) {
+        const last = this.lastScoreOddsFetch.get(key) ?? 0;
+        if (now - last < SCORE_ODDS_THROTTLE_MS) continue; // throttle
+      } else if (isFinal) {
+        // One-shot final capture: if we already have a final score, done.
+        if (r.homeScore != null) continue;
+      } else {
+        continue; // Open / Closed: no live match feed worth polling
+      }
+      this.lastScoreOddsFetch.set(key, now);
+
+      const [score, odds] = await Promise.all([
+        this.fixtures.getScore(r.fixtureId),
+        this.fixtures.getOdds(r.fixtureId),
+      ]);
+      const data: Prisma.MarketUpdateInput = {};
+      if (score) {
+        data.homeScore = score.homeScore;
+        data.awayScore = score.awayScore;
+        data.statusId = score.statusId;
+        data.matchClock = score.clock;
+        data.gameState = score.gameState;
+      }
+      if (odds) {
+        data.oddsHomeBps = odds.homeBps;
+        data.oddsDrawBps = odds.drawBps;
+        data.oddsAwayBps = odds.awayBps;
+        data.oddsTs = odds.ts;
+      }
+      if (Object.keys(data).length === 0) continue; // nothing returned
+      await this.prisma.market.update({ where: { id: r.id }, data });
+    }
+  }
 
   async persist(events: IndexedEvent[]): Promise<void> {
     for (const ev of events) {
@@ -71,6 +176,8 @@ export class EventPersister {
       },
       update: {}, // authoritative state comes from the account refresh
     });
+    // Best-effort team-name enrichment (never throws; skips if already set).
+    await this.enrichTeams(id, ev.fixtureId);
     // Opening price point so charts start at market creation.
     const exists = await this.prisma.pricePoint.findFirst({
       where: { marketId: id, slot: ev.slot },

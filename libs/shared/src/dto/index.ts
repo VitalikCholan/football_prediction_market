@@ -45,6 +45,21 @@ export const MarketDto = z.object({
   awayTeam: z.string().nullable(),
   kickoffTs: z.number().int().nullable(),
   freezeTs: z.number().int().nullable(),
+  // Live/final match score + status from the TxLINE scores snapshot.
+  homeScore: z.number().int().nullable(),
+  awayScore: z.number().int().nullable(),
+  statusId: z.number().int().nullable(), // TxLINE StatusId (100 = finalised)
+  matchClock: z.string().nullable(), // human clock e.g. "77:26"
+  gameState: z.string().nullable(),
+  // Reference 1X2 odds (implied probabilities, bps) from the demargined feed.
+  marketOdds: z
+    .object({
+      homeBps: z.number().int(),
+      drawBps: z.number().int(),
+      awayBps: z.number().int(),
+      ts: z.number().int().nullable(), // odds snapshot ts (ms epoch)
+    })
+    .nullable(),
   outcome: Side.nullable(),
   updatedSlot: z.number().int(),
   updatedAt: z.number().int(), // unix seconds
