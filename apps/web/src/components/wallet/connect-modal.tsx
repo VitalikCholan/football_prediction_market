@@ -7,7 +7,6 @@ import { useDemoWallet } from "@/components/wallet/demo-wallet";
 import { useFaucet } from "@/components/wallet/use-faucet";
 import { explorerTx, CLUSTER } from "@/lib/solana";
 import { shortAddress, usd } from "@/lib/format";
-import { dataMode } from "@/lib/data";
 import { useUsdtBalance } from "@/lib/use-live";
 
 const KNOWN = [
@@ -37,7 +36,6 @@ export function ConnectModal({
   const [busy, setBusy] = useState<string | null>(null);
 
   const address = wallet.address ?? demo.address;
-  const live = dataMode === "live";
   const { balanceBase, refresh: refreshBalance } = useUsdtBalance(
     open ? address : null,
   );
@@ -67,25 +65,23 @@ export function ConnectModal({
             View ↗
           </a>
         </div>
-        {live ? (
-          <div className="box mt-2 flex items-center justify-between p-3">
-            <div>
-              <div className="th">USDT balance</div>
-              <div className="tnum text-[15px] font-700">
-                {balanceBase === null
-                  ? "…"
-                  : usd(Number(balanceBase) / 1_000_000)}
-              </div>
+        <div className="box mt-2 flex items-center justify-between p-3">
+          <div>
+            <div className="th">USDT balance</div>
+            <div className="tnum text-[15px] font-700">
+              {balanceBase === null
+                ? "…"
+                : usd(Number(balanceBase) / 1_000_000)}
             </div>
-            <button
-              className="btn px-3 py-1.5 text-[12px]"
-              disabled={faucet.busy}
-              onClick={faucet.run}
-            >
-              {faucet.busy ? "Requesting…" : "Get test USDT"}
-            </button>
           </div>
-        ) : null}
+          <button
+            className="btn px-3 py-1.5 text-[12px]"
+            disabled={faucet.busy}
+            onClick={faucet.run}
+          >
+            {faucet.busy ? "Requesting…" : "Get test USDT"}
+          </button>
+        </div>
         {faucet.error ? (
           <p className="mt-2 text-[12px] font-600 text-no-strong" role="alert">
             {faucet.error}

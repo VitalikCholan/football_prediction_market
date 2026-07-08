@@ -85,6 +85,69 @@ export function shortAddress(addr: string, lead = 3, tail = 3): string {
   return `${addr.slice(0, lead)}…${addr.slice(-tail)}`;
 }
 
+/**
+ * "1 – 0" score label from the two nullable scores. Returns null unless BOTH
+ * scores are present, so callers can hide the score UI entirely when the feed
+ * has no data (devnet fixtures with no TxLINE stream).
+ */
+export function scoreLabel(
+  homeScore: number | null | undefined,
+  awayScore: number | null | undefined,
+): string | null {
+  if (homeScore == null || awayScore == null) return null;
+  return `${homeScore} – ${awayScore}`;
+}
+
+/**
+ * Human status line for a match, derived from statusId / gameState / matchClock.
+ * "Full time" once finalised (statusId 100); otherwise gameState plus a clock
+ * suffix ("Live · 62'") when a clock is present. Returns null when there is no
+ * signal at all (so the caller can render a neutral fallback).
+ */
+export function matchStatusLine(
+  statusId: number | null | undefined,
+  gameState: string | null | undefined,
+  matchClock: string | null | undefined,
+): string | null {
+  if (statusId === 100) return "Full time";
+  const clock = clockLabel(matchClock);
+  const state = gameState?.trim() || null;
+  if (state && clock) return `${state} · ${clock}`;
+  if (state) return state;
+  if (clock) return clock;
+  return null;
+}
+
+/**
+ * TxLINE match clock ("77:26" mm:ss) → a compact "77'" minute label. Returns
+ * null for absent/garbage clocks so nothing renders when the feed is silent.
+ */
+export function clockLabel(
+  matchClock: string | null | undefined,
+): string | null {
+  if (!matchClock) return null;
+  const mins = matchClock.split(":")[0]?.trim();
+  if (!mins || !/^\d+$/.test(mins)) return null;
+  return `${Number(mins)}'`;
+}
+
+const kickoffFmt = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "UTC",
+  timeZoneName: "short",
+});
+
+/** "Jul 14, 3:00 PM UTC" kickoff label from a unix-seconds ts, or null. */
+export function kickoffLabel(
+  kickoffTs: number | null | undefined,
+): string | null {
+  if (kickoffTs == null || !Number.isFinite(kickoffTs)) return null;
+  return kickoffFmt.format(new Date(kickoffTs * 1000));
+}
+
 /** Relative "12s ago" / "3m ago" from a unix-seconds timestamp. */
 export function timeAgo(tsSeconds: number, now = Date.now()): string {
   const diff = Math.max(0, Math.floor(now / 1000) - tsSeconds);

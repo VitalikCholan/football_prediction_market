@@ -1,10 +1,18 @@
 import Link from "next/link";
 import type { MarketDto } from "@fpm/shared";
 import { StateBadge } from "@/components/market/state-badge";
+import { scoreLabel, matchStatusLine, kickoffLabel } from "@/lib/format";
 
 /** Match detail header (1c): breadcrumb, verified feed, title, score. */
 export function MarketHeader({ market }: { market: MarketDto }) {
-  const live = market.state === "Trading";
+  const score = scoreLabel(market.homeScore, market.awayScore);
+  // Status line only makes sense once a match has scores/finalised; fall back
+  // to a plain "Score · updates ~60s delay" caption while a match is in play.
+  const status =
+    matchStatusLine(market.statusId, market.gameState, market.matchClock) ??
+    "Score · updates ~60s delay";
+  const kickoff = kickoffLabel(market.kickoffTs);
+  const upcoming = market.state === "Open" || market.state === "Trading";
   return (
     <div className="flex flex-col gap-3">
       <nav className="flex items-center gap-1.5 text-[12px] text-muted">
@@ -39,15 +47,19 @@ export function MarketHeader({ market }: { market: MarketDto }) {
             )}
           </h1>
           <p className="text-[13px] text-muted">Who wins the match?</p>
+          {kickoff && upcoming && !score ? (
+            <p className="mt-0.5 text-[12px] text-muted">
+              Kickoff {kickoff} · settles at full time
+            </p>
+          ) : null}
         </div>
-        {live ? (
+        {score ? (
           <div className="text-right">
             <div className="tnum text-[26px] font-700 leading-none">
-              1 <span className="text-muted">–</span> 1
+              {market.homeScore}{" "}
+              <span className="text-muted">–</span> {market.awayScore}
             </div>
-            <div className="text-[11px] text-muted">
-              Score · updates ~60s delay
-            </div>
+            <div className="text-[11px] text-muted">{status}</div>
           </div>
         ) : null}
       </div>

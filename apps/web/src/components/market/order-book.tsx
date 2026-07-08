@@ -1,54 +1,82 @@
 import type { MarketDto } from "@fpm/shared";
-import { getOrderBook } from "@/lib/fixtures";
-import { shares } from "@/lib/format";
+import { quoteTrade } from "@/lib/quote";
+import { usd } from "@/lib/format";
 
-/** Order book ladder (1c sidebar). Asks above the last mark, bids below. */
+/**
+ * Liquidity depth (1c sidebar). A constant-product AMM has NO order book, so
+ * instead of a fake bid/ask ladder we show REAL price-impact derived from the
+ * market's on-chain reserves via the same CPMM math the trade ticket uses
+ * (`lib/quote.ts`): what it costs to buy a few share sizes on each side, and
+ * how far each fill pushes the price. Honest and fully on-chain-derived.
+ */
+const SCALE = 1_000_000;
+const SIZES = [100, 500, 1_000]; // shares
+
 export function OrderBook({ market }: { market: MarketDto }) {
-  const book = getOrderBook(market);
-  const maxShares = Math.max(
-    ...book.asks.map((l) => l.shares),
-    ...book.bids.map((l) => l.shares),
-  );
+  const yesReserve = Number(market.yesReserve) / SCALE;
+  const noReserve = Number(market.noReserve) / SCALE;
+  const feeBps = market.currentFeeBps ?? market.baseFeeBps ?? 0;
 
-  const row = (
-    price: number,
-    sz: number,
-    side: "ask" | "bid",
-  ) => (
-    <div
-      key={`${side}-${price}`}
-      className="relative flex items-center justify-between px-3 py-1 text-[12px]"
-    >
-      <span
-        className="absolute inset-y-0.5 right-0 rounded"
-        style={{
-          width: `${(sz / maxShares) * 100}%`,
-          background:
-            side === "ask" ? "var(--no-btn-bg)" : "var(--yes-btn-bg)",
-        }}
-        aria-hidden
-      />
-      <span
-        className={`tnum relative font-600 ${side === "ask" ? "neg" : "pos"}`}
-      >
-        {price}¢
-      </span>
-      <span className="tnum relative text-muted">{shares(sz)}</span>
+  const quoteRow = (side: "YES" | "NO", size: number) => {
+    const q = quoteTrade({
+      side,
+      action: "buy",
+      amount: size, // treat as whole-USDC notional at ~mark for a depth probe
+      yesPriceBps: market.yesPriceBps,
+      yesReserve,
+      noReserve,
+      feeBps,
+    });
+    return {
+      size,
+      avgCents: q.avgPriceCents,
+      impactPct: q.priceImpact * 100,
+    };
+  };
+
+  const side = (label: "YES" | "NO") => (
+    <div className="px-3 py-2">
+      <div className="mb-1 flex items-center justify-between">
+        <span
+          className={`chip ${label === "YES" ? "yc" : "nc"} px-2 py-0.5 text-[11px] font-600`}
+        >
+          {label}
+        </span>
+        <span className="th">avg · impact</span>
+      </div>
+      {SIZES.map((sz) => {
+        const r = quoteRow(label, sz);
+        return (
+          <div
+            key={`${label}-${sz}`}
+            className="flex items-center justify-between py-0.5 text-[12px]"
+          >
+            <span className="tnum text-muted">{usd(sz)}</span>
+            <span className="tnum">
+              <span className="font-600">{r.avgCents.toFixed(1)}¢</span>
+              <span
+                className={`ml-2 ${r.impactPct >= 1 ? "neg" : "text-muted"}`}
+              >
+                +{r.impactPct.toFixed(2)}%
+              </span>
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 
   return (
     <div className="scr overflow-hidden">
       <div className="flex items-center justify-between border-b border-box-border px-3 py-2">
-        <h3 className="text-[13px] font-700">Order book</h3>
-        <span className="th">price · shares</span>
+        <h3 className="text-[13px] font-700">Liquidity depth</h3>
+        <span className="th">on-chain reserves</span>
       </div>
-      <div className="py-1">{book.asks.map((l) => row(l.priceCents, l.shares, "ask"))}</div>
-      <div className="flex items-center justify-between border-y border-box-border bg-skeleton px-3 py-1.5">
-        <span className="th">Last</span>
-        <span className="tnum text-[13px] font-700">{book.lastCents}¢</span>
+      {side("YES")}
+      <div className="border-y border-box-border bg-skeleton px-3 py-1.5 text-[11px] text-muted">
+        Price impact to buy at each size · CPMM, no order book
       </div>
-      <div className="py-1">{book.bids.map((l) => row(l.priceCents, l.shares, "bid"))}</div>
+      {side("NO")}
     </div>
   );
 }

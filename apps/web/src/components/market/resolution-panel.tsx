@@ -5,18 +5,16 @@ import type { MarketDto } from "@fpm/shared";
 import { usd, shares as fmtShares } from "@/lib/format";
 import { explorerTx } from "@/lib/solana";
 import { prepareClaim } from "@/lib/tx";
-import { dataMode } from "@/lib/data";
 import { notifyTxConfirmed, useMarketPosition } from "@/lib/use-live";
 import { winningTokens } from "@/lib/positions";
 import { useTxAuthority } from "@/components/wallet/use-account";
 import { useToast } from "@/components/ui/toast";
-import { PORTFOLIO } from "@/lib/fixtures";
 
 /**
  * Resolution & payout (DESIGN_SPEC 1g). Shown when the market is Resolved:
  * green banner + final result, the user's winning position (REAL on-chain
- * `Position` decode in live mode), and Claim → redeem (1 token = 1 USDT).
- * Claim simulates first and only signs when the simulation passes.
+ * `Position` decode), and Claim → redeem (1 token = 1 USDT). Claim simulates
+ * first and only signs when the simulation passes.
  */
 export function ResolutionPanel({ market }: { market: MarketDto }) {
   const { address, getAuthority } = useTxAuthority();
@@ -25,7 +23,6 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const live = dataMode === "live";
   const { position, refresh } = useMarketPosition(market.id, address);
 
   const winnerSide = market.outcome ?? "YES";
@@ -33,26 +30,17 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
     (winnerSide === "YES" ? market.homeTeam : market.awayTeam) ??
     (winnerSide === "YES" ? "Yes" : "No");
 
-  // Live mode: authoritative on-chain balances. Demo mode: fixture numbers.
-  let heldShares: number;
-  let avgCents: number;
-  let alreadyRedeemed = false;
-  if (live) {
-    const tokens = position ? winningTokens(position) : 0n;
-    heldShares = Number(tokens) / 1_000_000;
-    const totalTokens = position
-      ? Number(position.yesTokens + position.noTokens)
+  // Authoritative on-chain balances from the decoded Position PDA.
+  const tokens = position ? winningTokens(position) : 0n;
+  const heldShares = Number(tokens) / 1_000_000;
+  const totalTokens = position
+    ? Number(position.yesTokens + position.noTokens)
+    : 0;
+  const avgCents =
+    position && totalTokens > 0
+      ? Math.round((Number(position.collateralBase) / totalTokens) * 100)
       : 0;
-    avgCents =
-      position && totalTokens > 0
-        ? Math.round((Number(position.collateralBase) / totalTokens) * 100)
-        : 0;
-    alreadyRedeemed = position?.redeemed ?? false;
-  } else {
-    const held = PORTFOLIO.positions.find((p) => p.marketId === market.id);
-    heldShares = held?.shares ?? 640;
-    avgCents = held?.avgCents ?? 63;
-  }
+  const alreadyRedeemed = position?.redeemed ?? false;
   const payout = heldShares * 1.0;
   const profit = payout - (heldShares * avgCents) / 100;
   const claimable = heldShares > 0 && !alreadyRedeemed && !claimed;
@@ -101,7 +89,7 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
           <span className="font-700">{winner}</span>
         </div>
 
-        {live && (!position || heldShares === 0) && !alreadyRedeemed ? (
+        {(!position || heldShares === 0) && !alreadyRedeemed ? (
           <div className="box p-3 text-[13px] text-muted">
             {address
               ? "No winning position to claim on this market."

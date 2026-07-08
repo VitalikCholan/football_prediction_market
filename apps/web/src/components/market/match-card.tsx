@@ -1,9 +1,13 @@
 import Link from "next/link";
 import type { MarketDto } from "@fpm/shared";
 import { StateBadge } from "@/components/market/state-badge";
-import { Sparkline } from "@/components/market/sparkline";
-import { volumeLabel, bpsToCents } from "@/lib/format";
-import { getFixtureHistory } from "@/lib/fixtures";
+import {
+  volumeLabel,
+  bpsToCents,
+  scoreLabel,
+  matchStatusLine,
+  kickoffLabel,
+} from "@/lib/format";
 
 /**
  * Match card (DESIGN_SPEC 1b). Our DTO is a 2-way YES/NO market per fixture;
@@ -33,7 +37,21 @@ export function MatchCard({
 }) {
   const { home, draw, away } = threeWayCents(market.yesPriceBps);
   const leader = home >= away ? "home" : "away";
-  const spark = getFixtureHistory(market.id).points.map((p) => p.yesPriceBps);
+
+  const score = scoreLabel(market.homeScore, market.awayScore);
+  const status = matchStatusLine(
+    market.statusId,
+    market.gameState,
+    market.matchClock,
+  );
+  const kickoff = kickoffLabel(market.kickoffTs);
+  // Card caption: prefer live status when we have a score, else kickoff time,
+  // else the generic settlement note.
+  const caption = score
+    ? `Match winner · ${status ?? "in play"}`
+    : kickoff && market.state === "Open"
+      ? `Match winner · kickoff ${kickoff}`
+      : "Match winner · settles at full time";
 
   const chip = (
     label: string,
@@ -54,7 +72,13 @@ export function MatchCard({
     >
       <div className="flex items-center justify-between">
         <StateBadge state={market.state} />
-        <span className="tag">World Cup</span>
+        {score ? (
+          <span className="tag tnum bg-skeleton text-ink" title={status ?? undefined}>
+            {score}
+          </span>
+        ) : (
+          <span className="tag">World Cup</span>
+        )}
       </div>
 
       <div>
@@ -68,9 +92,7 @@ export function MatchCard({
             <>Fixture {market.fixtureId}</>
           )}
         </div>
-        <div className="mt-0.5 text-[12px] text-muted">
-          Match winner · settles at full time
-        </div>
+        <div className="mt-0.5 text-[12px] text-muted">{caption}</div>
       </div>
 
       <div className="flex gap-2">
@@ -83,7 +105,6 @@ export function MatchCard({
         <span className="text-[12px] text-muted">
           Vol {volumeLabel(market.totalVolume)}
         </span>
-        <Sparkline points={spark} />
       </div>
     </Link>
   );

@@ -248,6 +248,17 @@ export const getHistory  = (id: string) => get(`/markets/${id}/history`, History
 - **On-chain reads where authority matters:** `Position` balances and the freshest `Market` reserves/`v_acc`/state come from RPC via the Kit client (`fetchMarket`/`fetchPosition` decoders from `@fpm/idl`), because the indexer can lag a block. The indexer is the source for **history/aggregates**; on-chain is the source for **user funds + current state**.
 - Reconcile: SSR from indexer for fast first paint → client hydrates + overrides with on-chain reads for balances/state.
 
+### 6.3 Mock inventory (live-only, no demo mode)
+
+The web app is **always live-backed** — there is no demo/fixture data mode. `lib/fixtures.ts` was **deleted**; `NEXT_PUBLIC_USE_LIVE_DATA` was **removed** (data layer is unconditionally the indexer + on-chain reads). `NEXT_PUBLIC_INDEXER_URL` is required; `.env.example` documents it.
+
+Every render path is one of:
+- **Real (indexer or on-chain):** market list/detail + history (indexer, `lib/data.ts`); market re-poll + USDT balance + `Position` decode + P/L (on-chain, `lib/use-live.ts` / `lib/positions.ts`); resolution/claim panel (real winning-side tokens × $1 from the decoded `Position`, wired to `redeem`); positions header (cash = real USDT balance, in-positions = Σ live mark value, no fabricated all-time-P/L stat); **order book → replaced with a real "Liquidity depth" readout** (price impact per size derived from on-chain reserves via the same CPMM math as `lib/quote.ts` — a CPMM has no order book, so no fake ladder); trade ticket + faucet (real devnet txs).
+- **Removed** (no on-chain source): the **Outright "World Cup Winner" card** (no such on-chain market) — deleted along with the `outright` browse filter; the `MatchCard` **sparkline** (no cheap per-card history) — dropped.
+- **Honest empty state** (indexer endpoints not built yet): **Leaderboard** ("Leaderboard coming soon") and **Live activity** ("No activity yet"). Real indexer-backed versions are a follow-up wave.
+
+**Graceful degradation:** with no fixture fallback, an unreachable indexer must never 500. `fetchMarkets` returns `{ markets: [], offline: true }` on failure → `/` renders "Markets unavailable — the indexer is offline"; `fetchMarket` returns `null` → detail page `notFound()` (404, not a crash); `fetchHistory` returns an empty series. `next build` and SSR both pass with the indexer down.
+
 ---
 
 ## 7. Dynamic fee / slippage UX (§4.4 story, §6.3)

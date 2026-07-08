@@ -3,7 +3,7 @@ import { MarketsBrowse } from "@/components/market/markets-browse";
 
 /** Markets browse (DESIGN_SPEC 1b). Server component fetches the list. */
 export default async function Home() {
-  const { markets } = await fetchMarkets();
+  const { markets, offline } = await fetchMarkets();
 
   return (
     <div>
@@ -14,7 +14,14 @@ export default async function Home() {
           Solana.
         </p>
       </div>
-      <MarketsBrowse markets={markets} />
+      {offline ? (
+        <div className="scr p-10 text-center text-[14px] text-muted">
+          Markets unavailable — the indexer is offline. Data will appear once
+          the indexer is reachable.
+        </div>
+      ) : (
+        <MarketsBrowse markets={markets} />
+      )}
     </div>
   );
 }

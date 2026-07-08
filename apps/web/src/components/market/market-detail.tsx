@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { MarketDto, HistoryPointDto } from "@fpm/shared";
-import { fetchHistory, dataMode } from "@/lib/data";
+import { fetchHistory } from "@/lib/data";
 import { useLiveMarket } from "@/lib/use-live";
 import { MarketHeader } from "@/components/market/market-header";
 import { OddsTape } from "@/components/market/odds-tape";
@@ -33,7 +33,6 @@ export function MarketDetail({
   );
   const points = freshPoints ?? initialPoints;
   useEffect(() => {
-    if (dataMode !== "live") return;
     fetchHistory(initialMarket.id, { fresh: true })
       .then((h) => setFreshPoints(h.points))
       .catch(() => {});

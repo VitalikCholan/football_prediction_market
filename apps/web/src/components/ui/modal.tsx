@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
+
+// SSR-safe "are we on the client yet" flag without setState-in-effect: the
+// server snapshot is false, the client snapshot true, so the first client
+// commit flips it. No subscription needed (mount status never changes after).
+const noopSubscribe = () => () => {};
 
 /** Minimal accessible modal: overlay + centered card, Escape to close. */
 export function Modal({
@@ -16,6 +22,13 @@ export function Modal({
   labelledBy?: string;
   width?: number;
 }) {
+  // Portal target — mounted client-side only (SSR-safe).
+  const mounted = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -25,9 +38,12 @@ export function Modal({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  // Portal to <body> so the fixed overlay centers against the viewport, not a
+  // transformed/blurred ancestor (e.g. the sticky nav creates a containing
+  // block that would otherwise pin `fixed` to the header).
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
       onClick={onClose}
@@ -43,6 +59,7 @@ export function Modal({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

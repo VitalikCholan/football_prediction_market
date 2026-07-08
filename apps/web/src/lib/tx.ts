@@ -18,9 +18,6 @@
  *     `session.sendTransaction` from framework-kit. The session comes from
  *     `@solana/client` (kit v5 types) while all builders here are kit v2 —
  *     the tx wire shape is identical, so the boundary is one structural cast.
- *
- * Demo data mode (no env): fixtures aren't real accounts, so the old stubbed
- * settle path is kept behind `dataMode === "demo"` — CI/Vercel-safe.
  */
 import {
   AccountRole,
@@ -63,7 +60,6 @@ import {
   type Side,
 } from "@fpm/shared";
 import { getRpc } from "@/lib/solana";
-import { dataMode } from "@/lib/data";
 
 /* ------------------------------------------------------------ constants */
 
@@ -372,12 +368,6 @@ export async function prepareTrade(
   auth: TxAuthority,
   params: TradeTxParams,
 ): Promise<PreparedTx> {
-  if (dataMode === "demo") {
-    return fakePrepared(
-      `${params.action}:${params.marketId}:${params.side}:${params.amountBase}`,
-      BigInt(params.minOutBase),
-    );
-  }
   const rpc = getRpc();
   const owner = authorityAddress(auth);
   const signer = authoritySigner(auth);
@@ -457,9 +447,6 @@ export async function prepareClaim(
   auth: TxAuthority,
   params: ClaimTxParams,
 ): Promise<PreparedTx> {
-  if (dataMode === "demo") {
-    return fakePrepared(`claim:${params.marketId}`, 0n);
-  }
   const owner = authorityAddress(auth);
   const signer = authoritySigner(auth);
   const market = address(params.marketId);
@@ -542,7 +529,6 @@ async function buildFaucetIx(user: Address, userUsdtAta: Address): Promise<Instr
  * (100 USDT). Same simulate → sign → confirm chain as trades.
  */
 export async function prepareFaucet(auth: TxAuthority): Promise<PreparedTx> {
-  if (dataMode === "demo") return fakePrepared("faucet", 100_000_000n);
   const rpc = getRpc();
   const owner = authorityAddress(auth);
 
@@ -582,32 +568,3 @@ export async function prepareFaucet(auth: TxAuthority): Promise<PreparedTx> {
   );
 }
 
-/* -------------------------------------------------------- demo-mode stubs */
-
-/** Deterministic fake signature so the fixture demo shows a plausible link. */
-function fakeSignature(seed: string): string {
-  const alphabet =
-    "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-  let s = "";
-  let x = Math.abs(h) || 1;
-  for (let i = 0; i < 88; i++) {
-    x = (x * 1103515245 + 12345) & 0x7fffffff;
-    s += alphabet[x % alphabet.length];
-  }
-  return s;
-}
-
-function fakePrepared(seed: string, outBase: bigint): PreparedTx {
-  return {
-    sim: { ok: true, computeUnits: 42_000, outBase },
-    send: () =>
-      new Promise((resolve) =>
-        setTimeout(
-          () => resolve({ signature: fakeSignature(seed), simulated: true }),
-          900,
-        ),
-      ),
-  };
-}

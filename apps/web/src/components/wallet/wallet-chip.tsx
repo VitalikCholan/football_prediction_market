@@ -19,16 +19,14 @@ export function WalletChip() {
 
   if (address) {
     return (
-      <button
-        className="pill tnum"
-        onClick={() => setOpen(true)}
-        title="Wallet"
-      >
-        <span aria-hidden>◎</span>
-        {shortAddress(address)}
-        {demo.address && !wallet.address ? (
-          <span className="text-muted">· demo</span>
-        ) : null}
+      <>
+        <button className="pill tnum" onClick={() => setOpen(true)} title="Wallet">
+          <span aria-hidden>◎</span>
+          {shortAddress(address)}
+          {demo.address && !wallet.address ? (
+            <span className="text-muted">· demo</span>
+          ) : null}
+        </button>
         <ConnectModal
           open={open}
           onClose={() => setOpen(false)}
@@ -37,7 +35,7 @@ export function WalletChip() {
             if (wallet.address) void wallet.disconnect();
           }}
         />
-      </button>
+      </>
     );
   }
 

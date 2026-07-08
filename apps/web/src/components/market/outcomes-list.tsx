@@ -1,7 +1,7 @@
 "use client";
 
 import type { MarketDto, Side } from "@fpm/shared";
-import { centsLabel, percentLabel, volumeLabel } from "@/lib/format";
+import { centsLabel, percentLabel, volumeLabel, bpsToCents } from "@/lib/format";
 import type { TradeIntent } from "@/components/trade/trade-panel";
 
 /**
@@ -17,6 +17,14 @@ export function OutcomesList({
 }) {
   const yesBps = market.yesPriceBps;
   const noBps = 10000 - yesBps;
+
+  // Reference "Market (StablePrice)" cents per outcome, ONLY when the demargined
+  // odds feed carries data (null on devnet today — the whole readout stays
+  // absent, no empty box). Home → YES, Away → NO.
+  const odds = market.marketOdds;
+  const marketCents: { YES: number; NO: number } | null = odds
+    ? { YES: bpsToCents(odds.homeBps), NO: bpsToCents(odds.awayBps) }
+    : null;
 
   const outcomes: { label: string; side: Side; bps: number }[] = [
     { label: market.homeTeam ?? "Home", side: "YES", bps: yesBps },
@@ -40,6 +48,11 @@ export function OutcomesList({
               {percentLabel(o.bps)} implied · Vol{" "}
               {volumeLabel(market.totalVolume)}
             </div>
+            {marketCents ? (
+              <div className="mt-0.5 text-[11px] text-muted">
+                Pool {bpsToCents(o.bps)}¢ · Market {marketCents[o.side]}¢
+              </div>
+            ) : null}
           </div>
           <div className="flex shrink-0 gap-2">
             <button

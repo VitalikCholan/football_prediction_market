@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import type { MarketDto, Side } from "@fpm/shared";
 import { quoteTrade } from "@/lib/quote";
 import { prepareTrade, type PreparedTx } from "@/lib/tx";
-import { dataMode } from "@/lib/data";
 import { notifyTxConfirmed, useUsdtBalance, useMarketPosition } from "@/lib/use-live";
 import { baseToUsdc, usd, shares as fmtShares, centsLabel } from "@/lib/format";
 import { explorerTx } from "@/lib/solana";
@@ -128,8 +127,7 @@ function TradeTicket({
 
   const tradable = market.state === "Trading" || market.state === "Open";
   const validAmount = Number(amount) > 0;
-  const live = dataMode === "live";
-  const showFaucet = live && address !== null && balanceBase === 0n;
+  const showFaucet = address !== null && balanceBase === 0n;
 
   /** Any input change invalidates the pending review. */
   function resetReview() {
@@ -288,8 +286,8 @@ function TradeTicket({
           </button>
         </div>
 
-        {/* Wallet balances (live mode) */}
-        {live && address ? (
+        {/* Wallet balances */}
+        {address ? (
           <div className="box flex items-center justify-between gap-2 p-3 text-[12px]">
             <div className="flex flex-col gap-0.5">
               <span className="text-muted">
