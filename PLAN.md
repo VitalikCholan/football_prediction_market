@@ -4,6 +4,14 @@
 **Deadline:** 2026-07-19
 **Grounded in:** `solana-dev` skill (Anchor + security references) and the architecture fixed in the prior Claude conversation.
 
+> **STATUS (2026-07-08): v0 SHIPPED.** Phases 0–5 are complete and proven end-to-end on devnet (program `H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY`): all 11 instructions live (53 Rust tests + a Surfpool suite vs the forked txoracle), keeper wired to the real TxLINE API with a full-circle proof-valid `resolve` on devnet, indexer serving REST, web on live indexer data. **`CLAUDE.md` is the source of truth for current implementation state**; this file is the original vision plus the forward roadmap. Corrections since the first draft:
+> - **Anchor 1.0.2** (anchor-lang 1.1.2), not 0.31.x — the §4.6 "decision needed" resolved to 1.0.
+> - The escrow stable mint is the **TxLINE devnet USDT** (classic SPL, decision D-6); "USDC" throughout this doc means that pinned mint.
+> - Keeper reliability shipped as a swappable **`TxSender`** (`KitTxSender`: simulate-before-send + RPC failover) — the concept the draft called "kitguard".
+> - Wallet is **framework-kit** (`@solana/react-hooks`, Wallet-Standard), not the legacy wallet-adapter.
+> - §9 milestones (0–5) are all done; §11 open items are all resolved (notes inline there).
+> - §10 (v0/v1/v2 roadmap — leverage-as-option, pm-AMM, LeveragePool solvency) remains the live plan for v1/v2; on-chain detail in `plans/anchor-programs-plan.md` §4.10.
+
 ---
 
 ## 1. Product in one paragraph
@@ -18,14 +26,14 @@ A constant-product (CPMM/FPMM) prediction market for World Cup matches. Each mat
 
 | Layer | Choice | Notes |
 |---|---|---|
-| On-chain program | **Rust + Anchor 0.31.x** | IDL + TS client out of the box |
+| On-chain program | **Rust + Anchor 1.0.2** (anchor-lang 1.1.2) | IDL + TS client out of the box; Pubkey-first CPI |
 | Contract tests | **LiteSVM** | in-process, no validator; Surfpool for integration vs devnet state |
-| Keeper | **TS + @solana/kit + kitguard** | resolve() reliability is the core value-add |
+| Keeper | **TS + @solana/kit + swappable `TxSender`** | resolve() reliability is the core value-add (simulate-before-send + RPC failover) |
 | Indexer / API | **TS + NestJS + PostgreSQL** | price/volume history for charts; structured modules/DI for REST API |
-| Frontend | **Next.js + Tailwind + shadcn/ui** | polished demo fast |
+| Frontend | **Next.js + Tailwind** (hand-rolled primitives) | polished demo fast; shadcn skipped per DESIGN_SPEC |
 | Charts | **lightweight-charts** (TradingView) | odds/price history |
 | Monorepo | **pnpm + Turborepo** | share IDL→TS types across packages |
-| Wallet | **Solana wallet adapter** (hackathon) | embedded (Privy/Dynamic/LazorKit) noted in README as consumer-onboarding direction |
+| Wallet | **framework-kit** (`@solana/react-hooks`, Wallet-Standard) | embedded (Privy/Dynamic/LazorKit) noted in README as consumer-onboarding direction |
 
 ---
 
@@ -187,7 +195,7 @@ The prior conversation locked **Anchor 0.31.x** (safe, well-documented — fine 
 - **Space must include the 8-byte discriminator**; `AccountInfo` deprecated in `Accounts` structs; prefer explicit `address` checks over deprecated `has_one`.
 - Toolchain: Rust 1.89+, Solana CLI 3.1.10+, Anchor 1.0.0, **Surfpool 1.1.2+**, LiteSVM as the default test template — aligns with our §7 testing tiers.
 
-**Recommendation:** stay on **0.31.x** for the deadline (max examples/stability), but write CPIs in the Pubkey-first style so a 1.0 bump is mechanical. Confirm choice before scaffolding.
+**Recommendation:** ~~stay on 0.31.x~~ — **RESOLVED: shipped on Anchor 1.0.2** (anchor-lang 1.1.2). All CPIs are Pubkey-first, space includes the 8-byte discriminator, `address =` used over `has_one`, `transfer_checked` only, accounts `Box`ed. The draft's "1.0 bump is mechanical" bet paid off.
 
 ---
 
@@ -316,6 +324,9 @@ Leverage is the strongest **novelty/commercial** story for judges, but it's a se
 ---
 
 ## 11. Open items to confirm with TxLINE docs (verify before coding `resolve`)
+
+> **RESOLVED (v0 shipped).** All four confirmed live; `resolve` is implemented and proof-valid on devnet. (1) `validate_stat` interface verified via `declare_program!(txline)` — the Merkle-proof `bool` return is read through `get_return_data`; only account touched is the `daily_scores_merkle_roots` PDA (seeds `["daily_scores_roots", epoch_day u16 LE]`, `epoch_day = ts_ms / 86_400_000`). (2) It is a **CPI return**, not a sysvar/account read — so `resolve` has zero token exposure. (3) TxL is Token-2022, but our escrow is classic-SPL USDT, so no transfer-fee/hook exposure on the vault. (4) Devnet soccer feed works (full-circle on fixture 18179549). Items kept below for historical context.
+
 1. Exact TxLINE program id + `validate_stat` instruction interface (accounts, proof format — Merkle path encoding).
 2. Whether the signed result is a sysvar/account read or a CPI return — drives `resolve` account layout.
 3. TxL Token-2022 extensions in play (transfer fee / hooks?) for any account we touch — affects §4.5.
