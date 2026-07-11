@@ -76,9 +76,9 @@ export function MatchCard({
           <span className="tag tnum bg-skeleton text-ink" title={status ?? undefined}>
             {score}
           </span>
-        ) : (
-          <span className="tag">World Cup</span>
-        )}
+        ) : market.competition ? (
+          <span className="tag">{market.competition}</span>
+        ) : null}
       </div>
 
       <div>
