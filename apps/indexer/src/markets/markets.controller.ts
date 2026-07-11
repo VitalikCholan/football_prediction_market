@@ -1,9 +1,8 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
+import type { AnyMarketDto, AnyMarketListDto } from '@fpm/shared';
 import {
   HistoryQueryDto,
   HistoryResponseDto,
-  MarketDto,
-  MarketListDto,
   MarketListQueryDto,
 } from './market.dto';
 import { MarketsService } from './markets.service';
@@ -12,15 +11,19 @@ import { MarketsService } from './markets.service';
 export class MarketsController {
   constructor(private readonly markets: MarketsService) {}
 
-  /** GET /markets?state=&limit=&offset= -> MarketListDto (MarketDto[] + total). */
+  /**
+   * GET /markets?state=&limit=&offset= -> AnyMarketListDto (mixed binary + 1X2
+   * markets + total). Binary entries stay byte-compatible with the legacy
+   * MarketListDto shape, so a binary-only consumer parses them unchanged.
+   */
   @Get()
-  list(@Query() query: MarketListQueryDto): Promise<MarketListDto> {
+  list(@Query() query: MarketListQueryDto): Promise<AnyMarketListDto> {
     return this.markets.list(query);
   }
 
-  /** GET /markets/:id -> MarketDto (accepts market PDA or fixture id). */
+  /** GET /markets/:id -> MarketDto | Market1x2Dto by kind (PDA or fixture id). */
   @Get(':id')
-  findOne(@Param('id') id: string): Promise<MarketDto> {
+  findOne(@Param('id') id: string): Promise<AnyMarketDto> {
     return this.markets.findOne(id);
   }
 

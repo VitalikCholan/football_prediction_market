@@ -2,14 +2,33 @@ import { Injectable, Logger } from '@nestjs/common';
 import { address, type Signature } from '@solana/kit';
 import {
   fetchAllMaybeMarket,
+  fetchAllMaybeMarket1x2,
   fetchAllMaybeMarketConfig,
   MarketState as OnchainMarketState,
   Outcome as OnchainOutcome,
+  Outcome1x2 as OnchainOutcome1x2,
 } from '@fpm/idl';
+import { prices1x2Bps } from '../chain/lmsr-price';
 import { PrismaService } from '../db/prisma.service';
 import { LogParser } from './log-parser';
 import { EventPersister } from './persister.service';
 import { RpcService } from './rpc.service';
+
+/** On-chain `Outcome1x2` enum -> DB `outcome_1x2` string (null = unresolved). */
+function onchainOutcome1x2Label(o: OnchainOutcome1x2): string | null {
+  switch (o) {
+    case OnchainOutcome1x2.Team1:
+      return 'Team1';
+    case OnchainOutcome1x2.Draw:
+      return 'Draw';
+    case OnchainOutcome1x2.Team2:
+      return 'Team2';
+    case OnchainOutcome1x2.Void:
+      return 'Void';
+    default:
+      return null; // Unset
+  }
+}
 
 interface SignatureInfo {
   signature: string;
@@ -181,24 +200,24 @@ export class BackfillService {
   // ---- authoritative account refresh -----------------------------------------
 
   /**
-   * Fetch every known Market account (and its MarketConfig) via the Codama
+   * Fetch every known market account (and its MarketConfig) via the Codama
    * decoders and overwrite the denormalized snapshot — the account, not the
-   * event stream, is the source of truth for reserves/supplies/state.
+   * event stream, is the source of truth for reserves/supplies/state. Binary
+   * (`marketKind = 0`) and 1X2 (`marketKind = 1`) rows use distinct account
+   * decoders; both share the MarketConfig base-fee lookup.
    */
   async refreshMarkets(): Promise<void> {
     const rows = await this.prisma.market.findMany({
-      select: { id: true, configId: true },
+      select: { id: true, configId: true, marketKind: true },
     });
     if (rows.length === 0) return;
 
-    const slot = await this.rpc.withRetry((rpc) => rpc.getSlot().send());
-    const accounts = await this.rpc.withRetry((rpc) =>
-      fetchAllMaybeMarket(
-        rpc,
-        rows.map((r) => address(r.id)),
-      ),
-    );
+    const binaryRows = rows.filter((r) => r.marketKind !== 1);
+    const oneX2Rows = rows.filter((r) => r.marketKind === 1);
 
+    const slot = await this.rpc.withRetry((rpc) => rpc.getSlot().send());
+
+    // Shared base-fee lookup: every market's MarketConfig, decoded once.
     const configIds = [...new Set(rows.map((r) => r.configId))];
     const configs = await this.rpc.withRetry((rpc) =>
       fetchAllMaybeMarketConfig(
@@ -213,8 +232,45 @@ export class BackfillService {
       }
     }
 
+    let refreshed = 0;
+    refreshed += await this.refreshBinaryMarkets(
+      binaryRows,
+      baseFeeByConfig,
+      BigInt(slot),
+    );
+    refreshed += await this.refreshMarkets1x2(
+      oneX2Rows,
+      baseFeeByConfig,
+      BigInt(slot),
+    );
+    this.logger.log(
+      `refreshed ${refreshed}/${rows.length} market account(s) from chain ` +
+        `(${binaryRows.length} binary, ${oneX2Rows.length} 1X2)`,
+    );
+
+    // Best-effort live score + reference odds enrichment. Runs after the
+    // authoritative state write so it sees fresh Trading/Resolved states. Never
+    // throws (internally resilient); a flaky TxLINE feed must not break the poll.
+    await this.persister.enrichScoreAndOdds();
+  }
+
+  /** Refresh binary Market accounts. Returns the count of existing accounts. */
+  private async refreshBinaryMarkets(
+    rows: { id: string }[],
+    baseFeeByConfig: Map<string, number>,
+    slot: bigint,
+  ): Promise<number> {
+    if (rows.length === 0) return 0;
+    const accounts = await this.rpc.withRetry((rpc) =>
+      fetchAllMaybeMarket(
+        rpc,
+        rows.map((r) => address(r.id)),
+      ),
+    );
+    let count = 0;
     for (const account of accounts) {
       if (!account.exists) continue;
+      count += 1;
       const m = account.data;
       await this.prisma.market.update({
         where: { id: account.address.toString() },
@@ -237,18 +293,64 @@ export class BackfillService {
             m.kickoffTs > 0n ? new Date(Number(m.kickoffTs) * 1000) : null,
           freezeTs:
             m.freezeTs > 0n ? new Date(Number(m.freezeTs) * 1000) : null,
-          updatedSlot: BigInt(slot),
+          updatedSlot: slot,
         },
       });
     }
-    this.logger.log(
-      `refreshed ${accounts.filter((a) => a.exists).length}/${rows.length} market account(s) from chain`,
-    );
+    return count;
+  }
 
-    // Best-effort live score + reference odds enrichment. Runs after the
-    // authoritative state write so it sees fresh Trading/Resolved states. Never
-    // throws (internally resilient); a flaky TxLINE feed must not break the poll.
-    await this.persister.enrichScoreAndOdds();
+  /**
+   * Refresh Market1x2 accounts: decode q/b/supply/state/outcome and compute the
+   * three softmax display prices from `q`+`b` (LMSR — see `chain/lmsr-price.ts`).
+   * Prices derive from `q` (INCLUDES the admin seed offset that sets the odds);
+   * `*Supply` DTO fields come from `supply` (USER tokens only). Returns the count
+   * of existing accounts.
+   */
+  private async refreshMarkets1x2(
+    rows: { id: string }[],
+    baseFeeByConfig: Map<string, number>,
+    slot: bigint,
+  ): Promise<number> {
+    if (rows.length === 0) return 0;
+    const accounts = await this.rpc.withRetry((rpc) =>
+      fetchAllMaybeMarket1x2(
+        rpc,
+        rows.map((r) => address(r.id)),
+      ),
+    );
+    let count = 0;
+    for (const account of accounts) {
+      if (!account.exists) continue;
+      count += 1;
+      const m = account.data;
+      const q: [bigint, bigint, bigint] = [m.q[0], m.q[1], m.q[2]];
+      const [p1, pd, p2] = prices1x2Bps(q, m.b);
+      await this.prisma.market.update({
+        where: { id: account.address.toString() },
+        data: {
+          configId: m.config.toString(),
+          marketKind: 1,
+          state: OnchainMarketState[m.state] ?? 'Open',
+          outcome1x2: onchainOutcome1x2Label(m.outcome),
+          oneXTeam1PriceBps: p1,
+          oneXDrawPriceBps: pd,
+          oneXTeam2PriceBps: p2,
+          oneXTeam1Supply: m.supply[0].toString(),
+          oneXDrawSupply: m.supply[1].toString(),
+          oneXTeam2Supply: m.supply[2].toString(),
+          oneXB: m.b.toString(),
+          yesPriceBps: p1, // legacy col mirrors the Team1 price for 1X2 rows
+          baseFeeBps: baseFeeByConfig.get(m.config.toString()) ?? null,
+          kickoffTs:
+            m.kickoffTs > 0n ? new Date(Number(m.kickoffTs) * 1000) : null,
+          freezeTs:
+            m.freezeTs > 0n ? new Date(Number(m.freezeTs) * 1000) : null,
+          updatedSlot: slot,
+        },
+      });
+    }
+    return count;
   }
 
   /**

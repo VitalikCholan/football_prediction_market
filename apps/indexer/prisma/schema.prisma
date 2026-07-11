@@ -20,18 +20,40 @@ datasource db {
 /// One row per on-chain Market PDA. Denormalized snapshot for fast list/detail
 /// reads; mirrors the fields the UI needs from the decoded Market account.
 model Market {
-  id            String   @id // market PDA (base58)
+  id            String   @id // market PDA (base58); Market1x2 PDA for 1X2 rows
   fixtureId     BigInt   @unique @map("fixture_id") // i64 TxLINE fixture id
   configId      String   @map("config_id") // MarketConfig PDA (base58)
   state         String // Open | Trading | Locked | Resolved | Closed
-  outcome       Int? // null until resolved (0 = NO, 1 = YES)
 
-  yesReserve    Decimal  @map("yes_reserve") @db.Decimal(40, 0)
-  noReserve     Decimal  @map("no_reserve") @db.Decimal(40, 0)
+  // Market-kind discriminator (C2): 0 = Binary (v0 YES/NO CPMM, default),
+  // 1 = OneXTwo (3-way 1X2 LMSR). Binary columns (yes*/no*) are meaningful only
+  // for kind 0; the oneX* columns below only for kind 1. The list query keys the
+  // union DTO on this field; existing binary rows default to 0 (back-compat).
+  marketKind    Int      @default(0) @map("market_kind")
+
+  outcome       Int? // binary: null until resolved (0 = NO, 1 = YES)
+
+  yesReserve    Decimal  @default(0) @map("yes_reserve") @db.Decimal(40, 0)
+  noReserve     Decimal  @default(0) @map("no_reserve") @db.Decimal(40, 0)
   yesSupply     Decimal  @default(0) @map("yes_supply") @db.Decimal(40, 0)
   noSupply      Decimal  @default(0) @map("no_supply") @db.Decimal(40, 0)
 
-  yesPriceBps   Int      @map("yes_price_bps") // 0..10000, mirrors last_price_bps
+  yesPriceBps   Int      @default(5000) @map("yes_price_bps") // 0..10000, mirrors last_price_bps
+
+  // ---- 1X2 (OneXTwo) columns — null/zero for binary rows (marketKind = 0) ---
+  // Softmax display prices per outcome (bps); the three sum to ~10_000.
+  oneXTeam1PriceBps Int?  @map("onex_team1_price_bps")
+  oneXDrawPriceBps  Int?  @map("onex_draw_price_bps")
+  oneXTeam2PriceBps Int?  @map("onex_team2_price_bps")
+  // Outstanding USER token supply per outcome (u64 base units; excludes seed).
+  oneXTeam1Supply   Decimal @default(0) @map("onex_team1_supply") @db.Decimal(40, 0)
+  oneXDrawSupply    Decimal @default(0) @map("onex_draw_supply") @db.Decimal(40, 0)
+  oneXTeam2Supply   Decimal @default(0) @map("onex_team2_supply") @db.Decimal(40, 0)
+  // LMSR liquidity parameter b (u64 base units).
+  oneXB             Decimal @default(0) @map("onex_b") @db.Decimal(40, 0)
+  // Resolved 1X2 outcome: null (unresolved) | "Team1" | "Draw" | "Team2" | "Void".
+  outcome1x2        String? @map("outcome_1x2")
+
   baseFeeBps    Int?     @map("base_fee_bps")
   currentFeeBps Int?     @map("current_fee_bps") // derived from v_acc if computed
 
