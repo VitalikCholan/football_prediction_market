@@ -1,5 +1,6 @@
 import { fetchMarkets } from "@/lib/data";
 import { MarketsBrowse } from "@/components/market/markets-browse";
+import { Card } from "@/components/ui/card";
 
 /** Markets browse (DESIGN_SPEC 1b). Server component fetches the list. */
 export default async function Home() {
@@ -15,10 +16,10 @@ export default async function Home() {
         </p>
       </div>
       {offline ? (
-        <div className="scr p-10 text-center text-[14px] text-muted">
+        <Card className="p-10 text-center text-[14px] text-muted">
           Markets unavailable — the indexer is offline. Data will appear once
           the indexer is reachable.
-        </div>
+        </Card>
       ) : (
         <MarketsBrowse markets={markets} />
       )}

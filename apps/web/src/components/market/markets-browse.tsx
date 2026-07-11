@@ -3,6 +3,15 @@
 import { useMemo, useState } from "react";
 import type { MarketDto } from "@fpm/shared";
 import { MatchCard } from "@/components/market/match-card";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Sort = "volume" | "closing";
 
@@ -92,30 +101,33 @@ export function MarketsBrowse({ markets }: { markets: MarketDto[] }) {
     <div>
       <div className="mb-5 flex flex-wrap items-center gap-2">
         {pills.map((p) => (
-          <button
+          <Button
             key={p.id}
-            className={`pill ${activeId === p.id ? "pill-on" : ""}`}
+            variant={activeId === p.id ? "pillOn" : "pill"}
+            size="pill"
             onClick={() => setActiveId(p.id)}
           >
             {p.label}
-          </button>
+          </Button>
         ))}
         <div className="ml-auto">
-          <button
-            className="pill"
-            onClick={() =>
-              setSort((s) => (s === "volume" ? "closing" : "volume"))
-            }
-          >
-            Sort: {sort === "volume" ? "Volume" : "Closing soon"} ▾
-          </button>
+          <Select value={sort} onValueChange={(v) => setSort(v as Sort)}>
+            <SelectTrigger aria-label="Sort markets">
+              <span className="text-muted">Sort:</span>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="volume">Volume</SelectItem>
+              <SelectItem value="closing">Closing soon</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       {shown.length === 0 ? (
-        <div className="scr p-10 text-center text-[14px] text-muted">
+        <Card className="p-10 text-center text-[14px] text-muted">
           No markets in this filter yet.
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((m, i) => (

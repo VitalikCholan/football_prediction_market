@@ -3,6 +3,8 @@
 import type { MarketDto, Side } from "@fpm/shared";
 import { centsLabel, percentLabel, volumeLabel, bpsToCents } from "@/lib/format";
 import type { TradeIntent } from "@/components/trade/trade-panel";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 /**
  * Outcomes list (1c). One row per side: name + implied % · volume, with
@@ -32,7 +34,7 @@ export function OutcomesList({
   ];
 
   return (
-    <div className="scr divide-y divide-box-border">
+    <Card className="divide-y divide-box-border">
       <div className="flex items-center justify-between px-4 py-3">
         <h2 className="text-[14px] font-700">Who wins the match?</h2>
         <span className="th">Buy</span>
@@ -55,14 +57,16 @@ export function OutcomesList({
             ) : null}
           </div>
           <div className="flex shrink-0 gap-2">
-            <button
-              className="btn btn-y px-3 py-2 text-[13px]"
+            <Button
+              variant="yes"
+              className="px-3 py-2 text-[13px]"
               onClick={() => onTrade({ side: o.side, action: "buy" })}
             >
               Yes {centsLabel(o.bps)}
-            </button>
-            <button
-              className="btn btn-n px-3 py-2 text-[13px]"
+            </Button>
+            <Button
+              variant="no"
+              className="px-3 py-2 text-[13px]"
               onClick={() =>
                 onTrade({
                   side: o.side === "YES" ? "NO" : "YES",
@@ -71,10 +75,10 @@ export function OutcomesList({
               }
             >
               No {centsLabel(10000 - o.bps)}
-            </button>
+            </Button>
           </div>
         </div>
       ))}
-    </div>
+    </Card>
   );
 }

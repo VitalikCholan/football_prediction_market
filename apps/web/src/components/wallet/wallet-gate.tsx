@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useAccountAddress } from "@/components/wallet/use-account";
 import { ConnectModal } from "@/components/wallet/connect-modal";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 /**
  * Wallet gate. Renders children when an address is present, otherwise a
@@ -23,16 +25,16 @@ export function WalletGate({
   if (address) return <>{children}</>;
 
   return (
-    <div className="scr flex flex-col items-center gap-3 p-10 text-center">
+    <Card className="flex flex-col items-center gap-3 p-10 text-center">
       <div className="text-2xl" aria-hidden>
         ◎
       </div>
       <h2 className="text-[17px] font-700">{title}</h2>
       <p className="max-w-sm text-[13px] text-muted">{hint}</p>
-      <button className="btn btn-p mt-1" onClick={() => setOpen(true)}>
+      <Button variant="primary" className="mt-1" onClick={() => setOpen(true)}>
         Connect wallet
-      </button>
+      </Button>
       <ConnectModal open={open} onClose={() => setOpen(false)} />
-    </div>
+    </Card>
   );
 }

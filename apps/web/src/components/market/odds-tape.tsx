@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { MarketDto } from "@fpm/shared";
 import { centsLabel, percentLabel } from "@/lib/format";
+import { Card } from "@/components/ui/card";
 
 /**
  * Odds tape (signature element). The two sides' live prices, tabular, that
@@ -24,8 +25,8 @@ export function OddsTape({ market }: { market: MarketDto }) {
   }, [yesBps]);
 
   return (
-    <div
-      className="scr grid grid-cols-2 divide-x divide-box-border"
+    <Card
+      className="grid grid-cols-2 divide-x divide-box-border"
       aria-live="polite"
     >
       <Side
@@ -42,7 +43,7 @@ export function OddsTape({ market }: { market: MarketDto }) {
         implied={percentLabel(noBps)}
         flash={flash === "down" ? "flash-down" : ""}
       />
-    </div>
+    </Card>
   );
 }
 

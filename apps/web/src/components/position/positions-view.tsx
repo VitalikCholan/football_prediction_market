@@ -14,6 +14,9 @@ import { explorerTx } from "@/lib/solana";
 import { useAccountAddress, useTxAuthority } from "@/components/wallet/use-account";
 import { useFaucet } from "@/components/wallet/use-faucet";
 import { useToast } from "@/components/ui/toast";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type Tab = "open" | "history" | "claims";
 
@@ -67,7 +70,7 @@ function LivePositions() {
   return (
     <div className="flex flex-col gap-5">
       {/* Value header */}
-      <div className="scr flex flex-wrap items-center gap-x-8 gap-y-4 p-5">
+      <Card className="flex flex-wrap items-center gap-x-8 gap-y-4 p-5">
         <div>
           <div className="th">Portfolio value</div>
           <div className="tnum text-[26px] font-700">
@@ -88,15 +91,11 @@ function LivePositions() {
           </div>
         </div>
         <div className="ml-auto flex gap-2">
-          <button
-            className="btn btn-p"
-            disabled={faucet.busy}
-            onClick={faucet.run}
-          >
+          <Button variant="primary" disabled={faucet.busy} onClick={faucet.run}>
             {faucet.busy ? "Requesting…" : "Get test USDT"}
-          </button>
+          </Button>
         </div>
-      </div>
+      </Card>
       {faucet.error ? (
         <p className="text-[12px] font-600 text-no-strong" role="alert">
           {faucet.error}
@@ -104,47 +103,45 @@ function LivePositions() {
       ) : null}
 
       {/* Tabs */}
-      <div className="flex gap-1.5">
-        {(["open", "history", "claims"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            className={`pill capitalize ${tab === t ? "pill-on" : ""}`}
-            onClick={() => setTab(t)}
-          >
-            {t === "open"
-              ? "Open positions"
-              : t === "claims"
-                ? `Claims${claims.length ? ` (${claims.length})` : ""}`
-                : t}
-          </button>
-        ))}
-      </div>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+        <TabsList variant="pills">
+          {(["open", "history", "claims"] as Tab[]).map((t) => (
+            <TabsTrigger key={t} value={t} variant="pills" className="capitalize">
+              {t === "open"
+                ? "Open positions"
+                : t === "claims"
+                  ? `Claims${claims.length ? ` (${claims.length})` : ""}`
+                  : t}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {tab === "open" ? (
         loading ? (
-          <div className="scr p-10 text-center text-[14px] text-muted">
+          <Card className="p-10 text-center text-[14px] text-muted">
             Loading on-chain positions…
-          </div>
+          </Card>
         ) : open.length === 0 ? (
-          <div className="scr p-10 text-center text-[14px] text-muted">
+          <Card className="p-10 text-center text-[14px] text-muted">
             No open positions. Buy YES or NO on a market to get started.
-          </div>
+          </Card>
         ) : (
           <LiveTable positions={open} />
         )
       ) : tab === "claims" ? (
         claims.length === 0 ? (
-          <div className="scr p-10 text-center text-[14px] text-muted">
+          <Card className="p-10 text-center text-[14px] text-muted">
             No claims available. Winning positions become claimable after a
             market resolves.
-          </div>
+          </Card>
         ) : (
           <ClaimsList positions={claims} onClaimed={refresh} />
         )
       ) : (
-        <div className="scr p-10 text-center text-[14px] text-muted">
+        <Card className="p-10 text-center text-[14px] text-muted">
           No settled trades yet. Your trade history will appear here.
-        </div>
+        </Card>
       )}
     </div>
   );
@@ -181,7 +178,7 @@ function LiveTable({ positions }: { positions: UserPosition[] }) {
   );
 
   return (
-    <div className="scr overflow-x-auto">
+    <Card className="overflow-x-auto">
       <table className="w-full min-w-[720px] border-collapse">
         <thead>
           <tr className="border-b border-box-border text-left">
@@ -250,7 +247,7 @@ function LiveTable({ positions }: { positions: UserPosition[] }) {
           })}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }
 
@@ -302,9 +299,9 @@ function ClaimsList({
       {positions.map((p) => {
         const payout = Number(winningTokens(p)) / SCALE;
         return (
-          <div
+          <Card
             key={p.market.id}
-            className="scr flex items-center justify-between p-4"
+            className="flex items-center justify-between p-4"
           >
             <div>
               <Link
@@ -318,14 +315,14 @@ function ClaimsList({
                 {fmtShares(payout)} winning shares · $1.00 / share
               </div>
             </div>
-            <button
-              className="btn btn-p"
+            <Button
+              variant="primary"
               disabled={busyId !== null}
               onClick={() => claim(p)}
             >
               {busyId === p.market.id ? "Redeeming…" : `Redeem ${usd(payout)}`}
-            </button>
-          </div>
+            </Button>
+          </Card>
         );
       })}
     </div>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { MarketDto } from "@fpm/shared";
 import { StateBadge } from "@/components/market/state-badge";
+import { Badge } from "@/components/ui/badge";
 import { scoreLabel, matchStatusLine, kickoffLabel } from "@/lib/format";
 
 /** Match detail header (1c): breadcrumb, verified feed, title, score. */
@@ -16,7 +17,7 @@ export function MarketHeader({ market }: { market: MarketDto }) {
   return (
     <div className="flex flex-col gap-3">
       <nav className="flex items-center gap-1.5 text-[12px] text-muted">
-        <Link href="/" className="link no-underline">
+        <Link href="/" className="text-link no-underline hover:underline">
           Markets
         </Link>
         {market.competition ? (
@@ -35,7 +36,7 @@ export function MarketHeader({ market }: { market: MarketDto }) {
 
       <div className="flex flex-wrap items-center gap-2">
         <StateBadge state={market.state} />
-        <span className="verified">◆ TxLINE verified feed</span>
+        <Badge variant="verified">◆ TxLINE verified feed</Badge>
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3">

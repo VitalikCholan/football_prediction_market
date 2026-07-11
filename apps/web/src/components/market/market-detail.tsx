@@ -12,6 +12,7 @@ import { OrderBook } from "@/components/market/order-book";
 import { MarketInfo } from "@/components/market/market-info";
 import { ResolutionPanel } from "@/components/market/resolution-panel";
 import { TradePanel, type TradeIntent } from "@/components/trade/trade-panel";
+import { Button } from "@/components/ui/button";
 
 /**
  * Match detail (DESIGN_SPEC 1c) client shell. Server passes the SSR market +
@@ -72,12 +73,12 @@ export function MarketDetail({
             <OutcomesList market={market} onTrade={setIntent} />
           </div>
           <div className="flex flex-col gap-5">
-            <button
-              className="btn btn-p"
+            <Button
+              variant="primary"
               onClick={() => setIntent({ side: "YES", action: "buy" })}
             >
               Trade this market
-            </button>
+            </Button>
             <OrderBook market={market} />
             <MarketInfo market={market} />
           </div>

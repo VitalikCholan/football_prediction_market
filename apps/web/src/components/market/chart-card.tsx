@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import type { HistoryPointDto } from "@fpm/shared";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const PriceChart = dynamic(() => import("@/components/market/price-chart"), {
   ssr: false,
-  loading: () => (
-    <div className="h-[320px] w-full animate-pulse rounded-lg bg-skeleton" />
-  ),
+  loading: () => <Skeleton className="h-[320px] w-full rounded-lg" />,
 });
 
 type TF = "1H" | "Match" | "All";
@@ -34,18 +35,20 @@ export function ChartCard({
   }, [points, tf]);
 
   return (
-    <div className="scr p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-[14px] font-700">Price history</h2>
         <div className="flex gap-1.5">
           {(["1H", "Match", "All"] as TF[]).map((t) => (
-            <button
+            <Button
               key={t}
-              className={`pill px-3 py-1 text-[12px] ${tf === t ? "pill-on" : ""}`}
+              variant={tf === t ? "pillOn" : "pill"}
+              size="pill"
+              className="px-3 py-1 text-[12px]"
               onClick={() => setTf(t)}
             >
               {t}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -54,6 +57,6 @@ export function ChartCard({
         homeLabel={homeLabel}
         awayLabel={awayLabel}
       />
-    </div>
+    </Card>
   );
 }

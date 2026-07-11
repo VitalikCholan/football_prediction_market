@@ -9,6 +9,10 @@ import { notifyTxConfirmed, useMarketPosition } from "@/lib/use-live";
 import { winningTokens } from "@/lib/positions";
 import { useTxAuthority } from "@/components/wallet/use-account";
 import { useToast } from "@/components/ui/toast";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 /**
  * Resolution & payout (DESIGN_SPEC 1g). Shown when the market is Resolved:
@@ -77,7 +81,7 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
   }
 
   return (
-    <div className="scr overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="flex items-center gap-2 bg-verified-bg px-4 py-3 text-verified-fg">
         <span className="dot" style={{ background: "var(--verified-fg)" }} />
         <span className="text-[14px] font-700">Resolved · {winner} won</span>
@@ -106,7 +110,7 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
             />
             <Row k="Avg cost" v={avgCents > 0 ? `${avgCents}¢` : "—"} />
             <Row k="Resolved at" v="$1.00 / share" />
-            <div className="my-1 h-px bg-box-border" />
+            <Separator className="my-1" />
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-600">Payout</span>
               <span className="tnum text-[17px] font-700 text-yes-strong">
@@ -117,8 +121,9 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
           </div>
         )}
 
-        <button
-          className="btn btn-p w-full"
+        <Button
+          variant="primary"
+          className="w-full"
           disabled={!claimable || busy || !address}
           onClick={claim}
         >
@@ -131,7 +136,7 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
                 : !claimable
                   ? "Nothing to claim"
                   : `Claim ${usd(payout)}`}
-        </button>
+        </Button>
 
         {error ? (
           <p className="text-[12px] font-600 text-no-strong" role="alert">
@@ -140,9 +145,9 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
         ) : null}
 
         <div className="flex items-center justify-between text-[12px]">
-          <span className="verified">◆ Resolved via TxLINE oracle</span>
+          <Badge variant="verified">◆ Resolved via TxLINE oracle</Badge>
           <a
-            className="link no-underline"
+            className="text-link no-underline hover:underline"
             href={explorerTx(market.id)}
             target="_blank"
             rel="noreferrer"
@@ -151,7 +156,7 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
           </a>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
