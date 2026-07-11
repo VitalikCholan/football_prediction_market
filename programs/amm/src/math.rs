@@ -101,6 +101,18 @@ pub fn assert_solvent(
     Ok(())
 }
 
+/// D-2 solvency invariant generalized to N outcomes (SPEC §3.1):
+/// `vault_usdc >= max_i(supplies[i])` — exactly one outcome wins and each
+/// winning token redeems for 1 USDT, so the vault must cover the largest
+/// outstanding supply. Re-checked after every mutating 1X2 instruction.
+pub fn assert_solvent_multi(vault_usdc: u64, supplies: &[u64]) -> Result<(), AmmError> {
+    let max_supply = supplies.iter().copied().max().unwrap_or(0);
+    if vault_usdc < max_supply {
+        return Err(AmmError::SolvencyViolation);
+    }
+    Ok(())
+}
+
 /// The constant product `k = x * y` in u128, for invariant assertions/tests.
 pub fn k_of(x: u64, y: u64) -> Result<u128, AmmError> {
     (x as u128).checked_mul(y as u128).ok_or(AmmError::MathOverflow)

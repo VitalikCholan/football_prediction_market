@@ -6,9 +6,12 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './buy1x2Position';
 export * from './global';
+export * from './initMarket1x2Market';
 export * from './market';
 export * from './marketConfig';
+export * from './openPosition1x2Position';
 export * from './openPositionPosition';
 export * from './position';
 export * from './vault';

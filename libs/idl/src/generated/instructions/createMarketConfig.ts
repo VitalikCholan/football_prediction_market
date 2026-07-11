@@ -6,10 +6,11 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { combineCodec, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getI32Decoder, getI32Encoder, getI64Decoder, getI64Encoder, getStructDecoder, getStructEncoder, getU16Decoder, getU16Encoder, getU32Decoder, getU32Encoder, getU64Decoder, getU64Encoder, getU8Decoder, getU8Encoder, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlyUint8Array, type TransactionSigner, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
+import { combineCodec, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU16Decoder, getU16Encoder, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlyUint8Array, type TransactionSigner, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
 import { findGlobalPda, findMarketConfigPda } from '../pdas';
 import { AMM_PROGRAM_ADDRESS } from '../programs';
 import { expectSome, getAccountMetaFactory, type ResolvedAccount } from '../shared';
+import { getFeeParamsArgsDecoder, getFeeParamsArgsEncoder, type FeeParamsArgs, type FeeParamsArgsArgs } from '../types';
 
 export const CREATE_MARKET_CONFIG_DISCRIMINATOR = new Uint8Array([33, 94, 138, 19, 111, 112, 91, 111]);
 
@@ -18,16 +19,16 @@ export function getCreateMarketConfigDiscriminatorBytes() { return fixEncoderSiz
 export type CreateMarketConfigInstruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountAuthority extends string | AccountMeta<string> = string, TAccountGlobal extends string | AccountMeta<string> = string, TAccountMarketConfig extends string | AccountMeta<string> = string, TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
 Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountAuthority extends string ? WritableSignerAccount<TAccountAuthority> & AccountSignerMeta<TAccountAuthority> : TAccountAuthority, TAccountGlobal extends string ? ReadonlyAccount<TAccountGlobal> : TAccountGlobal, TAccountMarketConfig extends string ? WritableAccount<TAccountMarketConfig> : TAccountMarketConfig, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
 
-export type CreateMarketConfigInstructionData = { discriminator: ReadonlyUint8Array; configId: number; baseFeeBps: number; maxFeeBps: number; vfcNum: number; filterPeriod: number; decayPeriod: number; reductionBps: number; maxVAcc: bigint; resolutionGraceSecs: bigint; resolutionThreshold: number; resolutionComparison: number; statKeyA: number; statKeyB: number; statOp: number;  };
+export type CreateMarketConfigInstructionData = { discriminator: ReadonlyUint8Array; configId: number; params: FeeParamsArgs;  };
 
-export type CreateMarketConfigInstructionDataArgs = { configId: number; baseFeeBps: number; maxFeeBps: number; vfcNum: number; filterPeriod: number; decayPeriod: number; reductionBps: number; maxVAcc: number | bigint; resolutionGraceSecs: number | bigint; resolutionThreshold: number; resolutionComparison: number; statKeyA: number; statKeyB: number; statOp: number;  };
+export type CreateMarketConfigInstructionDataArgs = { configId: number; params: FeeParamsArgsArgs;  };
 
 export function getCreateMarketConfigInstructionDataEncoder(): FixedSizeEncoder<CreateMarketConfigInstructionDataArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['configId', getU16Encoder()], ['baseFeeBps', getU16Encoder()], ['maxFeeBps', getU16Encoder()], ['vfcNum', getU32Encoder()], ['filterPeriod', getU32Encoder()], ['decayPeriod', getU32Encoder()], ['reductionBps', getU16Encoder()], ['maxVAcc', getU64Encoder()], ['resolutionGraceSecs', getI64Encoder()], ['resolutionThreshold', getI32Encoder()], ['resolutionComparison', getU8Encoder()], ['statKeyA', getU32Encoder()], ['statKeyB', getU32Encoder()], ['statOp', getU8Encoder()]]), (value) => ({ ...value, discriminator: CREATE_MARKET_CONFIG_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['configId', getU16Encoder()], ['params', getFeeParamsArgsEncoder()]]), (value) => ({ ...value, discriminator: CREATE_MARKET_CONFIG_DISCRIMINATOR }));
 }
 
 export function getCreateMarketConfigInstructionDataDecoder(): FixedSizeDecoder<CreateMarketConfigInstructionData> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['configId', getU16Decoder()], ['baseFeeBps', getU16Decoder()], ['maxFeeBps', getU16Decoder()], ['vfcNum', getU32Decoder()], ['filterPeriod', getU32Decoder()], ['decayPeriod', getU32Decoder()], ['reductionBps', getU16Decoder()], ['maxVAcc', getU64Decoder()], ['resolutionGraceSecs', getI64Decoder()], ['resolutionThreshold', getI32Decoder()], ['resolutionComparison', getU8Decoder()], ['statKeyA', getU32Decoder()], ['statKeyB', getU32Decoder()], ['statOp', getU8Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['configId', getU16Decoder()], ['params', getFeeParamsArgsDecoder()]]);
 }
 
 export function getCreateMarketConfigInstructionDataCodec(): FixedSizeCodec<CreateMarketConfigInstructionDataArgs, CreateMarketConfigInstructionData> {
@@ -40,19 +41,7 @@ global?: Address<TAccountGlobal>;
 marketConfig?: Address<TAccountMarketConfig>;
 systemProgram?: Address<TAccountSystemProgram>;
 configId: CreateMarketConfigInstructionDataArgs["configId"];
-baseFeeBps: CreateMarketConfigInstructionDataArgs["baseFeeBps"];
-maxFeeBps: CreateMarketConfigInstructionDataArgs["maxFeeBps"];
-vfcNum: CreateMarketConfigInstructionDataArgs["vfcNum"];
-filterPeriod: CreateMarketConfigInstructionDataArgs["filterPeriod"];
-decayPeriod: CreateMarketConfigInstructionDataArgs["decayPeriod"];
-reductionBps: CreateMarketConfigInstructionDataArgs["reductionBps"];
-maxVAcc: CreateMarketConfigInstructionDataArgs["maxVAcc"];
-resolutionGraceSecs: CreateMarketConfigInstructionDataArgs["resolutionGraceSecs"];
-resolutionThreshold: CreateMarketConfigInstructionDataArgs["resolutionThreshold"];
-resolutionComparison: CreateMarketConfigInstructionDataArgs["resolutionComparison"];
-statKeyA: CreateMarketConfigInstructionDataArgs["statKeyA"];
-statKeyB: CreateMarketConfigInstructionDataArgs["statKeyB"];
-statOp: CreateMarketConfigInstructionDataArgs["statOp"];
+params: CreateMarketConfigInstructionDataArgs["params"];
 }
 
 export async function getCreateMarketConfigInstructionAsync<TAccountAuthority extends string, TAccountGlobal extends string, TAccountMarketConfig extends string, TAccountSystemProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: CreateMarketConfigAsyncInput<TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress } ): Promise<CreateMarketConfigInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountSystemProgram>> {
@@ -89,19 +78,7 @@ global: Address<TAccountGlobal>;
 marketConfig: Address<TAccountMarketConfig>;
 systemProgram?: Address<TAccountSystemProgram>;
 configId: CreateMarketConfigInstructionDataArgs["configId"];
-baseFeeBps: CreateMarketConfigInstructionDataArgs["baseFeeBps"];
-maxFeeBps: CreateMarketConfigInstructionDataArgs["maxFeeBps"];
-vfcNum: CreateMarketConfigInstructionDataArgs["vfcNum"];
-filterPeriod: CreateMarketConfigInstructionDataArgs["filterPeriod"];
-decayPeriod: CreateMarketConfigInstructionDataArgs["decayPeriod"];
-reductionBps: CreateMarketConfigInstructionDataArgs["reductionBps"];
-maxVAcc: CreateMarketConfigInstructionDataArgs["maxVAcc"];
-resolutionGraceSecs: CreateMarketConfigInstructionDataArgs["resolutionGraceSecs"];
-resolutionThreshold: CreateMarketConfigInstructionDataArgs["resolutionThreshold"];
-resolutionComparison: CreateMarketConfigInstructionDataArgs["resolutionComparison"];
-statKeyA: CreateMarketConfigInstructionDataArgs["statKeyA"];
-statKeyB: CreateMarketConfigInstructionDataArgs["statKeyB"];
-statOp: CreateMarketConfigInstructionDataArgs["statOp"];
+params: CreateMarketConfigInstructionDataArgs["params"];
 }
 
 export function getCreateMarketConfigInstruction<TAccountAuthority extends string, TAccountGlobal extends string, TAccountMarketConfig extends string, TAccountSystemProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: CreateMarketConfigInput<TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress } ): CreateMarketConfigInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountSystemProgram> {

@@ -347,5 +347,93 @@ pub fn sell_refund(
     u64::try_from(raw >> 64).map_err(|_| AmmError::NumericConversion)
 }
 
+/// Largest `delta` such that `buy_cost(q, b, outcome, delta) <= budget`
+/// (the delta-for-cost inverse `buy_1x2` needs — LMSR gives cost-for-delta).
+/// Returns `Ok(0)` when even a single token exceeds the budget.
+///
+/// ## Algorithm: bracketed binary search (SPEC §3.1 phase C)
+///
+/// The cost function is monotone in exact math; the search maintains the
+/// safety invariant DIRECTLY — `lo` is only ever advanced to a `mid` whose
+/// cost was CHECKED `<= budget` — so the result can never overcharge even if
+/// fixed-point rounding wiggles monotonicity by an ulp.
+///
+/// ## Upper bracket (exact, from the structural lemma)
+///
+/// `cost(δ) ≥ C(q+δ·e_i) − C(q) ≥ (q_i + δ) − C(q)` because
+/// `C(q') ≥ max(q') ≥ q_i + δ` holds EXACTLY in fixed point. Hence any
+/// affordable δ satisfies `δ ≤ budget + (⌊C(q)⌋ − q_i + 1)`; the bracket is
+/// additionally capped at `Q_MAX − q_i` (supported range).
+///
+/// ## Iteration / CU bound
+///
+/// `hi ≤ min(budget + slack, 2^60)` → at most **61 halvings**, each one
+/// `cost_q64` evaluation (3 fixed-point `exp` + 1 `ln`), plus the initial
+/// bracket check. Callers MUST request a raised compute-unit limit for
+/// `buy_1x2`: measured ~660k CU worst-case in LiteSVM (b = 100 USDT,
+/// ~28 halvings) — over the 200k per-ix default, comfortably inside the
+/// 1.4M requestable cap.
+pub fn buy_delta_for_cost(
+    q: &[u64; N_OUTCOMES],
+    b: u64,
+    outcome: usize,
+    budget: u64,
+) -> Result<u64, AmmError> {
+    if outcome >= N_OUTCOMES {
+        return Err(AmmError::LmsrInvalidOutcomeIndex);
+    }
+    validate_inputs(q, b)?;
+    if budget == 0 {
+        return Ok(0);
+    }
+
+    let c0 = cost_q64(q, b)?;
+
+    // EXACT replica of `buy_cost`'s rounding (ceil, floored at 1) against the
+    // cached c0, so handler-side `q[i] += delta` charges what was solved for.
+    let cost_of = |delta: u64| -> Result<u64, AmmError> {
+        let mut q_new = *q;
+        q_new[outcome] = q_new[outcome]
+            .checked_add(delta)
+            .ok_or(AmmError::LmsrQuantityTooLarge)?;
+        let c1 = cost_q64(&q_new, b)?;
+        let raw = c1.saturating_sub(c0);
+        let units = raw
+            .checked_add(ONE_Q64 - 1)
+            .ok_or(AmmError::MathOverflow)?
+            >> 64;
+        let units = u64::try_from(units).map_err(|_| AmmError::NumericConversion)?;
+        Ok(units.max(1))
+    };
+
+    // slack = ⌊C(q)⌋ − q_i + 1 ≥ 0 (C(q) ≥ max(q) ≥ q_i exactly).
+    let floor_c0 = u64::try_from(c0 >> 64).map_err(|_| AmmError::NumericConversion)?;
+    let slack = floor_c0
+        .checked_sub(q[outcome])
+        .ok_or(AmmError::MathOverflow)?
+        .checked_add(1)
+        .ok_or(AmmError::MathOverflow)?;
+    let hi_cap = Q_MAX - q[outcome]; // q[i] ≤ Q_MAX validated above
+    let mut hi = budget.saturating_add(slack).min(hi_cap);
+    if hi == 0 {
+        return Ok(0); // q_i already at Q_MAX — nothing buyable
+    }
+    if cost_of(hi)? <= budget {
+        return Ok(hi); // range-capped: the whole bracket is affordable
+    }
+
+    // Invariants: cost_of(hi) > budget; lo affordable (lo = 0 = "buy nothing").
+    let mut lo = 0u64;
+    while hi - lo > 1 {
+        let mid = lo + (hi - lo) / 2;
+        if cost_of(mid)? <= budget {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(lo)
+}
+
 #[cfg(test)]
 mod tests;

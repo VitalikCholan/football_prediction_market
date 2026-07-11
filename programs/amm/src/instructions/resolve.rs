@@ -113,6 +113,13 @@ pub(crate) fn handler(
 
     // ---- 3. pin stat keys + operator to the stored predicate (D-8) ----
     let mc = &ctx.accounts.market_config;
+    // market-kind gate (resolve-1x2.md §5): a 3-way config must never be
+    // resolved through this 2-outcome handler. Every pre-existing config
+    // decodes as Binary (zero-carved field) — no behavior change for v0.
+    require!(
+        mc.market_kind == crate::constants::MARKET_KIND_BINARY,
+        AmmError::MarketKindMismatch
+    );
     require!(
         stat_a.stat_to_prove.key == mc.stat_key_a,
         AmmError::PredicateMismatch

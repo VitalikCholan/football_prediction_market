@@ -7,9 +7,12 @@
  */
 
 export * from './binaryExpression';
+export * from './feeParamsArgs';
 export * from './marketState';
 export * from './outcome';
+export * from './outcome1x2';
 export * from './proofNode';
+export * from './scoresBatchSummary';
 export * from './scoreStat';
 export * from './scoresUpdateStats';
 export * from './side';

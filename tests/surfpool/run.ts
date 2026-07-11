@@ -532,20 +532,24 @@ async function main() {
       authority: admin,
       marketConfig: marketConfigPda,
       configId: CONFIG_ID,
-      baseFeeBps: 30,
-      maxFeeBps: 500,
-      vfcNum: 5_000,
-      filterPeriod: 30,
-      decayPeriod: 600,
-      reductionBps: 5_000,
-      maxVAcc: 1_000_000n,
-      resolutionGraceSecs: GRACE_SECS,
-      // home win: (goals P1 [key 1] - goals P2 [key 2]) > 0, GT=0, Subtract=2
-      resolutionThreshold: 0,
-      resolutionComparison: 0,
-      statKeyA: 1,
-      statKeyB: 2,
-      statOp: 2,
+      // params became a nested struct once FeeParamsArgs stopped being
+      // single-use (create_market_config_1x2 reuses it) — same wire bytes.
+      params: {
+        baseFeeBps: 30,
+        maxFeeBps: 500,
+        vfcNum: 5_000,
+        filterPeriod: 30,
+        decayPeriod: 600,
+        reductionBps: 5_000,
+        maxVAcc: 1_000_000n,
+        resolutionGraceSecs: GRACE_SECS,
+        // home win: (goals P1 [key 1] - goals P2 [key 2]) > 0, GT=0, Subtract=2
+        resolutionThreshold: 0,
+        resolutionComparison: 0,
+        statKeyA: 1,
+        statKeyB: 2,
+        statOp: 2,
+      },
     });
     await sendTx(rpc, admin, [ix]);
     return `config_id ${CONFIG_ID}: predicate (stat1 - stat2) > 0`;
@@ -722,9 +726,13 @@ async function main() {
       dailyScoresMerkleRoots: rootsPda,
       outcomeHint: Side.Yes,
       ts,
-      fixtureId,
-      updateStats: { updateCount: 1, minTimestamp: ts, maxTimestamp: ts },
-      eventsSubTreeRoot: new Uint8Array(32),
+      // fixtureSummary became a nested struct once ScoresBatchSummary stopped
+      // being single-use (resolve_1x2 reuses it) — same wire bytes.
+      fixtureSummary: {
+        fixtureId,
+        updateStats: { updateCount: 1, minTimestamp: ts, maxTimestamp: ts },
+        eventsSubTreeRoot: new Uint8Array(32),
+      },
       fixtureProof: [],
       mainTreeProof: [],
       statA: {
