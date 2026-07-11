@@ -4,8 +4,24 @@
  * glue (per-transaction parse + logging) lives in `ingest/log-parser.ts`.
  */
 import { BPS_DENOM } from '@fpm/shared';
-import { EventOutcome, type AmmEvent } from './events.decoder';
-import type { IndexedEvent } from './indexed-events.types';
+import { Event1x2Outcome, EventOutcome, type AmmEvent } from './events.decoder';
+import type { IndexedEvent, Outcome1x2Index } from './indexed-events.types';
+
+/** Map the on-chain `Outcome1x2` u8 tag onto the indexer's outcome index. */
+function toOutcome1x2Index(tag: Event1x2Outcome): Outcome1x2Index {
+  switch (tag) {
+    case Event1x2Outcome.Team1:
+      return 0;
+    case Event1x2Outcome.Draw:
+      return 1;
+    case Event1x2Outcome.Team2:
+      return 2;
+    case Event1x2Outcome.Void:
+      return 'void';
+    default:
+      return null; // Unset (unresolved)
+  }
+}
 
 /** Per-transaction envelope shared by every event decoded from one tx. */
 export interface IndexedEventEnvelope {
@@ -73,6 +89,68 @@ export function toIndexedEvent(
         owner: ev.owner,
         outcome: ev.outcome === EventOutcome.Yes ? 1 : 0,
         payout: ev.payout,
+      };
+    // ---- 1X2 (phase C) ------------------------------------------------------
+    case 'Market1x2Created':
+      return {
+        kind: 'created1x2',
+        ...base,
+        fixtureId: ev.fixtureId,
+        config: ev.config,
+        b: ev.b,
+        q: ev.q,
+        pricesBps: ev.pricesBps,
+      };
+    case 'Trade1x2':
+      return {
+        kind: 'trade1x2',
+        ...base,
+        fixtureId: ev.fixtureId,
+        trader: ev.owner,
+        outcome: ev.outcome === 1 ? 1 : ev.outcome === 2 ? 2 : 0,
+        isBuy: ev.isBuy,
+        usdc: ev.usdc,
+        tokens: ev.tokens,
+        feeBps: ev.feeBps,
+        priceBps: ev.priceBps,
+      };
+    case 'Market1x2Activated':
+      return { kind: 'activate1x2', ...base, fixtureId: ev.fixtureId };
+    case 'Market1x2Frozen':
+      return { kind: 'freeze1x2', ...base, fixtureId: ev.fixtureId };
+    case 'Market1x2Resolved':
+      return {
+        kind: 'resolve1x2',
+        ...base,
+        fixtureId: ev.fixtureId,
+        outcome: toOutcome1x2Index(ev.outcome),
+      };
+    case 'Market1x2Closed':
+      return { kind: 'close1x2', ...base, fixtureId: ev.fixtureId };
+    case 'Redeemed1x2':
+      return {
+        kind: 'redeem1x2',
+        ...base,
+        fixtureId: ev.fixtureId,
+        owner: ev.owner,
+        outcome: toOutcome1x2Index(ev.outcome),
+        payout: ev.payout,
+      };
+    case 'SetMinted1x2':
+      return {
+        kind: 'setMint1x2',
+        ...base,
+        fixtureId: ev.fixtureId,
+        owner: ev.owner,
+        amount: ev.amount,
+      };
+    case 'SetRedeemed1x2':
+      return {
+        kind: 'setRedeem1x2',
+        ...base,
+        fixtureId: ev.fixtureId,
+        owner: ev.owner,
+        amount: ev.amount,
       };
     default:
       return null;

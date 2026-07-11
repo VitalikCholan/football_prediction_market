@@ -13,6 +13,7 @@
  */
 import {
   getAddressDecoder,
+  getArrayDecoder,
   getBooleanDecoder,
   getI64Decoder,
   getStructDecoder,
@@ -77,6 +78,53 @@ const tradeDecoder = getStructDecoder([
   ['feeBps', u16],
 ]);
 
+// ---- 1X2 borsh payload decoders (state.rs `#[event]` structs) --------------
+
+const u64x3 = getArrayDecoder(u64, { size: 3 });
+const u16x3 = getArrayDecoder(u16, { size: 3 });
+
+const market1x2CreatedDecoder = getStructDecoder([
+  ['fixtureId', i64],
+  ['config', addr],
+  ['b', u64],
+  ['q', u64x3],
+  ['pricesBps', u16x3],
+]);
+
+const market1x2ResolvedDecoder = getStructDecoder([
+  ['fixtureId', i64],
+  ['outcome', u8],
+]);
+
+const market1x2ClosedDecoder = getStructDecoder([
+  ['fixtureId', i64],
+  ['swept', u64],
+]);
+
+const redeemed1x2Decoder = getStructDecoder([
+  ['fixtureId', i64],
+  ['owner', addr],
+  ['outcome', u8],
+  ['payout', u64],
+]);
+
+const trade1x2Decoder = getStructDecoder([
+  ['fixtureId', i64],
+  ['owner', addr],
+  ['outcome', u8],
+  ['isBuy', bool],
+  ['usdc', u64],
+  ['tokens', u64],
+  ['priceBps', u16],
+  ['feeBps', u16],
+]);
+
+const setEvent1x2Decoder = getStructDecoder([
+  ['fixtureId', i64],
+  ['owner', addr],
+  ['amount', u64],
+]);
+
 /**
  * Decode one Anchor event payload (8-byte discriminator + borsh fields).
  * Returns null for unknown discriminators or truncated payloads.
@@ -112,6 +160,43 @@ export function decodeAmmEvent(bytes: Uint8Array): AmmEvent | null {
       }
       case 'Trade':
         return { name, ...decode(tradeDecoder, body) };
+      case 'Market1x2Created': {
+        const d = decode(market1x2CreatedDecoder, body);
+        return {
+          name,
+          fixtureId: d.fixtureId,
+          config: d.config,
+          b: d.b,
+          q: [d.q[0], d.q[1], d.q[2]],
+          pricesBps: [d.pricesBps[0], d.pricesBps[1], d.pricesBps[2]],
+        };
+      }
+      case 'Market1x2Activated':
+        return { name, ...decode(tsLifecycleDecoder, body) };
+      case 'Market1x2Frozen':
+        return { name, ...decode(tsLifecycleDecoder, body) };
+      case 'Market1x2Resolved': {
+        const d = decode(market1x2ResolvedDecoder, body);
+        return { name, fixtureId: d.fixtureId, outcome: d.outcome };
+      }
+      case 'Market1x2Closed':
+        return { name, ...decode(market1x2ClosedDecoder, body) };
+      case 'Redeemed1x2': {
+        const d = decode(redeemed1x2Decoder, body);
+        return {
+          name,
+          fixtureId: d.fixtureId,
+          owner: d.owner,
+          outcome: d.outcome,
+          payout: d.payout,
+        };
+      }
+      case 'Trade1x2':
+        return { name, ...decode(trade1x2Decoder, body) };
+      case 'SetMinted1x2':
+        return { name, ...decode(setEvent1x2Decoder, body) };
+      case 'SetRedeemed1x2':
+        return { name, ...decode(setEvent1x2Decoder, body) };
     }
   } catch {
     return null; // truncated / malformed payload
@@ -124,7 +209,9 @@ function decode<T extends object>(
   bytes: Uint8Array,
 ): T {
   if (bytes.length < decoder.fixedSize) {
-    throw new Error(`payload too short: ${bytes.length} < ${decoder.fixedSize}`);
+    throw new Error(
+      `payload too short: ${bytes.length} < ${decoder.fixedSize}`,
+    );
   }
   return decoder.decode(bytes);
 }
