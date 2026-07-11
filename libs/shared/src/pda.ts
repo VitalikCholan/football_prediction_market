@@ -15,8 +15,10 @@ import {
 import {
   AMM_PROGRAM_ID,
   CONFIG_SEED,
+  MARKET_1X2_SEED,
   MARKET_SEED,
   MKT_CONFIG_SEED,
+  POSITION_1X2_SEED,
   POSITION_SEED,
   VAULT_SEED,
 } from "#src/constants.ts";
@@ -73,7 +75,11 @@ export async function findPositionPda(
   });
 }
 
-/** Vault: seeds = [VAULT_SEED, market: Pubkey]. */
+/** Vault: seeds = [VAULT_SEED, market: Pubkey].
+ *
+ * Shared by binary and 1X2 markets — pass the relevant market PDA key. For a
+ * 1X2 market pass the `findMarket1x2Pda` address; distinct market seeds keep
+ * the two vaults from colliding for the same fixture. */
 export async function findVaultPda(
   market: Address,
   programAddress: Address = AMM_PROGRAM_ID,
@@ -81,5 +87,32 @@ export async function findVaultPda(
   return getProgramDerivedAddress({
     programAddress,
     seeds: [VAULT_SEED, addressEncoder.encode(market)],
+  });
+}
+
+/** Market1x2: seeds = [MARKET_1X2_SEED, fixture_id: i64 LE] (SPEC §3.1). */
+export async function findMarket1x2Pda(
+  fixtureId: number | bigint,
+  programAddress: Address = AMM_PROGRAM_ID,
+): Promise<ProgramDerivedAddress> {
+  return getProgramDerivedAddress({
+    programAddress,
+    seeds: [MARKET_1X2_SEED, i64Encoder.encode(fixtureId)],
+  });
+}
+
+/** Position1x2: seeds = [POSITION_1X2_SEED, market: Pubkey, owner: Pubkey]. */
+export async function findPosition1x2Pda(
+  market: Address,
+  owner: Address,
+  programAddress: Address = AMM_PROGRAM_ID,
+): Promise<ProgramDerivedAddress> {
+  return getProgramDerivedAddress({
+    programAddress,
+    seeds: [
+      POSITION_1X2_SEED,
+      addressEncoder.encode(market),
+      addressEncoder.encode(owner),
+    ],
   });
 }
