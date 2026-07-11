@@ -83,4 +83,10 @@ pub enum AmmError {
     LmsrInvalidOutcomeIndex,
     #[msg("LMSR: fixed-point argument outside supported domain")]
     LmsrDomain,
+
+    // ---- 1X2 market (SPEC §3.1 phase C — appended, do not reorder) --------
+    #[msg("MarketConfig.market_kind does not match this instruction's market kind")]
+    MarketKindMismatch,
+    #[msg("Proof stat period does not match the config's pinned resolution period")]
+    ResolutionPeriodMismatch,
 }

@@ -45,6 +45,17 @@ statKeyB: number;
 statOp: number; 
 /** Canonical bump. */
 bump: number; 
+/**
+ * 0 = Binary (v0 YES/NO, default), 1 = OneXTwo (3-way 1X2 LMSR).
+ * Gates binary `resolve` vs `resolve_1x2` apart (resolve-1x2.md §5).
+ */
+marketKind: number; 
+/**
+ * Expected `stat_to_prove.period` for `resolve_1x2` proofs (stale-batch
+ * replay guard, O-1x2-1). 100 = TxLINE full-time final stats. Binary
+ * resolve ignores it (behavior-frozen v0 path).
+ */
+resolutionPeriod: number; 
 /** Future (v1 leverage: max_open_interest, theta params, min_coverage_bps). */
 reserved: ReadonlyUint8Array;  };
 
@@ -81,17 +92,28 @@ statKeyB: number;
 statOp: number; 
 /** Canonical bump. */
 bump: number; 
+/**
+ * 0 = Binary (v0 YES/NO, default), 1 = OneXTwo (3-way 1X2 LMSR).
+ * Gates binary `resolve` vs `resolve_1x2` apart (resolve-1x2.md §5).
+ */
+marketKind: number; 
+/**
+ * Expected `stat_to_prove.period` for `resolve_1x2` proofs (stale-batch
+ * replay guard, O-1x2-1). 100 = TxLINE full-time final stats. Binary
+ * resolve ignores it (behavior-frozen v0 path).
+ */
+resolutionPeriod: number; 
 /** Future (v1 leverage: max_open_interest, theta params, min_coverage_bps). */
 reserved: ReadonlyUint8Array;  };
 
 /** Gets the encoder for {@link MarketConfigArgs} account data. */
 export function getMarketConfigEncoder(): FixedSizeEncoder<MarketConfigArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['configId', getU16Encoder()], ['authority', getAddressEncoder()], ['baseFeeBps', getU16Encoder()], ['maxFeeBps', getU16Encoder()], ['vfcNum', getU32Encoder()], ['filterPeriod', getU32Encoder()], ['decayPeriod', getU32Encoder()], ['reductionBps', getU16Encoder()], ['maxVAcc', getU64Encoder()], ['resolutionGraceSecs', getI64Encoder()], ['resolutionThreshold', getI32Encoder()], ['resolutionComparison', getU8Encoder()], ['statKeyA', getU32Encoder()], ['statKeyB', getU32Encoder()], ['statOp', getU8Encoder()], ['bump', getU8Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 44)]]), (value) => ({ ...value, discriminator: MARKET_CONFIG_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['configId', getU16Encoder()], ['authority', getAddressEncoder()], ['baseFeeBps', getU16Encoder()], ['maxFeeBps', getU16Encoder()], ['vfcNum', getU32Encoder()], ['filterPeriod', getU32Encoder()], ['decayPeriod', getU32Encoder()], ['reductionBps', getU16Encoder()], ['maxVAcc', getU64Encoder()], ['resolutionGraceSecs', getI64Encoder()], ['resolutionThreshold', getI32Encoder()], ['resolutionComparison', getU8Encoder()], ['statKeyA', getU32Encoder()], ['statKeyB', getU32Encoder()], ['statOp', getU8Encoder()], ['bump', getU8Encoder()], ['marketKind', getU8Encoder()], ['resolutionPeriod', getI32Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 39)]]), (value) => ({ ...value, discriminator: MARKET_CONFIG_DISCRIMINATOR }));
 }
 
 /** Gets the decoder for {@link MarketConfig} account data. */
 export function getMarketConfigDecoder(): FixedSizeDecoder<MarketConfig> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['configId', getU16Decoder()], ['authority', getAddressDecoder()], ['baseFeeBps', getU16Decoder()], ['maxFeeBps', getU16Decoder()], ['vfcNum', getU32Decoder()], ['filterPeriod', getU32Decoder()], ['decayPeriod', getU32Decoder()], ['reductionBps', getU16Decoder()], ['maxVAcc', getU64Decoder()], ['resolutionGraceSecs', getI64Decoder()], ['resolutionThreshold', getI32Decoder()], ['resolutionComparison', getU8Decoder()], ['statKeyA', getU32Decoder()], ['statKeyB', getU32Decoder()], ['statOp', getU8Decoder()], ['bump', getU8Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 44)]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['configId', getU16Decoder()], ['authority', getAddressDecoder()], ['baseFeeBps', getU16Decoder()], ['maxFeeBps', getU16Decoder()], ['vfcNum', getU32Decoder()], ['filterPeriod', getU32Decoder()], ['decayPeriod', getU32Decoder()], ['reductionBps', getU16Decoder()], ['maxVAcc', getU64Decoder()], ['resolutionGraceSecs', getI64Decoder()], ['resolutionThreshold', getI32Decoder()], ['resolutionComparison', getU8Decoder()], ['statKeyA', getU32Decoder()], ['statKeyB', getU32Decoder()], ['statOp', getU8Decoder()], ['bump', getU8Decoder()], ['marketKind', getU8Decoder()], ['resolutionPeriod', getI32Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 39)]]);
 }
 
 /** Gets the codec for {@link MarketConfig} account data. */

@@ -90,3 +90,25 @@ fn solvency_invariant() {
         Err(AmmError::SolvencyViolation)
     ));
 }
+
+#[test]
+fn solvency_invariant_multi() {
+    // 3-way generalization (SPEC §3.1): vault >= max_i(supplies[i]).
+    assert!(assert_solvent_multi(100, &[100, 50, 30]).is_ok());
+    assert!(assert_solvent_multi(100, &[30, 100, 50]).is_ok());
+    assert!(assert_solvent_multi(100, &[0, 0, 0]).is_ok());
+    assert!(assert_solvent_multi(0, &[]).is_ok());
+    assert!(matches!(
+        assert_solvent_multi(99, &[100, 50, 30]),
+        Err(AmmError::SolvencyViolation)
+    ));
+    assert!(matches!(
+        assert_solvent_multi(99, &[30, 50, 100]),
+        Err(AmmError::SolvencyViolation)
+    ));
+    // agrees with the binary form on 2 outcomes
+    assert_eq!(
+        assert_solvent_multi(99, &[100, 50]).is_err(),
+        assert_solvent(99, 100, 50).is_err()
+    );
+}

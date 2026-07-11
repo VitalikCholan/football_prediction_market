@@ -471,3 +471,95 @@ fn price_bps_single_matches_array() {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// buy_delta_for_cost — the delta-for-cost inverse used by `buy_1x2` (phase C)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn buy_delta_for_cost_is_maximal_and_affordable() {
+    // Across random states: the returned delta is affordable AND maximal —
+    // buy_cost(delta) <= budget < buy_cost(delta + 1).
+    let mut rng = Lcg(0xD4);
+    for _ in 0..200 {
+        let b = B_MIN + rng.below(1u64 << 32);
+        let q = [
+            rng.below(4 * b + 1),
+            rng.below(4 * b + 1),
+            rng.below(4 * b + 1),
+        ];
+        let i = (rng.next_u64() % 3) as usize;
+        let budget = 1 + rng.below(2 * b);
+        let delta = buy_delta_for_cost(&q, b, i, budget).unwrap();
+        if delta > 0 {
+            assert!(
+                buy_cost(&q, b, i, delta).unwrap() <= budget,
+                "affordability: q={q:?} b={b} i={i} budget={budget} delta={delta}"
+            );
+        }
+        // maximality: one more token must not fit (unless range-capped)
+        if q[i] + delta < Q_MAX {
+            assert!(
+                buy_cost(&q, b, i, delta + 1).unwrap() > budget,
+                "maximality: q={q:?} b={b} i={i} budget={budget} delta={delta}"
+            );
+        }
+    }
+}
+
+#[test]
+fn buy_delta_for_cost_edges() {
+    let b = 1_000_000u64;
+    let q = [0u64, 0, 0];
+    // zero budget buys nothing
+    assert_eq!(buy_delta_for_cost(&q, b, 0, 0).unwrap(), 0);
+    // a symmetric market prices ~1/3: budget 1 affords at least 1 token
+    // (buy_cost's ceil keeps cost(1) = 1 at these scales)
+    assert!(buy_delta_for_cost(&q, b, 0, 1).unwrap() >= 1);
+    // bad outcome index
+    assert!(matches!(
+        buy_delta_for_cost(&q, b, 3, 100),
+        Err(AmmError::LmsrInvalidOutcomeIndex)
+    ));
+    // out-of-range inputs rejected like the rest of the API
+    assert!(matches!(
+        buy_delta_for_cost(&q, B_MIN - 1, 0, 100),
+        Err(AmmError::LmsrLiquidityOutOfRange)
+    ));
+    assert!(matches!(
+        buy_delta_for_cost(&[Q_MAX + 1, 0, 0], b, 0, 100),
+        Err(AmmError::LmsrQuantityTooLarge)
+    ));
+}
+
+#[test]
+fn buy_delta_for_cost_respects_q_max_cap() {
+    // q_i already at Q_MAX → nothing buyable regardless of budget.
+    let b = B_MAX;
+    let q = [Q_MAX, 0, 0];
+    assert_eq!(buy_delta_for_cost(&q, b, 0, u64::MAX).unwrap(), 0);
+    // near the cap: delta never pushes q_i past Q_MAX.
+    let q = [Q_MAX - 5, 0, 0];
+    let delta = buy_delta_for_cost(&q, b, 0, u64::MAX / 2).unwrap();
+    assert!(delta <= 5, "delta={delta} must respect Q_MAX");
+}
+
+#[test]
+fn buy_delta_then_buy_cost_round_trips_with_handler_flow() {
+    // Exactly what buy_1x2 does: solve delta for net, then q[i] += delta.
+    // The charged amount (net) must always cover buy_cost(delta).
+    let b = 50_000_000u64; // 50 USDT-scale liquidity in 6dp base units
+    let mut q = [0u64, 0, 0];
+    let mut rng = Lcg(0xB1);
+    for _ in 0..50 {
+        let i = (rng.next_u64() % 3) as usize;
+        let net = 1_000 + rng.below(20_000_000);
+        let delta = buy_delta_for_cost(&q, b, i, net).unwrap();
+        if delta == 0 {
+            continue;
+        }
+        let cost = buy_cost(&q, b, i, delta).unwrap();
+        assert!(cost <= net, "pool must never charge more than solved-for");
+        q[i] += delta;
+    }
+}

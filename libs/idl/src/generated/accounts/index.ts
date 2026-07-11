@@ -8,5 +8,7 @@
 
 export * from './globalConfig';
 export * from './market';
+export * from './market1x2';
 export * from './marketConfig';
 export * from './position';
+export * from './position1x2';

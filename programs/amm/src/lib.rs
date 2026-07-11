@@ -132,4 +132,118 @@ pub mod amm {
     pub fn close_market(ctx: Context<CloseMarket>) -> Result<()> {
         close_market::handler(ctx)
     }
+
+    // =======================================================================
+    // 3-way (1X2) LMSR market — SPEC §3.1 phase C. A PARALLEL instruction
+    // set: the binary instructions above are untouched and byte-stable.
+    // =======================================================================
+
+    /// Create a `MarketConfig` for 1X2 markets (`market_kind = 1`): enforces
+    /// the two-stat Subtract predicate shape and pins `resolution_period`.
+    pub fn create_market_config_1x2(
+        ctx: Context<CreateMarketConfig1x2>,
+        config_id: u16,
+        params: FeeParamsArgs,
+        resolution_period: i32,
+    ) -> Result<()> {
+        create_market_config_1x2::handler(ctx, config_id, params, resolution_period)
+    }
+
+    /// Create a `Market1x2` + USDT escrow vault; seed the LMSR curve
+    /// (`b`, `seed_q` offsets set the opening odds) and the solvency subsidy
+    /// (`seed_liquidity ≥ C(seed_q, b) − min(seed_q)`).
+    pub fn init_market_1x2(
+        ctx: Context<InitMarket1x2>,
+        fixture_id: i64,
+        kickoff_ts: i64,
+        freeze_ts: i64,
+        b: u64,
+        seed_q: [u64; 3],
+        seed_liquidity: u64,
+    ) -> Result<()> {
+        init_market_1x2::handler(
+            ctx,
+            fixture_id,
+            kickoff_ts,
+            freeze_ts,
+            b,
+            seed_q,
+            seed_liquidity,
+        )
+    }
+
+    /// Explicitly create a trader's `Position1x2` PDA (D-3; no init_if_needed).
+    pub fn open_position_1x2(ctx: Context<OpenPosition1x2>) -> Result<()> {
+        open_position_1x2::handler(ctx)
+    }
+
+    /// Buy `outcome ∈ {0=Team1, 1=Draw, 2=Team2}` tokens for USDT (LMSR).
+    pub fn buy_1x2(
+        ctx: Context<Buy1x2>,
+        outcome: u8,
+        usdt_in: u64,
+        min_tokens_out: u64,
+    ) -> Result<()> {
+        buy_1x2::handler(ctx, outcome, usdt_in, min_tokens_out)
+    }
+
+    /// Sell `outcome` tokens back for USDT (LMSR refund − fee).
+    pub fn sell_1x2(
+        ctx: Context<Sell1x2>,
+        outcome: u8,
+        tokens_in: u64,
+        min_usdt_out: u64,
+    ) -> Result<()> {
+        sell_1x2::handler(ctx, outcome, tokens_in, min_usdt_out)
+    }
+
+    /// Keeper-gated, clock-guarded `Open -> Trading` at kickoff (1X2).
+    pub fn activate_market_1x2(ctx: Context<ActivateMarket1x2>) -> Result<()> {
+        activate_market_1x2::handler(ctx)
+    }
+
+    /// Keeper-gated, clock-guarded `Trading -> Locked` at the whistle (1X2).
+    pub fn freeze_market_1x2(ctx: Context<FreezeMarket1x2>) -> Result<()> {
+        freeze_market_1x2::handler(ctx)
+    }
+
+    /// Hint-and-prove-positively 1X2 resolution: the keeper hints
+    /// `0=Team1 / 1=Draw / 2=Team2`; the program derives that outcome's
+    /// predicate from the stored config and ONE `validate_stat` CPI must
+    /// return `true` (plans/resolve-1x2.md).
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve_1x2(
+        ctx: Context<Resolve1x2>,
+        hint: u8,
+        ts: i64,
+        fixture_summary: txline_types::ScoresBatchSummary,
+        fixture_proof: Vec<txline_types::ProofNode>,
+        main_tree_proof: Vec<txline_types::ProofNode>,
+        stat_a: txline_types::StatTerm,
+        stat_b: Option<txline_types::StatTerm>,
+        op: Option<txline_types::BinaryExpression>,
+    ) -> Result<()> {
+        resolve_1x2::handler(
+            ctx,
+            hint,
+            ts,
+            fixture_summary,
+            fixture_proof,
+            main_tree_proof,
+            stat_a,
+            stat_b,
+            op,
+        )
+    }
+
+    /// Redeem a resolved 1X2 position: 1 winning token = 1 USDT; Void
+    /// refunds the net basis pro-rata (D-4).
+    pub fn redeem_1x2(ctx: Context<Redeem1x2>) -> Result<()> {
+        redeem_1x2::handler(ctx)
+    }
+
+    /// Admin teardown after the grace window (1X2): sweep vault, close accounts.
+    pub fn close_market_1x2(ctx: Context<CloseMarket1x2>) -> Result<()> {
+        close_market_1x2::handler(ctx)
+    }
 }

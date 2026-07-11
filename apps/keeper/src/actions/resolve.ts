@@ -261,9 +261,13 @@ async function buildResolveInstruction(
     dailyScoresMerkleRoots,
     outcomeHint,
     ts: proof.ts, // MILLISECONDS (epoch_day = ts / 86_400_000 on-chain)
-    fixtureId,
-    updateStats: proof.fixtureSummary.updateStats,
-    eventsSubTreeRoot: proof.fixtureSummary.eventsSubTreeRoot,
+    // fixtureSummary became a nested struct once ScoresBatchSummary stopped
+    // being single-use (resolve_1x2 reuses it) — same wire bytes.
+    fixtureSummary: {
+      fixtureId,
+      updateStats: proof.fixtureSummary.updateStats,
+      eventsSubTreeRoot: proof.fixtureSummary.eventsSubTreeRoot,
+    },
     fixtureProof: proof.fixtureProof,
     mainTreeProof: proof.mainTreeProof,
     statA: proof.statA,

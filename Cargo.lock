@@ -4248,6 +4248,7 @@ dependencies = [
  "mock-txoracle",
  "solana-account",
  "solana-clock",
+ "solana-compute-budget-interface",
  "solana-instruction",
  "solana-keypair",
  "solana-message",

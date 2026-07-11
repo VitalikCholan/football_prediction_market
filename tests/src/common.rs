@@ -630,3 +630,308 @@ pub fn get_anchor<T: anchor_lang::AccountDeserialize>(svm: &LiteSVM, key: &Pubke
     let acc = svm.get_account(key).unwrap();
     T::try_deserialize(&mut acc.data.as_slice()).unwrap()
 }
+
+// ===========================================================================
+// Phase C — 3-way (1X2) LMSR market helpers (SPEC §3.1)
+// ===========================================================================
+
+use amm::constants::{MARKET_1X2_SEED, POSITION_1X2_SEED};
+
+pub fn market_1x2_pda(fixture_id: i64) -> Pubkey {
+    Pubkey::find_program_address(&[MARKET_1X2_SEED, &fixture_id.to_le_bytes()], &program_id()).0
+}
+
+pub fn position_1x2_pda(market: &Pubkey, owner: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[POSITION_1X2_SEED, market.as_ref(), owner.as_ref()],
+        &program_id(),
+    )
+    .0
+}
+
+/// TxLINE full-time final stats carry `period = 100` — the pin every 1X2
+/// config in these tests uses.
+pub const FINAL_PERIOD: i32 = 100;
+
+pub fn ix_create_market_config_1x2(
+    admin: &Pubkey,
+    config_id: u16,
+    params: amm::FeeParamsArgs,
+    resolution_period: i32,
+) -> Instruction {
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::CreateMarketConfig1x2 {
+            authority: *admin,
+            global: config_pda(),
+            market_config: market_config_pda(config_id),
+            system_program: sys_program(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::CreateMarketConfig1x2 { config_id, params, resolution_period }
+            .data(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ix_init_market_1x2(
+    admin: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    kickoff_ts: i64,
+    freeze_ts: i64,
+    b: u64,
+    seed_q: [u64; 3],
+    seed_liquidity: u64,
+    mint: &Pubkey,
+    admin_ata: &Pubkey,
+) -> Instruction {
+    let market = market_1x2_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::InitMarket1x2 {
+            authority: *admin,
+            global: config_pda(),
+            market_config: market_config_pda(config_id),
+            market,
+            vault: vault_pda(&market),
+            usdc_mint: *mint,
+            authority_usdc: *admin_ata,
+            token_program: token_program_id(),
+            system_program: sys_program(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::InitMarket1x2 {
+            fixture_id,
+            kickoff_ts,
+            freeze_ts,
+            b,
+            seed_q,
+            seed_liquidity,
+        }
+        .data(),
+    }
+}
+
+pub fn ix_open_position_1x2(owner: &Pubkey, fixture_id: i64) -> Instruction {
+    let market = market_1x2_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::OpenPosition1x2 {
+            owner: *owner,
+            market,
+            position: position_1x2_pda(&market, owner),
+            system_program: sys_program(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::OpenPosition1x2 {}.data(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ix_buy_1x2(
+    trader: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    outcome: u8,
+    usdt_in: u64,
+    min_tokens_out: u64,
+    mint: &Pubkey,
+    trader_ata: &Pubkey,
+) -> Instruction {
+    let market = market_1x2_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::Buy1x2 {
+            trader: *trader,
+            market,
+            market_config: market_config_pda(config_id),
+            position: position_1x2_pda(&market, trader),
+            trader_usdc: *trader_ata,
+            vault: vault_pda(&market),
+            usdc_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::Buy1x2 { outcome, usdt_in, min_tokens_out }.data(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ix_sell_1x2(
+    trader: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    outcome: u8,
+    tokens_in: u64,
+    min_usdt_out: u64,
+    mint: &Pubkey,
+    trader_ata: &Pubkey,
+) -> Instruction {
+    let market = market_1x2_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::Sell1x2 {
+            trader: *trader,
+            market,
+            market_config: market_config_pda(config_id),
+            position: position_1x2_pda(&market, trader),
+            trader_usdc: *trader_ata,
+            vault: vault_pda(&market),
+            usdc_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::Sell1x2 { outcome, tokens_in, min_usdt_out }.data(),
+    }
+}
+
+pub fn ix_activate_market_1x2(keeper: &Pubkey, fixture_id: i64) -> Instruction {
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::ActivateMarket1x2 {
+            keeper: *keeper,
+            global: config_pda(),
+            market: market_1x2_pda(fixture_id),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::ActivateMarket1x2 {}.data(),
+    }
+}
+
+pub fn ix_freeze_market_1x2(keeper: &Pubkey, fixture_id: i64) -> Instruction {
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::FreezeMarket1x2 {
+            keeper: *keeper,
+            global: config_pda(),
+            market: market_1x2_pda(fixture_id),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::FreezeMarket1x2 {}.data(),
+    }
+}
+
+/// `resolve_args` variant with an explicit stat `period` (the 1X2 path pins
+/// `stat_to_prove.period == MarketConfig.resolution_period`).
+pub fn resolve_args_1x2(
+    fixture_id: i64,
+    ts: i64,
+    home_goals: i32,
+    away_goals: i32,
+    period: i32,
+) -> ResolveArgs {
+    use amm::txline_types as tt;
+    let mut args = resolve_args(fixture_id, ts, home_goals, away_goals);
+    args.stat_a.stat_to_prove.period = period;
+    if let Some(b) = args.stat_b.as_mut() {
+        b.stat_to_prove.period = period;
+    }
+    let _: &tt::StatTerm = &args.stat_a; // keep the tt import used
+    args
+}
+
+/// `resolve_1x2` with overridable txline program / roots account.
+#[allow(clippy::too_many_arguments)]
+pub fn ix_resolve_1x2(
+    keeper: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    hint: u8,
+    args: ResolveArgs,
+    txline_program: &Pubkey,
+    daily_scores_merkle_roots: &Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::Resolve1x2 {
+            keeper: *keeper,
+            global: config_pda(),
+            market: market_1x2_pda(fixture_id),
+            market_config: market_config_pda(config_id),
+            txline_program: *txline_program,
+            daily_scores_merkle_roots: *daily_scores_merkle_roots,
+        }
+        .to_account_metas(None),
+        data: amm::instruction::Resolve1x2 {
+            hint,
+            ts: args.ts,
+            fixture_summary: args.fixture_summary,
+            fixture_proof: args.fixture_proof,
+            main_tree_proof: args.main_tree_proof,
+            stat_a: args.stat_a,
+            stat_b: args.stat_b,
+            op: args.op,
+        }
+        .data(),
+    }
+}
+
+pub fn ix_redeem_1x2(
+    owner: &Pubkey,
+    fixture_id: i64,
+    mint: &Pubkey,
+    owner_ata: &Pubkey,
+) -> Instruction {
+    let market = market_1x2_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::Redeem1x2 {
+            owner: *owner,
+            market,
+            position: position_1x2_pda(&market, owner),
+            vault: vault_pda(&market),
+            owner_usdc: *owner_ata,
+            usdc_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::Redeem1x2 {}.data(),
+    }
+}
+
+pub fn ix_close_market_1x2(
+    authority: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    mint: &Pubkey,
+    authority_ata: &Pubkey,
+) -> Instruction {
+    let market = market_1x2_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::CloseMarket1x2 {
+            authority: *authority,
+            global: config_pda(),
+            market,
+            market_config: market_config_pda(config_id),
+            vault: vault_pda(&market),
+            authority_usdc: *authority_ata,
+            usdc_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::CloseMarket1x2 {}.data(),
+    }
+}
+
+/// Multi-instruction send (used to prepend a `set_compute_unit_limit` for the
+/// LMSR delta-solve in `buy_1x2`, exactly as production clients will).
+pub fn send_tx_ixs(
+    svm: &mut LiteSVM,
+    signers: &[&Keypair],
+    payer: &Pubkey,
+    ixs: &[Instruction],
+) -> TransactionResult {
+    svm.expire_blockhash();
+    let msg = Message::new(ixs, Some(payer));
+    let tx = Transaction::new(signers, msg, svm.latest_blockhash());
+    svm.send_transaction(tx)
+}
+
+/// The CU limit 1X2-buy test txs request (LMSR delta-solve is CU-heavy).
+pub const CU_LIMIT_1X2_BUY: u32 = 1_400_000;
+
+pub fn ix_set_cu_limit(units: u32) -> Instruction {
+    solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(units)
+}
