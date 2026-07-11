@@ -469,3 +469,23 @@ pub struct Trade1x2 {
     pub price_bps: u16,
     pub fee_bps: u16,
 }
+
+/// A complete set minted at par (SPEC §3.1 phase C-add): `amount` USDT in,
+/// `amount` tokens of EVERY outcome out. Fee-free, price-neutral.
+#[event]
+pub struct SetMinted1x2 {
+    pub fixture_id: i64,
+    pub owner: Pubkey,
+    /// Base-unit tokens of each outcome minted = USDT deposited.
+    pub amount: u64,
+}
+
+/// A complete set burned back to par (SPEC §3.1 phase C-add): `amount` tokens
+/// of EVERY outcome in, `amount` USDT out. Fee-free, price-neutral.
+#[event]
+pub struct SetRedeemed1x2 {
+    pub fixture_id: i64,
+    pub owner: Pubkey,
+    /// Base-unit tokens of each outcome burned = USDT paid out.
+    pub amount: u64,
+}

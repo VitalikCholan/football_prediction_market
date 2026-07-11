@@ -242,6 +242,20 @@ pub mod amm {
         redeem_1x2::handler(ctx)
     }
 
+    /// Mint a COMPLETE SET (SPEC §3.1 phase C-add): deposit EXACTLY `amount`
+    /// USDT, receive `amount` tokens of every outcome. Fee-free, price-neutral
+    /// (equal `q` shift → softmax unchanged). Trading-only.
+    pub fn mint_set_1x2(ctx: Context<MintSet1x2>, amount: u64) -> Result<()> {
+        mint_set_1x2::handler(ctx, amount)
+    }
+
+    /// Redeem a COMPLETE SET back to par (SPEC §3.1 phase C-add): burn `amount`
+    /// tokens of every outcome, receive EXACTLY `amount` USDT. Fee-free,
+    /// price-neutral. Trading-only. Inverse of `mint_set_1x2`.
+    pub fn redeem_set_1x2(ctx: Context<RedeemSet1x2>, amount: u64) -> Result<()> {
+        redeem_set_1x2::handler(ctx, amount)
+    }
+
     /// Admin teardown after the grace window (1X2): sweep vault, close accounts.
     pub fn close_market_1x2(ctx: Context<CloseMarket1x2>) -> Result<()> {
         close_market_1x2::handler(ctx)

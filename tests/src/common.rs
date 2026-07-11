@@ -867,6 +867,54 @@ pub fn ix_resolve_1x2(
     }
 }
 
+pub fn ix_mint_set_1x2(
+    trader: &Pubkey,
+    fixture_id: i64,
+    amount: u64,
+    mint: &Pubkey,
+    trader_ata: &Pubkey,
+) -> Instruction {
+    let market = market_1x2_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::MintSet1x2 {
+            trader: *trader,
+            market,
+            position: position_1x2_pda(&market, trader),
+            trader_usdc: *trader_ata,
+            vault: vault_pda(&market),
+            usdc_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::MintSet1x2 { amount }.data(),
+    }
+}
+
+pub fn ix_redeem_set_1x2(
+    trader: &Pubkey,
+    fixture_id: i64,
+    amount: u64,
+    mint: &Pubkey,
+    trader_ata: &Pubkey,
+) -> Instruction {
+    let market = market_1x2_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::RedeemSet1x2 {
+            trader: *trader,
+            market,
+            position: position_1x2_pda(&market, trader),
+            trader_usdc: *trader_ata,
+            vault: vault_pda(&market),
+            usdc_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::RedeemSet1x2 { amount }.data(),
+    }
+}
+
 pub fn ix_redeem_1x2(
     owner: &Pubkey,
     fixture_id: i64,
