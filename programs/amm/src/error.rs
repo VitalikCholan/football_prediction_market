@@ -71,4 +71,16 @@ pub enum AmmError {
     PredicateNotNegatable,
     #[msg("Resolution grace period has not elapsed yet")]
     GraceNotElapsed,
+
+    // ---- LMSR (SPEC §3.1, 3-way 1X2 — appended, do not reorder) -----------
+    #[msg("LMSR: liquidity parameter b outside supported range")]
+    LmsrLiquidityOutOfRange,
+    #[msg("LMSR: outcome quantity exceeds supported maximum")]
+    LmsrQuantityTooLarge,
+    #[msg("LMSR: sell exceeds outstanding outcome quantity")]
+    LmsrInsufficientOutcomeSupply,
+    #[msg("LMSR: outcome index out of range (must be 0..3)")]
+    LmsrInvalidOutcomeIndex,
+    #[msg("LMSR: fixed-point argument outside supported domain")]
+    LmsrDomain,
 }
