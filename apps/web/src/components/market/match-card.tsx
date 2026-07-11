@@ -1,5 +1,6 @@
 import Link from "next/link";
-import type { MarketDto } from "@fpm/shared";
+import type { AnyMarketDto } from "@fpm/shared";
+import { isMarket1x2 } from "@/lib/data";
 import { StateBadge } from "@/components/market/state-badge";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,13 +13,16 @@ import {
 } from "@/lib/format";
 
 /**
- * Match card (DESIGN_SPEC 1b). Our DTO is a 2-way YES/NO market per fixture;
- * the wireframe shows a 3-chip Home/Draw/Away read. For v0 we derive the
- * three outcome cents from the YES price (Home = YES, Away = NO minus a small
- * draw allocation, Draw = residual) so the card matches the reference look.
- * Whole-market trading still routes to the per-team YES/NO market on detail.
+ * Match card (DESIGN_SPEC 1b). Renders a 3-chip Home/Draw/Away read.
+ *
+ * For a real 1X2 market (`marketKind === "OneXTwo"`) the three chips carry the
+ * TRUE on-chain softmax prices (team1/draw/team2 PriceBps → cents). For a v0
+ * BINARY YES/NO market we derive the three outcome cents from the YES price
+ * (BUG-4: honest labels — Home = YES, the remainder split into Draw/Away) so
+ * the card still matches the reference look; whole-market trading routes to the
+ * per-team YES/NO market on detail.
  */
-function threeWayCents(yesBps: number): {
+function binaryThreeWayCents(yesBps: number): {
   home: number;
   draw: number;
   away: number;
@@ -34,10 +38,17 @@ export function MatchCard({
   market,
   index = 0,
 }: {
-  market: MarketDto;
+  market: AnyMarketDto;
   index?: number;
 }) {
-  const { home, draw, away } = threeWayCents(market.yesPriceBps);
+  // Three-way cents: real prices for a 1X2 market, derived split for binary.
+  const { home, draw, away } = isMarket1x2(market)
+    ? {
+        home: bpsToCents(market.team1PriceBps),
+        draw: bpsToCents(market.drawPriceBps),
+        away: bpsToCents(market.team2PriceBps),
+      }
+    : binaryThreeWayCents(market.yesPriceBps);
   const leader = home >= away ? "home" : "away";
 
   const score = scoreLabel(market.homeScore, market.awayScore);

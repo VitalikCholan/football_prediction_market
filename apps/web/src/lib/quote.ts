@@ -147,3 +147,99 @@ export function quoteTrade(input: QuoteInput): Quote {
     usdcOut,
   };
 }
+
+/* --------------------------------------------------------------- 1X2 (LMSR) */
+
+export interface Quote1x2Input {
+  action: "buy" | "sell";
+  /** USDT in (buy) or outcome tokens in (sell). */
+  amount: number;
+  /** Current softmax price of the CHOSEN outcome, bps (0..10000). */
+  outcomePriceBps: number;
+  /** LMSR liquidity parameter b, whole units (the DTO `b` scaled to USDT). */
+  b: number;
+  /** Effective fee for this trade, bps. */
+  feeBps: number;
+  /** Slippage tolerance, fraction (0.005 = 0.5%). */
+  slippageTolerance?: number;
+}
+
+/**
+ * Client-side 1X2 (LMSR) quote — a PREVIEW ONLY approximation for the ticket
+ * summary box; the on-chain simulation in `lib/tx` is the authoritative output
+ * shown alongside it (the panel renders `prepared.sim.outBase`). We linearize
+ * the LMSR around the current price: a buy of `x` USDT clears at roughly the
+ * current price `p` plus a convex impact that scales with `x/b` (larger `b` =
+ * deeper book = less impact), so `tokens ≈ (x − fee) / avgPrice`. This tracks
+ * the direction/curvature of the real fill without re-deriving the exp/ln math.
+ */
+export function quoteTrade1x2(input: Quote1x2Input): Quote {
+  const {
+    action,
+    amount,
+    outcomePriceBps,
+    b,
+    feeBps,
+    slippageTolerance = 0.01,
+  } = input;
+
+  const p = Math.min(0.999, Math.max(0.001, outcomePriceBps / BPS_DENOM));
+  const markPriceCents = p * 100;
+  const feeRate = feeBps / BPS_DENOM;
+  const depth = Math.max(1, b);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return {
+      shares: 0,
+      avgPriceCents: markPriceCents,
+      markPriceCents,
+      priceImpact: 0,
+      feePaid: 0,
+      payoutIfWins: 0,
+      minOut: 0,
+      usdcOut: 0,
+    };
+  }
+
+  // LMSR curvature is largest where the outcome is uncertain; `p(1-p)` peaks at
+  // 50%. Impact grows with trade size relative to the book depth `b`.
+  const convexity = p * (1 - p);
+
+  if (action === "buy") {
+    const feePaid = amount * feeRate;
+    const spendable = amount - feePaid;
+    const impact = Math.min(
+      0.5,
+      (spendable / (depth * Math.max(p, 0.05))) * (0.5 + convexity),
+    );
+    const avgPrice = Math.min(0.999, p * (1 + impact));
+    const shares = spendable / avgPrice;
+    return {
+      shares,
+      avgPriceCents: avgPrice * 100,
+      markPriceCents,
+      priceImpact: impact,
+      feePaid,
+      payoutIfWins: shares, // $1.00/winning token
+      minOut: shares * (1 - slippageTolerance),
+      usdcOut: 0,
+    };
+  }
+
+  // SELL: user returns `amount` outcome tokens for USDT.
+  const impact = Math.min(0.5, (amount / depth) * (0.5 + convexity));
+  const avgPrice = Math.max(0.001, p * (1 - impact));
+  const gross = amount * avgPrice;
+  const feePaid = gross * feeRate;
+  const usdcOut = gross - feePaid;
+  return {
+    shares: amount,
+    avgPriceCents: avgPrice * 100,
+    markPriceCents,
+    priceImpact: impact,
+    feePaid,
+    payoutIfWins: amount,
+    minOut: usdcOut * (1 - slippageTolerance),
+    usdcOut,
+  };
+}
