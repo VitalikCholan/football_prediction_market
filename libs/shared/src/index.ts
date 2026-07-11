@@ -5,3 +5,4 @@
 export * from "#src/constants.ts";
 export * from "#src/pda.ts";
 export * from "#src/dto/index.ts";
+export * from "#src/errors.ts";

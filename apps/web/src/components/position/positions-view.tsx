@@ -9,6 +9,7 @@ import {
   useUserPositions,
 } from "@/lib/use-live";
 import { winningTokens, type UserPosition } from "@/lib/positions";
+import { friendlyTxError } from "@fpm/shared";
 import { prepareClaim } from "@/lib/tx";
 import { explorerTx } from "@/lib/solana";
 import { useAccountAddress, useTxAuthority } from "@/components/wallet/use-account";
@@ -283,7 +284,7 @@ function ClaimsList({
       notifyTxConfirmed();
       onClaimed();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyTxError(e, "amm"));
     } finally {
       setBusyId(null);
     }

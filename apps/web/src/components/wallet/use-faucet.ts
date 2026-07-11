@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { friendlyTxError } from "@fpm/shared";
 import { prepareFaucet } from "@/lib/tx";
 import { notifyTxConfirmed } from "@/lib/use-live";
 import { explorerTx } from "@/lib/solana";
@@ -42,7 +43,10 @@ export function useFaucet(onConfirmed?: () => void): {
       notifyTxConfirmed();
       onConfirmed?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // The TxLINE faucet rejects an already-funded wallet with 6058
+      // RateLimitExceeded — decode it (and any other custom code) to a
+      // friendly sentence instead of dumping raw InstructionError JSON (BUG-5).
+      setError(friendlyTxError(e, "txline"));
     } finally {
       setBusy(false);
     }

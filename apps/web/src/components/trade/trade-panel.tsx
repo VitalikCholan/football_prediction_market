@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { MarketDto, Side } from "@fpm/shared";
+import { friendlyTxError } from "@fpm/shared";
 import { quoteTrade } from "@/lib/quote";
 import { prepareTrade, type PreparedTx } from "@/lib/tx";
 import { notifyTxConfirmed, useUsdtBalance, useMarketPosition } from "@/lib/use-live";
@@ -129,7 +130,10 @@ function TradeTicket({
     [side, action, amount, market],
   );
 
-  const tradable = market.state === "Trading" || market.state === "Open";
+  // Only a Trading market accepts buy/sell on-chain. Open (not yet activated),
+  // Locked, Resolved, Closed all reject with AmmError::InvalidMarketState (6012),
+  // so gate the panel rather than let the user submit a doomed tx (BUG-3).
+  const tradable = market.state === "Trading";
   const validAmount = Number(amount) > 0;
   const showFaucet = address !== null && balanceBase === 0n;
 
@@ -160,7 +164,7 @@ function TradeTicket({
       setPrepared(p);
       if (!p.sim.ok) setFlowError(p.sim.error ?? "Simulation failed");
     } catch (e) {
-      setFlowError(e instanceof Error ? e.message : String(e));
+      setFlowError(friendlyTxError(e, "amm"));
     } finally {
       setBusy(null);
     }
@@ -186,7 +190,7 @@ function TradeTicket({
       refreshPosition();
       onClose();
     } catch (e) {
-      setFlowError(e instanceof Error ? e.message : String(e));
+      setFlowError(friendlyTxError(e, "amm"));
       setPrepared(null); // blockhash likely stale — re-review
     } finally {
       setBusy(null);
@@ -437,9 +441,13 @@ function TradeTicket({
           {buttonLabel}
         </Button>
         <p className="mt-2 text-center text-[11px] text-muted">
-          {inReview
-            ? "Simulated on devnet · signs 1 Solana tx"
-            : "Simulates before you sign · 1 Solana tx"}
+          {!tradable
+            ? market.state === "Open"
+              ? "Trading opens at kickoff."
+              : `Trading is closed (${market.state.toLowerCase()}).`
+            : inReview
+              ? "Simulated on devnet · signs 1 Solana tx"
+              : "Simulates before you sign · 1 Solana tx"}
         </p>
       </div>
       <ConnectModal open={connectOpen} onClose={() => setConnectOpen(false)} />

@@ -44,19 +44,18 @@ import {
 } from "@solana/kit";
 import {
   fetchMaybePosition,
-  getAmmErrorMessage,
   getBuyInstructionAsync,
   getOpenPositionInstructionAsync,
   getPositionDecoder,
   getRedeemInstructionAsync,
   getSellInstructionAsync,
   Side as IdlSide,
-  type AmmError,
 } from "@fpm/idl";
 import {
   TXLINE,
   findPositionPda,
   findVaultPda,
+  friendlyTxError as decodeProgramError,
   type Side,
 } from "@fpm/shared";
 import { getRpc } from "@/lib/solana";
@@ -201,26 +200,26 @@ function sideToIdl(side: Side): IdlSide {
   return side === "YES" ? IdlSide.Yes : IdlSide.No;
 }
 
-/** Decode `{"InstructionError":[i,{"Custom":6006}]}`-style sim/tx errors. */
+/**
+ * Decode `{"InstructionError":[i,{"Custom":6006}]}`-style sim/tx errors to a
+ * user-facing sentence. Rent/log specifics stay here; the curated per-code
+ * messages live in @fpm/shared (`decodeProgramError`, BUG-5). These are trade
+ * txs, so the AMM program is the relevant hint.
+ */
 function friendlyTxError(err: unknown, logs?: readonly string[]): string {
   const raw = JSON.stringify(err, (_k, v) =>
     typeof v === "bigint" ? v.toString() : v,
   );
-  const custom = /"Custom":\s*(\d+)/.exec(raw ?? "");
-  if (custom) {
-    const code = Number(custom[1]);
-    if (code >= 6000 && code <= 6024) {
-      return getAmmErrorMessage(code as AmmError);
-    }
-    // Non-amm program (e.g. TxLINE faucet cooldown, SPL token).
-    const programLog = logs?.find((l) => l.includes("Error Message:"));
-    if (programLog) return programLog.split("Error Message:")[1].trim();
-    return `Program error ${code}`;
-  }
   if (raw?.includes("InsufficientFundsForRent") || raw?.includes("AccountNotFound")) {
     return "Not enough SOL to pay fees/rent — fund the wallet with devnet SOL.";
   }
-  return raw ?? "Transaction failed";
+  // A program that emitted a human-readable "Error Message:" log but no coded
+  // Custom error — surface that line directly.
+  if (!/"Custom"/.test(raw ?? "")) {
+    const programLog = logs?.find((l) => l.includes("Error Message:"));
+    if (programLog) return programLog.split("Error Message:")[1].trim();
+  }
+  return decodeProgramError(err, "amm");
 }
 
 /** Token-account amount (u64 LE at offset 64) from raw account bytes. */

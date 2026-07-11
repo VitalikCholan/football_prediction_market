@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { MarketDto } from "@fpm/shared";
+import { friendlyTxError } from "@fpm/shared";
 import { usd, shares as fmtShares } from "@/lib/format";
 import { explorerTx } from "@/lib/solana";
 import { prepareClaim } from "@/lib/tx";
@@ -74,7 +75,7 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
       notifyTxConfirmed();
       refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyTxError(e, "amm"));
     } finally {
       setBusy(false);
     }
