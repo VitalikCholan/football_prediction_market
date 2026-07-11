@@ -121,7 +121,9 @@ pub trait PricingCurve {
 - **Delivery even without shipping on-chain:** a README LVR benchmark (FPMM vs static pm-AMM, replayed on real TxLINE odds, O-4) via the offline `fee.rs`/`math.rs` harness. The v1 Gaussian theta (`φ(Φ⁻¹(p))/√(T−t)`) reuses the same erf/Φ code — the two stretch tracks share one math module. pm-AMM's role in v1 is deriving the funding formula, NOT the pool curve (curve swap is strictly v2).
 - **3-way (win/draw/lose)** — v0 (and v1 leverage) are **binary FPMM** on a home-win predicate; a proper football **1X2** market (Team1 / Draw / Team2) needs multi-outcome normalization so `P1+PX+P2=1`. Full LMSR spec in **§3.1** below. A jump-arbitrage auction around goals (Messari) is a v2/pitch item.
 
-### 3.1 — 3-way (1X2) LMSR market (UNBUILT, v1)
+### 3.1 — 3-way (1X2) LMSR market (v1 — math + resolve protocol BUILT, wiring UNBUILT)
+
+> **Status (2026-07-11):** phase A (`programs/amm/src/lmsr.rs`, pure fixed-point LMSR + 21 tests) and phase B (`instructions/resolve/predicate_1x2.rs` + `plans/resolve-1x2.md`, the 1-of-3 protocol + 8 tests) are **merged**. The EqualTo wall is dissolved (positive-proof protocol). Remaining: phase C — `Market`/`Position`/`Outcome` reshape, `buy`/`sell`/`resolve_1x2` instructions, codegen + full-stack.
 
 **Why this exists.** The shipped market is **binary**: one predicate (`(P1_goals − P2_goals) > 0` = Team1 win, D-8), two tokens. `NO` = "Team1 does NOT win" = **{draw ∪ Team2 win}** — a single token covering two football results. So YES/NO cannot be relabeled to "Team1 / Team2" without lying on draws (~25% of matches): a draw settles `NO`, but a "Team2" label implies Team2 won. A truthful Team1 / Draw / Team2 market needs **three outcomes**, which a 2-reserve CPMM cannot express. This is a program-level feature, not a UI relabel.
 
@@ -134,7 +136,9 @@ price:  price_i = exp(q_i/b) / Σ_j exp(q_j/b)      // softmax → in (0,1), Σ 
 trade:  cost_to_buy(Δ on outcome i) = C(q + Δ·e_i) − C(q)
 loss:   bounded = b · ln(3)                        // max subsidy the LP/vault can lose
 ```
-Softmax normalization gives `Σ price = 1` for free — no separate invariant to enforce. On-chain cost = fixed-point `exp`/`ln` (Q64.64 via LUT or minimax polynomial, pure + property-tested) — the one genuinely new math burden.
+Softmax normalization gives `Σ price = 1` for free — no separate invariant to enforce. On-chain cost = fixed-point `exp`/`ln` (Q64.64, pure + property-tested) — the one genuinely new math burden.
+
+**As built (`lmsr.rs`, merged):** Q64.64 in u128; `exp(−x)` = ln2 range-reduction + sign-free paired Taylor series; `ln` = power-of-2 normalization + atanh series; 256-bit intermediates (limb split, nothing wraps silently); softmax max-subtraction (all exp args ≤ 0, ln arg ∈ [1,3]). Measured error ~1e-16 vs f64 reference. Supported ranges: `b ∈ [10³, 2^60]`, `q_i ≤ 2^60` (new appended `Lmsr*` error variants; existing codes unshifted). Rounding pool-favorable: buy = ceil (min 1 — never free), sell = floor, prices floor with `Σ prices_bps ∈ [9_997, 10_000]`. Structural guarantee: `cost(q) ≥ max(q)` holds EXACTLY in fixed point, so the `b·ln(3)` bounded loss survives truncation. Underflow semantics: an outcome ≳ 44.4·b below the max prices at 0 bps with zero marginal cost — `buy_cost`'s min-1 floor keeps buys non-free.
 
 **pm-AMM (multi-dim) considered, not chosen.** The multi-outcome pm-AMM is the alternative, but its uniform-LVR optimality assumes **Gaussian** dynamics; football is a **jump process** (§3 caveat), so pm-AMM's advantage doesn't formally hold here while it costs more implementation. **LMSR is the pick for 3-way football**; pm-AMM stays the binary-curve v2 experiment (§3).
 
@@ -144,7 +148,7 @@ Softmax normalization gives `Σ price = 1` for free — no separate invariant to
 
 | Layer | Binary (shipped) | 1X2 LMSR |
 |---|---|---|
-| `state.rs` `Market` | `yes_reserve`, `no_reserve` | LMSR state: `q: [u64;3]` (or `[i64;3]`) + `b: u64` |
+| `state.rs` `Market` | `yes_reserve`, `no_reserve` | LMSR state: `q: [u64;3]` (u64 LOCKED — sells bounded by outstanding supply, q never negative) + `b: u64` |
 | `state.rs` `Position` | `yes_tokens`, `no_tokens` | `tokens: [u64;3]` (Team1/Draw/Team2) |
 | `Outcome` enum | `{Yes, No, Void}` | `{Team1, Draw, Team2, Void}` (2-bit) |
 | `buy`/`sell` | `side: Side` | `outcome: u8 ∈ {0,1,2}`, price via LMSR cost delta |
@@ -153,15 +157,32 @@ Softmax normalization gives `Σ price = 1` for free — no separate invariant to
 | complete set | implicit | optional `mint_set` (deposit 1 USDT → 1 of each) / `redeem_set` (burn 1 of each → 1 USDT) to pin the ≤$1 arb band |
 | dynamic fee | `fee.rs` on YES price move | reuse; volatility measured on the traded outcome's price move |
 
-**`resolve` is the hard sub-problem.** TxLINE `validate_stat` returns a **bool for ONE predicate** (§5). Selecting one of three outcomes needs up-to-two CPI checks — e.g. prove `(P1−P2)>0` → Team1; else prove `(P1−P2)==0` → Draw; else Team2. Two blockers, both real:
-1. **EqualTo not soundly negatable** (`PredicateNotNegatable 6023`, current program): the Draw predicate uses `comparison=EqualTo`, and proving "NOT a draw" (to rule Draw out) can't negate cleanly. Fix options: add a sign-returning oracle path, add a `NotEqual` comparator, or structure resolve to prove the WINNER positively (one successful CPI names the outcome; no negation needed) and require the keeper to hint which of the three to prove.
-2. **Predicate storage (D-8)** must carry all three outcome definitions (or derive Draw/Team2 from the stored Team1 predicate by key-swap + comparator), stored on `MarketConfig` so the keeper still can't choose the outcome — the proof does.
+**`resolve` — SOLVED (phase B, `plans/resolve-1x2.md`).** Protocol: **hint-and-prove-positively.** The keeper hints `outcome ∈ {Team1, Draw, Team2}`; the program derives that outcome's predicate on-chain from the stored D-8 config (comparator `GreaterThan`/`EqualTo`/`LessThan` per hint, on the same `stat_a − stat_b` Subtract, threshold pass-through) and makes exactly ONE `validate_stat` CPI which must return `true`; `market.outcome = hint` only after the proof verifies. **The EqualTo wall dissolves**: Draw is proven POSITIVELY via `EqualTo` (a first-class TxLINE comparator) — negation never runs, `PredicateNotNegatable` unreachable on this path. Soundness = integer trichotomy (exactly one of `{d>t, d==t, d<t}`), unit-proven exhaustively (`predicate_1x2.rs`, mutual exclusivity + exhaustiveness + truthfulness). Wrong hint → CPI `false` → `ProofRejected`, no state change (liveness only). D-8 fields suffice; `resolution_comparison` is IGNORED on this path (derived per-hint, never stored). One `MarketConfig` addition: **`market_kind: u8`** carved from `_reserved` (zero-default = Binary, no migration) gating binary `resolve` vs `resolve_1x2` apart; 1X2 configs require `stat_key_b != 0`, distinct keys, `stat_op = Subtract` (`validate_1x2_config`). Decisions on the doc's open questions: pin `stat_to_prove.period` on-chain (stale-batch replay guard, applies to binary too) — YES, in phase C; separate `resolve_1x2` instruction (keeps v0 binary IDL byte-stable) — YES; handicap 1X2 (`t ≠ 0`) — KEEP (free by construction; UI simply doesn't offer it for the WC demo).
 
 **Full-stack ripple:** IDL change → `pnpm codegen` → `libs/idl` regen → keeper (resolve picks 1-of-3, hint), indexer (3 prices, 3-outcome events, DTOs), web (3-chip Team1/Draw/Team2 trade panel — all buyable; card shows 3 real on-chain prices, not the current cosmetic 0.42-split Draw). `libs/shared` DTOs gain a 3-price shape + 3-balance position. Seeder creates **one** 3-way market per fixture (not three binaries).
 
 **Decision (LOCKED direction, UNBUILT):** true 1X2 = **single LMSR multi-outcome market**, chosen over (a) three independent binaries (incoherent prices + Draw-resolve wall) and (b) multi-outcome pm-AMM (Gaussian assumption fails on football jumps). Effort ≈ new `lmsr.rs` + `Market`/`Position`/`Outcome` reshape + `buy`/`sell`/`resolve` rework + codegen + full-stack adaptation. Not on the v0/demo path — demo uses **honest binary labels** ("{Team1} win" / "draw or {Team2}", PLAN §12 BUG-4).
 
 **v1 LiteSVM tests to add:** (a) `Σ price_i == 1` invariant holds after arbitrary buy/sell sequences (within rounding); (b) LMSR cost monotone + bounded loss `≤ b·ln(3)`; (c) `exp`/`ln` fixed-point vs a reference (property test, error bound); (d) solvency `vault ≥ max(supply_i)` after every mutate; (e) `mint_set`/`redeem_set` round-trip = 1 USDT; (f) resolve to each of the three outcomes (positive-proof path) + Void refund; (g) the Draw-resolve path specifically (the EqualTo fix).
+
+### 3.2 — Leverage over 3-way LMSR (composition, UNBUILT)
+
+**The leverage layer (§2) composes ON TOP of the 3-way LMSR market cleanly — because it is orthogonal to the spot curve.** PLAN §10's frame: three *separate* decisions — **mark price**, **spot liquidity**, **leverage instrument**. Leverage marks to the **external TxLINE index, never the spot curve**, so swapping spot (binary FPMM → 3-way LMSR) leaves the leverage design essentially unchanged. Build order is free: LMSR-3-way then leverage, or binary+leverage (§2 as written) then generalize spot.
+
+**What generalizes for free:**
+- **Each outcome is itself a binary option.** From one outcome's view it's binary (`i` vs `not-i`, probability `p_i`); a leveraged long on outcome `i` = binary option, max loss = `collateral`, upside `[0,1]`. Same structure as §2.
+- **Per-outcome theta:** `fee_rate ∝ p_i·(1−p_i)/(T−t)`, evaluated at that outcome's mark `p_i` (§2.2 unchanged, just indexed by outcome). The three `p_i(1−p_i)` are independent and their sum ≠ 1 — fine, theta is per-position/per-outcome.
+- **Mark = TxLINE 1X2 odds per outcome** (home/draw/away) — more natural than the binary case; `validate_odds` CPI per outcome in v2 (§2.4).
+- **Coverage (§2.3) generalizes and improves:** exactly one outcome wins, so realized payout is only the winning outcome's leveraged positions → guard `vault ≥ max_i(leveraged_payout_i)` (same shape as §3.1 LMSR spot solvency).
+- **Deterministic expiry (§2.5), LP windows (§2.7) unchanged. Risk valve (§2.6) matters MORE** — a goal swings 1X2 hard (kills the draw especially), exactly when a leveraged pre-goal position is picked off.
+
+**New work (honest cost):** `Position` carries a levered `outcome_idx ∈ {0,1,2}` + the §2 leverage fields; `resolve` pays leveraged positions on the winning outcome and expires the rest (composes with §3.1 resolve); `max_leverage_for_p(p_i)` per outcome (draw `p≈0.25` → mid-taper).
+
+**Compute:** LMSR `exp`/`ln` (spot buy/sell ix) and the funding-epoch walk (open/close/crank leverage ix) live in **different instructions** — they never stack within one CU budget. Keep funding a **separate crank** (not bundled into a trade), per the Drift pattern below.
+
+**Precedent (Solana MCP, 2026-07):** no public program combines LMSR/multi-outcome AMM with a leverage/options vault — this composition is novel (the thesis). The closest architecture precedent is **Drift Protocol** (perps): validates the pattern of **funding as a separate crank** (`update_funding_rate`), **oracle-marked positions** (`OracleSource`, not marked to own AMM), **fixed-point money math** (`PRICE_PRECISION`/`FUNDING_RATE_BUFFER`/`MARGIN_PRECISION`, no float), and a **multi-position account** (`MAX_PERP_POSITIONS`) — all directly applicable here.
+
+**Decision (LOCKED direction, UNBUILT):** leverage-as-option is a **spot-curve-agnostic layer** marking to the TxLINE oracle; it drops onto binary FPMM (§2) or 3-way LMSR (§3.1) with only per-outcome indexing changes. Not on the v0 path.
 
 ---
 
