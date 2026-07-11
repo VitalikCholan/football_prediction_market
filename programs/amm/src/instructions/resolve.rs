@@ -21,6 +21,11 @@
 //!   surfaces as our `AmmError::ProofRejected` — keeper retries with the other
 //!   outcome hint or refetches the proof.
 
+/// 1-of-3 (1X2) predicate derivation — pure prototype for the future
+/// 3-way market's `resolve_1x2` (SPEC §3.1, `plans/resolve-1x2.md`).
+/// Not called by this binary handler.
+pub mod predicate_1x2;
+
 use anchor_lang::prelude::*;
 
 use crate::constants::{CONFIG_SEED, DAILY_SCORES_ROOTS_SEED, MARKET_SEED, MILLIS_PER_DAY};
