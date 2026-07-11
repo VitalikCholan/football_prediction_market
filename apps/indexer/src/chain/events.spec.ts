@@ -62,7 +62,7 @@ describe('decodeAmmEvent (real devnet payloads)', () => {
       fixtureId: 18179549n,
       sideYes: true,
       isBuy: true,
-      usdc: 5_000_000n,
+      usdt: 5_000_000n,
       tokens: 4_748_297n,
       priceBps: 5243,
       feeBps: 30,

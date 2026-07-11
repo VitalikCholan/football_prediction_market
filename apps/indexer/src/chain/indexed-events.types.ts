@@ -56,8 +56,8 @@ export interface TradeIndexedEvent extends IndexedEventBase {
   kind: 'buy' | 'sell';
   trader: string;
   side: 0 | 1; // 0 = NO, 1 = YES
-  usdcIn: bigint;
-  usdcOut: bigint;
+  usdtIn: bigint;
+  usdtOut: bigint;
   tokensAmount: bigint;
   feeBps: number;
   yesPriceBps: number; // price after trade
@@ -97,7 +97,7 @@ export interface Trade1x2IndexedEvent extends IndexedEventBase {
   trader: string;
   outcome: 0 | 1 | 2; // 0 = Team1, 1 = Draw, 2 = Team2
   isBuy: boolean;
-  usdc: bigint;
+  usdt: bigint;
   tokens: bigint;
   feeBps: number;
   priceBps: number; // post-trade price of the traded outcome

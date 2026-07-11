@@ -109,7 +109,7 @@ describe('decodeAmmEvent — 1X2 events (borsh round-trip)', () => {
       owner: OWNER,
       outcome: 1,
       isBuy: true,
-      usdc: 5_000_000n,
+      usdt: 5_000_000n,
       tokens: 4_748_297n,
       priceBps: 3500,
       feeBps: 30,

@@ -39,7 +39,7 @@ fn bootstrap_open() -> Live {
     let mut h = Harness::new_with_oracle();
     let admin = h.admin.pubkey();
     let keeper = h.keeper.pubkey();
-    let mint = h.usdc_mint;
+    let mint = h.usdt_mint;
 
     h.send(
         &[&h.admin.insecure_clone()],
@@ -54,7 +54,7 @@ fn bootstrap_open() -> Live {
     )
     .unwrap();
 
-    let admin_ata = h.fund_ata(&admin, 1_000_000 * ONE_USDC);
+    let admin_ata = h.fund_ata(&admin, 1_000_000 * ONE_USDT);
     let kickoff = h.now() + 100;
     let freeze = h.now() + 1_000;
     h.send(
@@ -68,7 +68,7 @@ fn bootstrap_open() -> Live {
             freeze,
             1_000_000,
             1_000_000,
-            10_000 * ONE_USDC,
+            10_000 * ONE_USDT,
             &mint,
             &admin_ata,
         ),
@@ -77,7 +77,7 @@ fn bootstrap_open() -> Live {
 
     let trader = Keypair::new();
     h.svm.airdrop(&trader.pubkey(), 100_000_000_000).unwrap();
-    let trader_ata = h.fund_ata(&trader.pubkey(), 100_000 * ONE_USDC);
+    let trader_ata = h.fund_ata(&trader.pubkey(), 100_000 * ONE_USDT);
 
     Live { h, trader, trader_ata, admin_ata, kickoff, freeze }
 }
@@ -92,19 +92,19 @@ fn to_trading(live: &mut Live) {
 }
 
 /// … → Locked via the REAL `freeze_market` (clock warped to freeze_ts),
-/// with `buy_side`/`buy_usdc` traded in between (0 = no trade).
-fn to_locked(live: &mut Live, buy_side: Side, buy_usdc: u64) {
+/// with `buy_side`/`buy_usdt` traded in between (0 = no trade).
+fn to_locked(live: &mut Live, buy_side: Side, buy_usdt: u64) {
     to_trading(live);
     let trader = live.trader.pubkey();
     live.h
         .send(&[&live.trader.insecure_clone()], &trader, ix_open_position(&trader, FIXTURE))
         .unwrap();
-    if buy_usdc > 0 {
+    if buy_usdt > 0 {
         live.h
             .send(
                 &[&live.trader.insecure_clone()],
                 &trader,
-                ix_buy(&trader, CFG_ID, FIXTURE, buy_side, buy_usdc, 0, &live.h.usdc_mint, &live.trader_ata),
+                ix_buy(&trader, CFG_ID, FIXTURE, buy_side, buy_usdt, 0, &live.h.usdt_mint, &live.trader_ata),
             )
             .unwrap();
     }
@@ -224,7 +224,7 @@ fn freeze_gates() {
     let res = live.h.send(
         &[&live.trader.insecure_clone()],
         &trader,
-        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, ONE_USDC, 0, &live.h.usdc_mint, &live.trader_ata),
+        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, ONE_USDT, 0, &live.h.usdt_mint, &live.trader_ata),
     );
     assert_amm_error(&res, AmmError::InvalidMarketState);
 }
@@ -235,7 +235,7 @@ fn freeze_gates() {
 #[test]
 fn resolve_yes_success() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDT);
 
     let meta = do_resolve(&mut live, Side::Yes, 2, 1).unwrap();
     // Anchor `emit!` writes the event as a `Program data:` log line.
@@ -256,7 +256,7 @@ fn resolve_yes_success() {
 #[test]
 fn resolve_no_success() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::No, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::No, 1_000 * ONE_USDT);
 
     // home 1 - away 2 = -1: stored predicate (>0) false, negation (<1) true.
     do_resolve(&mut live, Side::No, 1, 2).unwrap();
@@ -272,7 +272,7 @@ fn resolve_no_success() {
 #[test]
 fn resolve_proof_rejected() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDT);
 
     // Yes hint but the "proven" stats say home lost → validate_stat = false.
     let res = do_resolve(&mut live, Side::Yes, 0, 3);
@@ -290,7 +290,7 @@ fn resolve_proof_rejected() {
 #[test]
 fn resolve_oracle_error_mode() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDT);
 
     let ts = live.h.now();
     // 0xFF sentinel → the mock fails with custom 6007, like the real oracle
@@ -327,7 +327,7 @@ fn resolve_oracle_error_mode() {
 #[test]
 fn resolve_double_rejected() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDT);
 
     do_resolve(&mut live, Side::Yes, 2, 1).unwrap();
     let res = do_resolve(&mut live, Side::Yes, 2, 1);
@@ -340,7 +340,7 @@ fn resolve_double_rejected() {
 #[test]
 fn resolve_wrong_txline_program() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDT);
 
     let ts = live.h.now();
     let roots = write_roots_account(&mut live.h.svm, &txline_id(), epoch_day(ts), 0x00);
@@ -368,7 +368,7 @@ fn resolve_wrong_txline_program() {
 #[test]
 fn resolve_bad_roots_account() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDT);
     let ts = live.h.now();
     let keeper = live.h.keeper.insecure_clone();
 
@@ -430,7 +430,7 @@ fn resolve_bad_roots_account() {
 #[test]
 fn resolve_fixture_mismatch() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDT);
 
     let ts = live.h.now();
     let roots = write_roots_account(&mut live.h.svm, &txline_id(), epoch_day(ts), 0x00);
@@ -457,7 +457,7 @@ fn resolve_fixture_mismatch() {
 #[test]
 fn redeem_winner_and_double() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDT);
     do_resolve(&mut live, Side::Yes, 2, 1).unwrap();
 
     let trader = live.trader.pubkey();
@@ -473,7 +473,7 @@ fn redeem_winner_and_double() {
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_redeem(&trader, FIXTURE, &live.h.usdc_mint, &live.trader_ata),
+            ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
 
@@ -492,7 +492,7 @@ fn redeem_winner_and_double() {
     let res = live.h.send(
         &[&live.trader.insecure_clone()],
         &trader,
-        ix_redeem(&trader, FIXTURE, &live.h.usdc_mint, &live.trader_ata),
+        ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
     );
     assert_amm_error(&res, AmmError::AlreadyRedeemed);
 }
@@ -503,7 +503,7 @@ fn redeem_winner_and_double() {
 #[test]
 fn redeem_loser_gets_zero() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::No, 1_000 * ONE_USDC); // trader holds NO
+    to_locked(&mut live, Side::No, 1_000 * ONE_USDT); // trader holds NO
     do_resolve(&mut live, Side::Yes, 2, 1).unwrap(); // …but YES wins
 
     let trader = live.trader.pubkey();
@@ -514,7 +514,7 @@ fn redeem_loser_gets_zero() {
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_redeem(&trader, FIXTURE, &live.h.usdc_mint, &live.trader_ata),
+            ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
 
@@ -531,7 +531,7 @@ fn redeem_loser_gets_zero() {
 #[test]
 fn redeem_void_refunds_collateral() {
     let mut live = bootstrap_open();
-    let stake = 1_000 * ONE_USDC;
+    let stake = 1_000 * ONE_USDT;
     to_locked(&mut live, Side::Yes, stake);
     force_market(&mut live.h, FIXTURE, MarketState::Resolved, Outcome::Void);
 
@@ -545,14 +545,14 @@ fn redeem_void_refunds_collateral() {
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_redeem(&trader, FIXTURE, &live.h.usdc_mint, &live.trader_ata),
+            ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
 
     assert_eq!(
         live.h.token_balance(&live.trader_ata),
         before + stake,
-        "Void refunds the net USDC stake"
+        "Void refunds the net USDT stake"
     );
     let pos: Position = get_anchor(&live.h.svm, &position_pda(&market_key, &trader));
     assert!(pos.redeemed);
@@ -565,7 +565,7 @@ fn redeem_void_refunds_collateral() {
 #[test]
 fn close_market_lifecycle() {
     let mut live = bootstrap_open();
-    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDC);
+    to_locked(&mut live, Side::Yes, 1_000 * ONE_USDT);
     do_resolve(&mut live, Side::Yes, 2, 1).unwrap();
 
     let admin = live.h.admin.insecure_clone();
@@ -576,7 +576,7 @@ fn close_market_lifecycle() {
     let res = live.h.send(
         &[&admin],
         &admin.pubkey(),
-        ix_close_market(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdc_mint, &live.admin_ata),
+        ix_close_market(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdt_mint, &live.admin_ata),
     );
     assert_amm_error(&res, AmmError::GraceNotElapsed);
 
@@ -589,7 +589,7 @@ fn close_market_lifecycle() {
     let res = live.h.send(
         &[&stranger],
         &stranger.pubkey(),
-        ix_close_market(&stranger.pubkey(), CFG_ID, FIXTURE, &live.h.usdc_mint, &stranger_ata),
+        ix_close_market(&stranger.pubkey(), CFG_ID, FIXTURE, &live.h.usdt_mint, &stranger_ata),
     );
     assert_amm_error(&res, AmmError::Unauthorized);
 
@@ -600,7 +600,7 @@ fn close_market_lifecycle() {
         .send(
             &[&admin],
             &admin.pubkey(),
-            ix_close_market(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdc_mint, &live.admin_ata),
+            ix_close_market(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdt_mint, &live.admin_ata),
         )
         .unwrap();
 
@@ -644,7 +644,7 @@ fn full_happy_path() {
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, 500 * ONE_USDC, 0, &live.h.usdc_mint, &live.trader_ata),
+            ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, 500 * ONE_USDT, 0, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
 
@@ -669,7 +669,7 @@ fn full_happy_path() {
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_redeem(&trader, FIXTURE, &live.h.usdc_mint, &live.trader_ata),
+            ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
     assert_eq!(live.h.token_balance(&live.trader_ata), before + winning);
@@ -681,7 +681,7 @@ fn full_happy_path() {
         .send(
             &[&admin],
             &admin.pubkey(),
-            ix_close_market(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdc_mint, &live.admin_ata),
+            ix_close_market(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdt_mint, &live.admin_ata),
         )
         .unwrap();
     let market_acc = live.h.svm.get_account(&market_key);

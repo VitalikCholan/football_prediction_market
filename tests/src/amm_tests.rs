@@ -31,7 +31,7 @@ fn bootstrap_to_trading(seed_yes: u64, seed_no: u64, seed_liq: u64) -> Live {
     let mut h = Harness::new();
     let admin = h.admin.pubkey();
     let keeper = h.keeper.pubkey();
-    let mint = h.usdc_mint;
+    let mint = h.usdt_mint;
     let txline = Pubkey::new_from_array([3u8; 32]);
 
     // config + market config
@@ -45,7 +45,7 @@ fn bootstrap_to_trading(seed_yes: u64, seed_no: u64, seed_liq: u64) -> Live {
     .unwrap();
 
     // fund admin, init market (needs future kickoff/freeze)
-    let admin_ata = h.fund_ata(&admin, 1_000_000 * ONE_USDC);
+    let admin_ata = h.fund_ata(&admin, 1_000_000 * ONE_USDT);
     let kickoff = h.now() + 100;
     let freeze = h.now() + 1_000;
     h.send(
@@ -65,7 +65,7 @@ fn bootstrap_to_trading(seed_yes: u64, seed_no: u64, seed_liq: u64) -> Live {
     // flipping state via a direct account patch. See `force_trading`.
     let trader = Keypair::new();
     h.svm.airdrop(&trader.pubkey(), 100_000_000_000).unwrap();
-    let trader_ata = h.fund_ata(&trader.pubkey(), 100_000 * ONE_USDC);
+    let trader_ata = h.fund_ata(&trader.pubkey(), 100_000 * ONE_USDT);
 
     Live { h, trader, trader_ata, admin_ata }
 }
@@ -93,7 +93,7 @@ fn case1_initialize_config() {
     let mut h = Harness::new();
     let admin = h.admin.pubkey();
     let keeper = h.keeper.pubkey();
-    let mint = h.usdc_mint;
+    let mint = h.usdt_mint;
     let txline = Pubkey::new_from_array([3u8; 32]);
 
     h.send(&[&h.admin.insecure_clone()], &admin, ix_initialize_config(&admin, &keeper, &txline, &mint))
@@ -103,7 +103,7 @@ fn case1_initialize_config() {
     assert_eq!(cfg.authority, admin);
     assert_eq!(cfg.keeper, keeper);
     assert_eq!(cfg.txline_program, txline);
-    assert_eq!(cfg.usdc_mint, mint);
+    assert_eq!(cfg.usdt_mint, mint);
     assert_eq!(cfg.token_program, token_program_id());
 
     // re-init must fail (account already exists → init constraint)
@@ -120,7 +120,7 @@ fn case2_create_market_config() {
     let mut h = Harness::new();
     let admin = h.admin.pubkey();
     let keeper = h.keeper.pubkey();
-    let mint = h.usdc_mint;
+    let mint = h.usdt_mint;
     let txline = Pubkey::new_from_array([3u8; 32]);
     h.send(&[&h.admin.insecure_clone()], &admin, ix_initialize_config(&admin, &keeper, &txline, &mint))
         .unwrap();
@@ -167,14 +167,14 @@ fn case2_create_market_config() {
 
 // ===========================================================================
 // Case 3 — init_market creates Market+vault, reserves seeded, price≈5000,
-//          vault authority == market PDA, seed USDC transferred.
+//          vault authority == market PDA, seed USDT transferred.
 // ===========================================================================
 #[test]
 fn case3_init_market() {
     let mut h = Harness::new();
     let admin = h.admin.pubkey();
     let keeper = h.keeper.pubkey();
-    let mint = h.usdc_mint;
+    let mint = h.usdt_mint;
     let txline = Pubkey::new_from_array([3u8; 32]);
     h.send(&[&h.admin.insecure_clone()], &admin, ix_initialize_config(&admin, &keeper, &txline, &mint))
         .unwrap();
@@ -185,8 +185,8 @@ fn case3_init_market() {
     )
     .unwrap();
 
-    let admin_ata = h.fund_ata(&admin, 1_000_000 * ONE_USDC);
-    let seed_liq = 10_000 * ONE_USDC;
+    let admin_ata = h.fund_ata(&admin, 1_000_000 * ONE_USDT);
+    let seed_liq = 10_000 * ONE_USDT;
     let kickoff = h.now() + 100;
     let freeze = h.now() + 1_000;
     let admin_before = h.token_balance(&admin_ata);
@@ -215,9 +215,9 @@ fn case3_init_market() {
     let tok = spl_token::state::Account::unpack(&vacc.data).unwrap();
     assert_eq!(tok.owner, market_key, "vault authority is the market PDA");
     assert_eq!(tok.amount, seed_liq);
-    assert_eq!(m.usdc_collateral, seed_liq);
+    assert_eq!(m.usdt_collateral, seed_liq);
 
-    // seed USDC left the admin ATA
+    // seed USDT left the admin ATA
     assert_eq!(h.token_balance(&admin_ata), admin_before - seed_liq);
 
     // wrong kickoff (>= freeze) rejected
@@ -225,7 +225,7 @@ fn case3_init_market() {
         &[&h.admin.insecure_clone()],
         &admin,
         ix_init_market(
-            &admin, CFG_ID, 999, freeze, kickoff, 1, 1, ONE_USDC, &mint, &admin_ata,
+            &admin, CFG_ID, 999, freeze, kickoff, 1, 1, ONE_USDT, &mint, &admin_ata,
         ),
     );
     assert_amm_error(&res, AmmError::InvalidTiming);
@@ -237,7 +237,7 @@ fn case3_init_market() {
 // ===========================================================================
 #[test]
 fn case4_buy_before_trading_fails() {
-    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 10_000 * ONE_USDC);
+    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 10_000 * ONE_USDT);
     let trader = live.trader.pubkey();
 
     // open position, then try to buy while market is still Open
@@ -247,7 +247,7 @@ fn case4_buy_before_trading_fails() {
     let res = live.h.send(
         &[&live.trader],
         &trader,
-        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, ONE_USDC, 0, &live.h.usdc_mint, &live.trader_ata),
+        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, ONE_USDT, 0, &live.h.usdt_mint, &live.trader_ata),
     );
     assert_amm_error(&res, AmmError::InvalidMarketState);
 }
@@ -258,7 +258,7 @@ fn case4_buy_before_trading_fails() {
 // ===========================================================================
 #[test]
 fn case5_buy_cpmm_and_slippage() {
-    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 100_000 * ONE_USDC);
+    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 100_000 * ONE_USDT);
     force_state(&mut live.h, FIXTURE, MarketState::Trading);
     let trader = live.trader.pubkey();
     live.h.send(&[&live.trader], &trader, ix_open_position(&trader, FIXTURE)).unwrap();
@@ -272,7 +272,7 @@ fn case5_buy_cpmm_and_slippage() {
         .send(
             &[&live.trader],
             &trader,
-            ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, 1_000 * ONE_USDC, 0, &live.h.usdc_mint, &live.trader_ata),
+            ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, 1_000 * ONE_USDT, 0, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
 
@@ -289,7 +289,7 @@ fn case5_buy_cpmm_and_slippage() {
     let res = live.h.send(
         &[&live.trader],
         &trader,
-        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, ONE_USDC, u64::MAX, &live.h.usdc_mint, &live.trader_ata),
+        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, ONE_USDT, u64::MAX, &live.h.usdt_mint, &live.trader_ata),
     );
     assert_amm_error(&res, AmmError::SlippageExceeded);
 }
@@ -299,19 +299,19 @@ fn case5_buy_cpmm_and_slippage() {
 // ===========================================================================
 #[test]
 fn case6_round_trip_no_profit() {
-    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 100_000 * ONE_USDC);
+    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 100_000 * ONE_USDT);
     force_state(&mut live.h, FIXTURE, MarketState::Trading);
     let trader = live.trader.pubkey();
     live.h.send(&[&live.trader], &trader, ix_open_position(&trader, FIXTURE)).unwrap();
 
-    let usdc_in = 500 * ONE_USDC;
+    let usdt_in = 500 * ONE_USDT;
     let before = live.h.token_balance(&live.trader_ata);
 
     live.h
         .send(
             &[&live.trader],
             &trader,
-            ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, usdc_in, 0, &live.h.usdc_mint, &live.trader_ata),
+            ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, usdt_in, 0, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
 
@@ -323,7 +323,7 @@ fn case6_round_trip_no_profit() {
         .send(
             &[&live.trader],
             &trader,
-            ix_sell(&trader, CFG_ID, FIXTURE, Side::Yes, tokens, 0, &live.h.usdc_mint, &live.trader_ata),
+            ix_sell(&trader, CFG_ID, FIXTURE, Side::Yes, tokens, 0, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
 
@@ -344,7 +344,7 @@ fn case6_round_trip_no_profit() {
 // ===========================================================================
 #[test]
 fn case7_dynamic_fee_charged() {
-    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 100_000 * ONE_USDC);
+    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 100_000 * ONE_USDT);
     force_state(&mut live.h, FIXTURE, MarketState::Trading);
     let trader = live.trader.pubkey();
     live.h.send(&[&live.trader], &trader, ix_open_position(&trader, FIXTURE)).unwrap();
@@ -355,7 +355,7 @@ fn case7_dynamic_fee_charged() {
         .send(
             &[&live.trader],
             &trader,
-            ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, 5_000 * ONE_USDC, 0, &live.h.usdc_mint, &live.trader_ata),
+            ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, 5_000 * ONE_USDT, 0, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
     let m: Market = get_anchor(&live.h.svm, &market_key);
@@ -369,7 +369,7 @@ fn case7_dynamic_fee_charged() {
 // ===========================================================================
 #[test]
 fn case8_no_buy_accounting() {
-    let mut live = bootstrap_to_trading(2_000_000, 2_000_000, 100_000 * ONE_USDC);
+    let mut live = bootstrap_to_trading(2_000_000, 2_000_000, 100_000 * ONE_USDT);
     force_state(&mut live.h, FIXTURE, MarketState::Trading);
     let trader = live.trader.pubkey();
     live.h.send(&[&live.trader], &trader, ix_open_position(&trader, FIXTURE)).unwrap();
@@ -382,7 +382,7 @@ fn case8_no_buy_accounting() {
         .send(
             &[&live.trader],
             &trader,
-            ix_buy(&trader, CFG_ID, FIXTURE, Side::No, 1_000 * ONE_USDC, 0, &live.h.usdc_mint, &live.trader_ata),
+            ix_buy(&trader, CFG_ID, FIXTURE, Side::No, 1_000 * ONE_USDT, 0, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
 
@@ -400,7 +400,7 @@ fn case8_no_buy_accounting() {
 // ===========================================================================
 #[test]
 fn case12_edges() {
-    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 100_000 * ONE_USDC);
+    let mut live = bootstrap_to_trading(1_000_000, 1_000_000, 100_000 * ONE_USDT);
     force_state(&mut live.h, FIXTURE, MarketState::Trading);
     let trader = live.trader.pubkey();
     live.h.send(&[&live.trader], &trader, ix_open_position(&trader, FIXTURE)).unwrap();
@@ -409,7 +409,7 @@ fn case12_edges() {
     let res = live.h.send(
         &[&live.trader],
         &trader,
-        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, 0, 0, &live.h.usdc_mint, &live.trader_ata),
+        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, 0, 0, &live.h.usdt_mint, &live.trader_ata),
     );
     assert_amm_error(&res, AmmError::ZeroAmount);
 
@@ -419,7 +419,7 @@ fn case12_edges() {
     let res = live.h.send(
         &[&live.trader],
         &trader,
-        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, u64::MAX, 0, &live.h.usdc_mint, &live.trader_ata),
+        ix_buy(&trader, CFG_ID, FIXTURE, Side::Yes, u64::MAX, 0, &live.h.usdt_mint, &live.trader_ata),
     );
     assert!(res.is_err(), "u64::MAX buy must fail");
 
@@ -427,7 +427,7 @@ fn case12_edges() {
     let res = live.h.send(
         &[&live.trader],
         &trader,
-        ix_sell(&trader, CFG_ID, FIXTURE, Side::Yes, 0, 0, &live.h.usdc_mint, &live.trader_ata),
+        ix_sell(&trader, CFG_ID, FIXTURE, Side::Yes, 0, 0, &live.h.usdt_mint, &live.trader_ata),
     );
     assert_amm_error(&res, AmmError::ZeroAmount);
 }

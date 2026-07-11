@@ -70,7 +70,7 @@ export async function runSmoke(): Promise<void> {
       authority: gc.data.authority,
       keeper: gc.data.keeper,
       txlineProgram: gc.data.txlineProgram,
-      usdcMint: gc.data.usdcMint,
+      usdtMint: gc.data.usdtMint,
       keeperMatchesSigner: gc.data.keeper === signer.address,
     },
     "smoke: GlobalConfig fetched",

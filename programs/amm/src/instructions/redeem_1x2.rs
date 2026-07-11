@@ -43,14 +43,14 @@ pub struct Redeem1x2<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = owner,
         token::token_program = token_program,
     )]
-    pub owner_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub owner_usdt: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(address = market.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = market.usdt_mint)]
+    pub usdt_mint: Box<InterfaceAccount<'info, Mint>>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -73,7 +73,7 @@ pub(crate) fn handler(ctx: Context<Redeem1x2>) -> Result<()> {
             .accounts
             .position
             .collateral
-            .min(ctx.accounts.market.usdc_collateral),
+            .min(ctx.accounts.market.usdt_collateral),
         Outcome1x2::Unset => return err!(AmmError::InvalidMarketState),
     };
 
@@ -95,22 +95,22 @@ pub(crate) fn handler(ctx: Context<Redeem1x2>) -> Result<()> {
         for (supply, bal) in market.supply.iter_mut().zip(balances.iter()) {
             *supply = supply.checked_sub(*bal).ok_or(AmmError::MathOverflow)?;
         }
-        market.usdc_collateral = market
-            .usdc_collateral
+        market.usdt_collateral = market
+            .usdt_collateral
             .checked_sub(payout)
             .ok_or(AmmError::MathOverflow)?;
     }
 
-    // ---- interaction: vault -> owner_usdc, signed by the market PDA ----
+    // ---- interaction: vault -> owner_usdt, signed by the market PDA ----
     if payout > 0 {
-        let decimals = ctx.accounts.usdc_mint.decimals;
+        let decimals = ctx.accounts.usdt_mint.decimals;
         let fixture_le = fixture_id.to_le_bytes();
         let signer_seeds: &[&[&[u8]]] = &[&[MARKET_1X2_SEED, &fixture_le, &[market_bump]]];
 
         let cpi_accounts = TransferChecked {
             from: ctx.accounts.vault.to_account_info(),
-            mint: ctx.accounts.usdc_mint.to_account_info(),
-            to: ctx.accounts.owner_usdc.to_account_info(),
+            mint: ctx.accounts.usdt_mint.to_account_info(),
+            to: ctx.accounts.owner_usdt.to_account_info(),
             authority: ctx.accounts.market.to_account_info(),
         };
         let cpi_ctx = CpiContext::new_with_signer(

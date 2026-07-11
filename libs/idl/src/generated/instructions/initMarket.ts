@@ -15,8 +15,8 @@ export const INIT_MARKET_DISCRIMINATOR = new Uint8Array([33, 253, 15, 116, 89, 2
 
 export function getInitMarketDiscriminatorBytes() { return fixEncoderSize(getBytesEncoder(), 8).encode(INIT_MARKET_DISCRIMINATOR); }
 
-export type InitMarketInstruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountAuthority extends string | AccountMeta<string> = string, TAccountGlobal extends string | AccountMeta<string> = string, TAccountMarketConfig extends string | AccountMeta<string> = string, TAccountMarket extends string | AccountMeta<string> = string, TAccountVault extends string | AccountMeta<string> = string, TAccountUsdcMint extends string | AccountMeta<string> = string, TAccountAuthorityUsdc extends string | AccountMeta<string> = string, TAccountTokenProgram extends string | AccountMeta<string> = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
-Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountAuthority extends string ? WritableSignerAccount<TAccountAuthority> & AccountSignerMeta<TAccountAuthority> : TAccountAuthority, TAccountGlobal extends string ? ReadonlyAccount<TAccountGlobal> : TAccountGlobal, TAccountMarketConfig extends string ? ReadonlyAccount<TAccountMarketConfig> : TAccountMarketConfig, TAccountMarket extends string ? WritableAccount<TAccountMarket> : TAccountMarket, TAccountVault extends string ? WritableAccount<TAccountVault> : TAccountVault, TAccountUsdcMint extends string ? ReadonlyAccount<TAccountUsdcMint> : TAccountUsdcMint, TAccountAuthorityUsdc extends string ? WritableAccount<TAccountAuthorityUsdc> : TAccountAuthorityUsdc, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
+export type InitMarketInstruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountAuthority extends string | AccountMeta<string> = string, TAccountGlobal extends string | AccountMeta<string> = string, TAccountMarketConfig extends string | AccountMeta<string> = string, TAccountMarket extends string | AccountMeta<string> = string, TAccountVault extends string | AccountMeta<string> = string, TAccountUsdtMint extends string | AccountMeta<string> = string, TAccountAuthorityUsdt extends string | AccountMeta<string> = string, TAccountTokenProgram extends string | AccountMeta<string> = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
+Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountAuthority extends string ? WritableSignerAccount<TAccountAuthority> & AccountSignerMeta<TAccountAuthority> : TAccountAuthority, TAccountGlobal extends string ? ReadonlyAccount<TAccountGlobal> : TAccountGlobal, TAccountMarketConfig extends string ? ReadonlyAccount<TAccountMarketConfig> : TAccountMarketConfig, TAccountMarket extends string ? WritableAccount<TAccountMarket> : TAccountMarket, TAccountVault extends string ? WritableAccount<TAccountVault> : TAccountVault, TAccountUsdtMint extends string ? ReadonlyAccount<TAccountUsdtMint> : TAccountUsdtMint, TAccountAuthorityUsdt extends string ? WritableAccount<TAccountAuthorityUsdt> : TAccountAuthorityUsdt, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
 
 export type InitMarketInstructionData = { discriminator: ReadonlyUint8Array; fixtureId: bigint; kickoffTs: bigint; freezeTs: bigint; seedYes: bigint; seedNo: bigint; seedLiquidity: bigint;  };
 
@@ -34,14 +34,14 @@ export function getInitMarketInstructionDataCodec(): FixedSizeCodec<InitMarketIn
     return combineCodec(getInitMarketInstructionDataEncoder(), getInitMarketInstructionDataDecoder());
 }
 
-export type InitMarketAsyncInput<TAccountAuthority extends string = string, TAccountGlobal extends string = string, TAccountMarketConfig extends string = string, TAccountMarket extends string = string, TAccountVault extends string = string, TAccountUsdcMint extends string = string, TAccountAuthorityUsdc extends string = string, TAccountTokenProgram extends string = string, TAccountSystemProgram extends string = string> =  {
+export type InitMarketAsyncInput<TAccountAuthority extends string = string, TAccountGlobal extends string = string, TAccountMarketConfig extends string = string, TAccountMarket extends string = string, TAccountVault extends string = string, TAccountUsdtMint extends string = string, TAccountAuthorityUsdt extends string = string, TAccountTokenProgram extends string = string, TAccountSystemProgram extends string = string> =  {
   authority: TransactionSigner<TAccountAuthority>;
 global?: Address<TAccountGlobal>;
 marketConfig: Address<TAccountMarketConfig>;
 market?: Address<TAccountMarket>;
 vault?: Address<TAccountVault>;
-usdcMint: Address<TAccountUsdcMint>;
-authorityUsdc: Address<TAccountAuthorityUsdc>;
+usdtMint: Address<TAccountUsdtMint>;
+authorityUsdt: Address<TAccountAuthorityUsdt>;
 tokenProgram?: Address<TAccountTokenProgram>;
 systemProgram?: Address<TAccountSystemProgram>;
 fixtureId: InitMarketInstructionDataArgs["fixtureId"];
@@ -52,12 +52,12 @@ seedNo: InitMarketInstructionDataArgs["seedNo"];
 seedLiquidity: InitMarketInstructionDataArgs["seedLiquidity"];
 }
 
-export async function getInitMarketInstructionAsync<TAccountAuthority extends string, TAccountGlobal extends string, TAccountMarketConfig extends string, TAccountMarket extends string, TAccountVault extends string, TAccountUsdcMint extends string, TAccountAuthorityUsdc extends string, TAccountTokenProgram extends string, TAccountSystemProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: InitMarketAsyncInput<TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdcMint, TAccountAuthorityUsdc, TAccountTokenProgram, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress } ): Promise<InitMarketInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdcMint, TAccountAuthorityUsdc, TAccountTokenProgram, TAccountSystemProgram>> {
+export async function getInitMarketInstructionAsync<TAccountAuthority extends string, TAccountGlobal extends string, TAccountMarketConfig extends string, TAccountMarket extends string, TAccountVault extends string, TAccountUsdtMint extends string, TAccountAuthorityUsdt extends string, TAccountTokenProgram extends string, TAccountSystemProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: InitMarketAsyncInput<TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdtMint, TAccountAuthorityUsdt, TAccountTokenProgram, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress } ): Promise<InitMarketInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdtMint, TAccountAuthorityUsdt, TAccountTokenProgram, TAccountSystemProgram>> {
   // Program address.
 const programAddress = config?.programAddress ?? AMM_PROGRAM_ADDRESS;
 
  // Original accounts.
-const originalAccounts = { authority: { value: input.authority ?? null, isWritable: true }, global: { value: input.global ?? null, isWritable: false }, marketConfig: { value: input.marketConfig ?? null, isWritable: false }, market: { value: input.market ?? null, isWritable: true }, vault: { value: input.vault ?? null, isWritable: true }, usdcMint: { value: input.usdcMint ?? null, isWritable: false }, authorityUsdc: { value: input.authorityUsdc ?? null, isWritable: true }, tokenProgram: { value: input.tokenProgram ?? null, isWritable: false }, systemProgram: { value: input.systemProgram ?? null, isWritable: false } }
+const originalAccounts = { authority: { value: input.authority ?? null, isWritable: true }, global: { value: input.global ?? null, isWritable: false }, marketConfig: { value: input.marketConfig ?? null, isWritable: false }, market: { value: input.market ?? null, isWritable: true }, vault: { value: input.vault ?? null, isWritable: true }, usdtMint: { value: input.usdtMint ?? null, isWritable: false }, authorityUsdt: { value: input.authorityUsdt ?? null, isWritable: true }, tokenProgram: { value: input.tokenProgram ?? null, isWritable: false }, systemProgram: { value: input.systemProgram ?? null, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedAccount>;
 
 
@@ -83,17 +83,17 @@ accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11
 }
 
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
-return Object.freeze({ accounts: [getAccountMeta(accounts.authority), getAccountMeta(accounts.global), getAccountMeta(accounts.marketConfig), getAccountMeta(accounts.market), getAccountMeta(accounts.vault), getAccountMeta(accounts.usdcMint), getAccountMeta(accounts.authorityUsdc), getAccountMeta(accounts.tokenProgram), getAccountMeta(accounts.systemProgram)], data: getInitMarketInstructionDataEncoder().encode(args as InitMarketInstructionDataArgs), programAddress } as InitMarketInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdcMint, TAccountAuthorityUsdc, TAccountTokenProgram, TAccountSystemProgram>);
+return Object.freeze({ accounts: [getAccountMeta(accounts.authority), getAccountMeta(accounts.global), getAccountMeta(accounts.marketConfig), getAccountMeta(accounts.market), getAccountMeta(accounts.vault), getAccountMeta(accounts.usdtMint), getAccountMeta(accounts.authorityUsdt), getAccountMeta(accounts.tokenProgram), getAccountMeta(accounts.systemProgram)], data: getInitMarketInstructionDataEncoder().encode(args as InitMarketInstructionDataArgs), programAddress } as InitMarketInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdtMint, TAccountAuthorityUsdt, TAccountTokenProgram, TAccountSystemProgram>);
 }
 
-export type InitMarketInput<TAccountAuthority extends string = string, TAccountGlobal extends string = string, TAccountMarketConfig extends string = string, TAccountMarket extends string = string, TAccountVault extends string = string, TAccountUsdcMint extends string = string, TAccountAuthorityUsdc extends string = string, TAccountTokenProgram extends string = string, TAccountSystemProgram extends string = string> =  {
+export type InitMarketInput<TAccountAuthority extends string = string, TAccountGlobal extends string = string, TAccountMarketConfig extends string = string, TAccountMarket extends string = string, TAccountVault extends string = string, TAccountUsdtMint extends string = string, TAccountAuthorityUsdt extends string = string, TAccountTokenProgram extends string = string, TAccountSystemProgram extends string = string> =  {
   authority: TransactionSigner<TAccountAuthority>;
 global: Address<TAccountGlobal>;
 marketConfig: Address<TAccountMarketConfig>;
 market: Address<TAccountMarket>;
 vault: Address<TAccountVault>;
-usdcMint: Address<TAccountUsdcMint>;
-authorityUsdc: Address<TAccountAuthorityUsdc>;
+usdtMint: Address<TAccountUsdtMint>;
+authorityUsdt: Address<TAccountAuthorityUsdt>;
 tokenProgram?: Address<TAccountTokenProgram>;
 systemProgram?: Address<TAccountSystemProgram>;
 fixtureId: InitMarketInstructionDataArgs["fixtureId"];
@@ -104,12 +104,12 @@ seedNo: InitMarketInstructionDataArgs["seedNo"];
 seedLiquidity: InitMarketInstructionDataArgs["seedLiquidity"];
 }
 
-export function getInitMarketInstruction<TAccountAuthority extends string, TAccountGlobal extends string, TAccountMarketConfig extends string, TAccountMarket extends string, TAccountVault extends string, TAccountUsdcMint extends string, TAccountAuthorityUsdc extends string, TAccountTokenProgram extends string, TAccountSystemProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: InitMarketInput<TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdcMint, TAccountAuthorityUsdc, TAccountTokenProgram, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress } ): InitMarketInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdcMint, TAccountAuthorityUsdc, TAccountTokenProgram, TAccountSystemProgram> {
+export function getInitMarketInstruction<TAccountAuthority extends string, TAccountGlobal extends string, TAccountMarketConfig extends string, TAccountMarket extends string, TAccountVault extends string, TAccountUsdtMint extends string, TAccountAuthorityUsdt extends string, TAccountTokenProgram extends string, TAccountSystemProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: InitMarketInput<TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdtMint, TAccountAuthorityUsdt, TAccountTokenProgram, TAccountSystemProgram>, config?: { programAddress?: TProgramAddress } ): InitMarketInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdtMint, TAccountAuthorityUsdt, TAccountTokenProgram, TAccountSystemProgram> {
   // Program address.
 const programAddress = config?.programAddress ?? AMM_PROGRAM_ADDRESS;
 
  // Original accounts.
-const originalAccounts = { authority: { value: input.authority ?? null, isWritable: true }, global: { value: input.global ?? null, isWritable: false }, marketConfig: { value: input.marketConfig ?? null, isWritable: false }, market: { value: input.market ?? null, isWritable: true }, vault: { value: input.vault ?? null, isWritable: true }, usdcMint: { value: input.usdcMint ?? null, isWritable: false }, authorityUsdc: { value: input.authorityUsdc ?? null, isWritable: true }, tokenProgram: { value: input.tokenProgram ?? null, isWritable: false }, systemProgram: { value: input.systemProgram ?? null, isWritable: false } }
+const originalAccounts = { authority: { value: input.authority ?? null, isWritable: true }, global: { value: input.global ?? null, isWritable: false }, marketConfig: { value: input.marketConfig ?? null, isWritable: false }, market: { value: input.market ?? null, isWritable: true }, vault: { value: input.vault ?? null, isWritable: true }, usdtMint: { value: input.usdtMint ?? null, isWritable: false }, authorityUsdt: { value: input.authorityUsdt ?? null, isWritable: true }, tokenProgram: { value: input.tokenProgram ?? null, isWritable: false }, systemProgram: { value: input.systemProgram ?? null, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedAccount>;
 
 
@@ -126,7 +126,7 @@ accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11
 }
 
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
-return Object.freeze({ accounts: [getAccountMeta(accounts.authority), getAccountMeta(accounts.global), getAccountMeta(accounts.marketConfig), getAccountMeta(accounts.market), getAccountMeta(accounts.vault), getAccountMeta(accounts.usdcMint), getAccountMeta(accounts.authorityUsdc), getAccountMeta(accounts.tokenProgram), getAccountMeta(accounts.systemProgram)], data: getInitMarketInstructionDataEncoder().encode(args as InitMarketInstructionDataArgs), programAddress } as InitMarketInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdcMint, TAccountAuthorityUsdc, TAccountTokenProgram, TAccountSystemProgram>);
+return Object.freeze({ accounts: [getAccountMeta(accounts.authority), getAccountMeta(accounts.global), getAccountMeta(accounts.marketConfig), getAccountMeta(accounts.market), getAccountMeta(accounts.vault), getAccountMeta(accounts.usdtMint), getAccountMeta(accounts.authorityUsdt), getAccountMeta(accounts.tokenProgram), getAccountMeta(accounts.systemProgram)], data: getInitMarketInstructionDataEncoder().encode(args as InitMarketInstructionDataArgs), programAddress } as InitMarketInstruction<TProgramAddress, TAccountAuthority, TAccountGlobal, TAccountMarketConfig, TAccountMarket, TAccountVault, TAccountUsdtMint, TAccountAuthorityUsdt, TAccountTokenProgram, TAccountSystemProgram>);
 }
 
 export type ParsedInitMarketInstruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[]> = { programAddress: Address<TProgram>;
@@ -136,8 +136,8 @@ global: TAccountMetas[1];
 marketConfig: TAccountMetas[2];
 market: TAccountMetas[3];
 vault: TAccountMetas[4];
-usdcMint: TAccountMetas[5];
-authorityUsdc: TAccountMetas[6];
+usdtMint: TAccountMetas[5];
+authorityUsdt: TAccountMetas[6];
 tokenProgram: TAccountMetas[7];
 systemProgram: TAccountMetas[8];
 };
@@ -154,5 +154,5 @@ const getNextAccount = () => {
   accountIndex += 1;
   return accountMeta;
 }
-  return { programAddress: instruction.programAddress, accounts: { authority: getNextAccount(), global: getNextAccount(), marketConfig: getNextAccount(), market: getNextAccount(), vault: getNextAccount(), usdcMint: getNextAccount(), authorityUsdc: getNextAccount(), tokenProgram: getNextAccount(), systemProgram: getNextAccount() }, data: getInitMarketInstructionDataDecoder().decode(instruction.data) };
+  return { programAddress: instruction.programAddress, accounts: { authority: getNextAccount(), global: getNextAccount(), marketConfig: getNextAccount(), market: getNextAccount(), vault: getNextAccount(), usdtMint: getNextAccount(), authorityUsdt: getNextAccount(), tokenProgram: getNextAccount(), systemProgram: getNextAccount() }, data: getInitMarketInstructionDataDecoder().decode(instruction.data) };
 }

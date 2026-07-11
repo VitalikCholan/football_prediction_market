@@ -1,7 +1,7 @@
 //! `init_market` — create the `Market` + USDT escrow vault, seed reserves and
 //! liquidity (plan §4.3). Admin-gated.
 //!
-//! D-2: reserves are virtual (odds only). Seed USDC = the real collateral the
+//! D-2: reserves are virtual (odds only). Seed USDT = the real collateral the
 //! admin deposits so the vault starts solvent for both sides.
 
 use anchor_lang::prelude::*;
@@ -47,22 +47,22 @@ pub struct InitMarket<'info> {
         payer = authority,
         seeds = [VAULT_SEED, market.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = market,
         token::token_program = token_program,
     )]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(address = global.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = global.usdt_mint)]
+    pub usdt_mint: Box<InterfaceAccount<'info, Mint>>,
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = authority,
         token::token_program = token_program,
     )]
-    pub authority_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub authority_usdt: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(address = global.token_program)]
     pub token_program: Interface<'info, TokenInterface>,
@@ -95,7 +95,7 @@ pub(crate) fn handler(
     market.fixture_id = fixture_id;
     market.yes_reserve = seed_yes;
     market.no_reserve = seed_no;
-    market.usdc_collateral = seed_liquidity;
+    market.usdt_collateral = seed_liquidity;
     market.yes_supply = 0;
     market.no_supply = 0;
     market.state = MarketState::Open;
@@ -104,20 +104,20 @@ pub(crate) fn handler(
     market.vault_bump = ctx.bumps.vault;
     market.kickoff_ts = kickoff_ts;
     market.freeze_ts = freeze_ts;
-    market.usdc_mint = ctx.accounts.usdc_mint.key();
+    market.usdt_mint = ctx.accounts.usdt_mint.key();
     market.last_price_bps = price_bps;
     market.last_ts = now;
     market.v_acc = 0;
     market.bump = ctx.bumps.market;
     market._reserved = [0u8; 64];
 
-    // ---- transfer seed liquidity: authority_usdc -> vault (authority signs) ----
-    let decimals = ctx.accounts.usdc_mint.decimals;
+    // ---- transfer seed liquidity: authority_usdt -> vault (authority signs) ----
+    let decimals = ctx.accounts.usdt_mint.decimals;
     let before = ctx.accounts.vault.amount;
 
     let cpi_accounts = TransferChecked {
-        from: ctx.accounts.authority_usdc.to_account_info(),
-        mint: ctx.accounts.usdc_mint.to_account_info(),
+        from: ctx.accounts.authority_usdt.to_account_info(),
+        mint: ctx.accounts.usdt_mint.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
         authority: ctx.accounts.authority.to_account_info(),
     };
@@ -132,9 +132,9 @@ pub(crate) fn handler(
         .amount
         .checked_sub(before)
         .ok_or(AmmError::MathOverflow)?;
-    // usdc_collateral tracks the real vault balance credited.
+    // usdt_collateral tracks the real vault balance credited.
     let market = &mut ctx.accounts.market;
-    market.usdc_collateral = credited;
+    market.usdt_collateral = credited;
 
     // solvency holds trivially (supplies are 0).
     math::assert_solvent(ctx.accounts.vault.amount, market.yes_supply, market.no_supply)?;

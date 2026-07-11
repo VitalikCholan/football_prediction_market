@@ -15,8 +15,8 @@ export const REDEEM_SET1X2_DISCRIMINATOR = new Uint8Array([27, 124, 108, 134, 67
 
 export function getRedeemSet1x2DiscriminatorBytes() { return fixEncoderSize(getBytesEncoder(), 8).encode(REDEEM_SET1X2_DISCRIMINATOR); }
 
-export type RedeemSet1x2Instruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountTrader extends string | AccountMeta<string> = string, TAccountMarket extends string | AccountMeta<string> = string, TAccountPosition extends string | AccountMeta<string> = string, TAccountTraderUsdc extends string | AccountMeta<string> = string, TAccountVault extends string | AccountMeta<string> = string, TAccountUsdcMint extends string | AccountMeta<string> = string, TAccountTokenProgram extends string | AccountMeta<string> = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
-Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountTrader extends string ? WritableSignerAccount<TAccountTrader> & AccountSignerMeta<TAccountTrader> : TAccountTrader, TAccountMarket extends string ? WritableAccount<TAccountMarket> : TAccountMarket, TAccountPosition extends string ? WritableAccount<TAccountPosition> : TAccountPosition, TAccountTraderUsdc extends string ? WritableAccount<TAccountTraderUsdc> : TAccountTraderUsdc, TAccountVault extends string ? WritableAccount<TAccountVault> : TAccountVault, TAccountUsdcMint extends string ? ReadonlyAccount<TAccountUsdcMint> : TAccountUsdcMint, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, ...TRemainingAccounts]>;
+export type RedeemSet1x2Instruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountTrader extends string | AccountMeta<string> = string, TAccountMarket extends string | AccountMeta<string> = string, TAccountPosition extends string | AccountMeta<string> = string, TAccountTraderUsdt extends string | AccountMeta<string> = string, TAccountVault extends string | AccountMeta<string> = string, TAccountUsdtMint extends string | AccountMeta<string> = string, TAccountTokenProgram extends string | AccountMeta<string> = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
+Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountTrader extends string ? WritableSignerAccount<TAccountTrader> & AccountSignerMeta<TAccountTrader> : TAccountTrader, TAccountMarket extends string ? WritableAccount<TAccountMarket> : TAccountMarket, TAccountPosition extends string ? WritableAccount<TAccountPosition> : TAccountPosition, TAccountTraderUsdt extends string ? WritableAccount<TAccountTraderUsdt> : TAccountTraderUsdt, TAccountVault extends string ? WritableAccount<TAccountVault> : TAccountVault, TAccountUsdtMint extends string ? ReadonlyAccount<TAccountUsdtMint> : TAccountUsdtMint, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, ...TRemainingAccounts]>;
 
 export type RedeemSet1x2InstructionData = { discriminator: ReadonlyUint8Array; amount: bigint;  };
 
@@ -34,23 +34,23 @@ export function getRedeemSet1x2InstructionDataCodec(): FixedSizeCodec<RedeemSet1
     return combineCodec(getRedeemSet1x2InstructionDataEncoder(), getRedeemSet1x2InstructionDataDecoder());
 }
 
-export type RedeemSet1x2AsyncInput<TAccountTrader extends string = string, TAccountMarket extends string = string, TAccountPosition extends string = string, TAccountTraderUsdc extends string = string, TAccountVault extends string = string, TAccountUsdcMint extends string = string, TAccountTokenProgram extends string = string> =  {
+export type RedeemSet1x2AsyncInput<TAccountTrader extends string = string, TAccountMarket extends string = string, TAccountPosition extends string = string, TAccountTraderUsdt extends string = string, TAccountVault extends string = string, TAccountUsdtMint extends string = string, TAccountTokenProgram extends string = string> =  {
   trader: TransactionSigner<TAccountTrader>;
 market: Address<TAccountMarket>;
 position?: Address<TAccountPosition>;
-traderUsdc: Address<TAccountTraderUsdc>;
+traderUsdt: Address<TAccountTraderUsdt>;
 vault: Address<TAccountVault>;
-usdcMint: Address<TAccountUsdcMint>;
+usdtMint: Address<TAccountUsdtMint>;
 tokenProgram?: Address<TAccountTokenProgram>;
 amount: RedeemSet1x2InstructionDataArgs["amount"];
 }
 
-export async function getRedeemSet1x2InstructionAsync<TAccountTrader extends string, TAccountMarket extends string, TAccountPosition extends string, TAccountTraderUsdc extends string, TAccountVault extends string, TAccountUsdcMint extends string, TAccountTokenProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: RedeemSet1x2AsyncInput<TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdc, TAccountVault, TAccountUsdcMint, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): Promise<RedeemSet1x2Instruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdc, TAccountVault, TAccountUsdcMint, TAccountTokenProgram>> {
+export async function getRedeemSet1x2InstructionAsync<TAccountTrader extends string, TAccountMarket extends string, TAccountPosition extends string, TAccountTraderUsdt extends string, TAccountVault extends string, TAccountUsdtMint extends string, TAccountTokenProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: RedeemSet1x2AsyncInput<TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): Promise<RedeemSet1x2Instruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram>> {
   // Program address.
 const programAddress = config?.programAddress ?? AMM_PROGRAM_ADDRESS;
 
  // Original accounts.
-const originalAccounts = { trader: { value: input.trader ?? null, isWritable: true }, market: { value: input.market ?? null, isWritable: true }, position: { value: input.position ?? null, isWritable: true }, traderUsdc: { value: input.traderUsdc ?? null, isWritable: true }, vault: { value: input.vault ?? null, isWritable: true }, usdcMint: { value: input.usdcMint ?? null, isWritable: false }, tokenProgram: { value: input.tokenProgram ?? null, isWritable: false } }
+const originalAccounts = { trader: { value: input.trader ?? null, isWritable: true }, market: { value: input.market ?? null, isWritable: true }, position: { value: input.position ?? null, isWritable: true }, traderUsdt: { value: input.traderUsdt ?? null, isWritable: true }, vault: { value: input.vault ?? null, isWritable: true }, usdtMint: { value: input.usdtMint ?? null, isWritable: false }, tokenProgram: { value: input.tokenProgram ?? null, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedAccount>;
 
 
@@ -67,26 +67,26 @@ accounts.tokenProgram.value = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as A
 }
 
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
-return Object.freeze({ accounts: [getAccountMeta(accounts.trader), getAccountMeta(accounts.market), getAccountMeta(accounts.position), getAccountMeta(accounts.traderUsdc), getAccountMeta(accounts.vault), getAccountMeta(accounts.usdcMint), getAccountMeta(accounts.tokenProgram)], data: getRedeemSet1x2InstructionDataEncoder().encode(args as RedeemSet1x2InstructionDataArgs), programAddress } as RedeemSet1x2Instruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdc, TAccountVault, TAccountUsdcMint, TAccountTokenProgram>);
+return Object.freeze({ accounts: [getAccountMeta(accounts.trader), getAccountMeta(accounts.market), getAccountMeta(accounts.position), getAccountMeta(accounts.traderUsdt), getAccountMeta(accounts.vault), getAccountMeta(accounts.usdtMint), getAccountMeta(accounts.tokenProgram)], data: getRedeemSet1x2InstructionDataEncoder().encode(args as RedeemSet1x2InstructionDataArgs), programAddress } as RedeemSet1x2Instruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram>);
 }
 
-export type RedeemSet1x2Input<TAccountTrader extends string = string, TAccountMarket extends string = string, TAccountPosition extends string = string, TAccountTraderUsdc extends string = string, TAccountVault extends string = string, TAccountUsdcMint extends string = string, TAccountTokenProgram extends string = string> =  {
+export type RedeemSet1x2Input<TAccountTrader extends string = string, TAccountMarket extends string = string, TAccountPosition extends string = string, TAccountTraderUsdt extends string = string, TAccountVault extends string = string, TAccountUsdtMint extends string = string, TAccountTokenProgram extends string = string> =  {
   trader: TransactionSigner<TAccountTrader>;
 market: Address<TAccountMarket>;
 position: Address<TAccountPosition>;
-traderUsdc: Address<TAccountTraderUsdc>;
+traderUsdt: Address<TAccountTraderUsdt>;
 vault: Address<TAccountVault>;
-usdcMint: Address<TAccountUsdcMint>;
+usdtMint: Address<TAccountUsdtMint>;
 tokenProgram?: Address<TAccountTokenProgram>;
 amount: RedeemSet1x2InstructionDataArgs["amount"];
 }
 
-export function getRedeemSet1x2Instruction<TAccountTrader extends string, TAccountMarket extends string, TAccountPosition extends string, TAccountTraderUsdc extends string, TAccountVault extends string, TAccountUsdcMint extends string, TAccountTokenProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: RedeemSet1x2Input<TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdc, TAccountVault, TAccountUsdcMint, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): RedeemSet1x2Instruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdc, TAccountVault, TAccountUsdcMint, TAccountTokenProgram> {
+export function getRedeemSet1x2Instruction<TAccountTrader extends string, TAccountMarket extends string, TAccountPosition extends string, TAccountTraderUsdt extends string, TAccountVault extends string, TAccountUsdtMint extends string, TAccountTokenProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: RedeemSet1x2Input<TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): RedeemSet1x2Instruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram> {
   // Program address.
 const programAddress = config?.programAddress ?? AMM_PROGRAM_ADDRESS;
 
  // Original accounts.
-const originalAccounts = { trader: { value: input.trader ?? null, isWritable: true }, market: { value: input.market ?? null, isWritable: true }, position: { value: input.position ?? null, isWritable: true }, traderUsdc: { value: input.traderUsdc ?? null, isWritable: true }, vault: { value: input.vault ?? null, isWritable: true }, usdcMint: { value: input.usdcMint ?? null, isWritable: false }, tokenProgram: { value: input.tokenProgram ?? null, isWritable: false } }
+const originalAccounts = { trader: { value: input.trader ?? null, isWritable: true }, market: { value: input.market ?? null, isWritable: true }, position: { value: input.position ?? null, isWritable: true }, traderUsdt: { value: input.traderUsdt ?? null, isWritable: true }, vault: { value: input.vault ?? null, isWritable: true }, usdtMint: { value: input.usdtMint ?? null, isWritable: false }, tokenProgram: { value: input.tokenProgram ?? null, isWritable: false } }
 const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedAccount>;
 
 
@@ -100,7 +100,7 @@ accounts.tokenProgram.value = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as A
 }
 
 const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
-return Object.freeze({ accounts: [getAccountMeta(accounts.trader), getAccountMeta(accounts.market), getAccountMeta(accounts.position), getAccountMeta(accounts.traderUsdc), getAccountMeta(accounts.vault), getAccountMeta(accounts.usdcMint), getAccountMeta(accounts.tokenProgram)], data: getRedeemSet1x2InstructionDataEncoder().encode(args as RedeemSet1x2InstructionDataArgs), programAddress } as RedeemSet1x2Instruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdc, TAccountVault, TAccountUsdcMint, TAccountTokenProgram>);
+return Object.freeze({ accounts: [getAccountMeta(accounts.trader), getAccountMeta(accounts.market), getAccountMeta(accounts.position), getAccountMeta(accounts.traderUsdt), getAccountMeta(accounts.vault), getAccountMeta(accounts.usdtMint), getAccountMeta(accounts.tokenProgram)], data: getRedeemSet1x2InstructionDataEncoder().encode(args as RedeemSet1x2InstructionDataArgs), programAddress } as RedeemSet1x2Instruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram>);
 }
 
 export type ParsedRedeemSet1x2Instruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[]> = { programAddress: Address<TProgram>;
@@ -108,9 +108,9 @@ accounts: {
 trader: TAccountMetas[0];
 market: TAccountMetas[1];
 position: TAccountMetas[2];
-traderUsdc: TAccountMetas[3];
+traderUsdt: TAccountMetas[3];
 vault: TAccountMetas[4];
-usdcMint: TAccountMetas[5];
+usdtMint: TAccountMetas[5];
 tokenProgram: TAccountMetas[6];
 };
 data: RedeemSet1x2InstructionData; };
@@ -126,5 +126,5 @@ const getNextAccount = () => {
   accountIndex += 1;
   return accountMeta;
 }
-  return { programAddress: instruction.programAddress, accounts: { trader: getNextAccount(), market: getNextAccount(), position: getNextAccount(), traderUsdc: getNextAccount(), vault: getNextAccount(), usdcMint: getNextAccount(), tokenProgram: getNextAccount() }, data: getRedeemSet1x2InstructionDataDecoder().decode(instruction.data) };
+  return { programAddress: instruction.programAddress, accounts: { trader: getNextAccount(), market: getNextAccount(), position: getNextAccount(), traderUsdt: getNextAccount(), vault: getNextAccount(), usdtMint: getNextAccount(), tokenProgram: getNextAccount() }, data: getRedeemSet1x2InstructionDataDecoder().decode(instruction.data) };
 }

@@ -74,22 +74,22 @@ pub struct InitMarket1x2<'info> {
         payer = authority,
         seeds = [VAULT_SEED, market.key().as_ref()],
         bump,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = market,
         token::token_program = token_program,
     )]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(address = global.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = global.usdt_mint)]
+    pub usdt_mint: Box<InterfaceAccount<'info, Mint>>,
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = authority,
         token::token_program = token_program,
     )]
-    pub authority_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub authority_usdt: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(address = global.token_program)]
     pub token_program: Interface<'info, TokenInterface>,
@@ -130,7 +130,7 @@ pub(crate) fn handler(
     market.fixture_id = fixture_id;
     market.q = seed_q;
     market.b = b;
-    market.usdc_collateral = seed_liquidity;
+    market.usdt_collateral = seed_liquidity;
     market.supply = [0u64; 3];
     market.state = MarketState::Open;
     market.outcome = Outcome1x2::Unset;
@@ -138,7 +138,7 @@ pub(crate) fn handler(
     market.vault_bump = ctx.bumps.vault;
     market.kickoff_ts = kickoff_ts;
     market.freeze_ts = freeze_ts;
-    market.usdc_mint = ctx.accounts.usdc_mint.key();
+    market.usdt_mint = ctx.accounts.usdt_mint.key();
     // arm the fee state with the Team1 opening price (documented convention:
     // last_price_bps always tracks the most recently TRADED outcome's price).
     market.last_price_bps = prices[0];
@@ -147,13 +147,13 @@ pub(crate) fn handler(
     market.bump = ctx.bumps.market;
     market._reserved = [0u8; 64];
 
-    // ---- transfer seed liquidity: authority_usdc -> vault ----
-    let decimals = ctx.accounts.usdc_mint.decimals;
+    // ---- transfer seed liquidity: authority_usdt -> vault ----
+    let decimals = ctx.accounts.usdt_mint.decimals;
     let before = ctx.accounts.vault.amount;
 
     let cpi_accounts = TransferChecked {
-        from: ctx.accounts.authority_usdc.to_account_info(),
-        mint: ctx.accounts.usdc_mint.to_account_info(),
+        from: ctx.accounts.authority_usdt.to_account_info(),
+        mint: ctx.accounts.usdt_mint.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
         authority: ctx.accounts.authority.to_account_info(),
     };
@@ -171,7 +171,7 @@ pub(crate) fn handler(
     // the solvency-at-init bound must hold for what actually LANDED.
     require!(credited >= min_seed, AmmError::InvalidSeedLiquidity);
     let market = &mut ctx.accounts.market;
-    market.usdc_collateral = credited;
+    market.usdt_collateral = credited;
 
     // solvency holds trivially (supplies are 0); belt anyway.
     math::assert_solvent_multi(ctx.accounts.vault.amount, &market.supply)?;

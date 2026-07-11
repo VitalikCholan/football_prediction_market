@@ -17,7 +17,7 @@ import {
   type PreparedTx,
 } from "@/lib/tx";
 import { notifyTxConfirmed, useUsdtBalance, useMarketPosition } from "@/lib/use-live";
-import { baseToUsdc, usd, shares as fmtShares, centsLabel } from "@/lib/format";
+import { baseToUsdt, usd, shares as fmtShares, centsLabel } from "@/lib/format";
 import { explorerTx } from "@/lib/solana";
 import { useTxAuthority } from "@/components/wallet/use-account";
 import { useFaucet } from "@/components/wallet/use-faucet";
@@ -162,8 +162,8 @@ function TradeTicket({
         action,
         amount: Number(amount) || 0,
         yesPriceBps: market.yesPriceBps,
-        yesReserve: baseToUsdc(market.yesReserve),
-        noReserve: baseToUsdc(market.noReserve),
+        yesReserve: baseToUsdt(market.yesReserve),
+        noReserve: baseToUsdt(market.noReserve),
         feeBps: market.currentFeeBps ?? market.baseFeeBps ?? 30,
         slippageTolerance: slippage,
       }),
@@ -421,7 +421,7 @@ function TradeTicket({
         <div className="box flex flex-col gap-2 p-3">
           <Row
             k={action === "buy" ? "Shares" : "USDT out"}
-            v={action === "buy" ? fmtShares(quote.shares) : usd(quote.usdcOut)}
+            v={action === "buy" ? fmtShares(quote.shares) : usd(quote.usdtOut)}
           />
           <Row k="Avg price" v={`${quote.avgPriceCents.toFixed(0)}¢`} />
           <Row
@@ -567,7 +567,7 @@ function Trade1x2Ticket({
       action,
       amount: Number(amount) || 0,
       outcomePriceBps: bps,
-      b: baseToUsdc(market.b),
+      b: baseToUsdt(market.b),
       feeBps: market.currentFeeBps ?? market.baseFeeBps ?? 30,
       slippageTolerance: slippage,
     });
@@ -823,7 +823,7 @@ function Trade1x2Ticket({
         <div className="box flex flex-col gap-2 p-3">
           <Row
             k={action === "buy" ? "Shares" : "USDT out"}
-            v={action === "buy" ? fmtShares(quote.shares) : usd(quote.usdcOut)}
+            v={action === "buy" ? fmtShares(quote.shares) : usd(quote.usdtOut)}
           />
           <Row k="Avg price" v={`${quote.avgPriceCents.toFixed(0)}¢`} />
           <Row

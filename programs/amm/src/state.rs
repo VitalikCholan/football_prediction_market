@@ -51,7 +51,7 @@ pub struct GlobalConfig {
     /// Trusted callee id for the `resolve` CPI (arbitrary-CPI guard).
     pub txline_program: Pubkey,
     /// Pinned collateral mint (TxLINE devnet USDT, D-6).
-    pub usdc_mint: Pubkey,
+    pub usdt_mint: Pubkey,
     /// Pinned token program id for the collateral mint (classic SPL Token).
     pub token_program: Pubkey,
     /// Canonical bump.
@@ -145,8 +145,8 @@ pub struct Market {
     pub no_reserve: u64,
 
     // ---- real solvency accounting ----
-    /// Total USDC held for this market (mirrors vault balance).
-    pub usdc_collateral: u64,
+    /// Total USDT held for this market (mirrors vault balance).
+    pub usdt_collateral: u64,
     /// Outstanding YES positions (for redeem + solvency invariant).
     pub yes_supply: u64,
     /// Outstanding NO positions.
@@ -165,7 +165,7 @@ pub struct Market {
     pub freeze_ts: i64,
 
     // ---- pinned collateral mint (kept on Market to shorten buy/sell accts, §4.5) ----
-    pub usdc_mint: Pubkey,
+    pub usdt_mint: Pubkey,
 
     // ---- dynamic-fee state ----
     /// YES price at last trade (bps 0..=10_000).
@@ -186,7 +186,7 @@ pub struct Market {
 //            + 1 + 1              (state, outcome)
 //            + 32 + 1            (vault, vault_bump)
 //            + 8 + 8            (kickoff, freeze)
-//            + 32               (usdc_mint)
+//            + 32               (usdt_mint)
 //            + 2 + 8 + 8        (fee state)
 //            + 1 + 64           (bump, reserved)
 //            = 246
@@ -209,7 +209,7 @@ pub struct Position {
     /// NO balance.
     pub no_tokens: u64,
 
-    /// Net USDC basis deposited (buys − sell proceeds). Used for Void refund (D-4)
+    /// Net USDT basis deposited (buys − sell proceeds). Used for Void refund (D-4)
     /// and reserved for v1 leverage collateral.
     pub collateral: u64,
     /// v1 reserved; v0 writes 1.
@@ -275,7 +275,7 @@ pub struct Market1x2 {
 
     // ---- real solvency accounting ----
     /// Total USDT held for this market (mirrors vault balance).
-    pub usdc_collateral: u64,
+    pub usdt_collateral: u64,
     /// Outstanding USER positions per outcome (excludes seed offsets) —
     /// redeem liability + solvency invariant input.
     pub supply: [u64; 3],
@@ -293,7 +293,7 @@ pub struct Market1x2 {
     pub freeze_ts: i64,
 
     // ---- pinned collateral mint (shortens buy/sell account lists) ----
-    pub usdc_mint: Pubkey,
+    pub usdt_mint: Pubkey,
 
     // ---- dynamic-fee state (fee.rs reused; price = the TRADED outcome's) ----
     /// Price (bps) of the most recently traded outcome, post-trade.
@@ -314,7 +314,7 @@ pub struct Market1x2 {
 //            + 1 + 1             (state, outcome)
 //            + 32 + 1            (vault, vault_bump)
 //            + 8 + 8             (kickoff, freeze)
-//            + 32                (usdc_mint)
+//            + 32                (usdt_mint)
 //            + 2 + 8 + 8         (fee state)
 //            + 1 + 64            (bump, reserved)
 //            = 270
@@ -390,7 +390,7 @@ pub struct Redeemed {
 #[event]
 pub struct MarketClosed {
     pub fixture_id: i64,
-    /// Residual vault USDC swept to the admin.
+    /// Residual vault USDT swept to the admin.
     pub swept: u64,
 }
 
@@ -402,7 +402,7 @@ pub struct Trade {
     pub side_yes: bool,
     /// true = buy, false = sell.
     pub is_buy: bool,
-    pub usdc: u64,
+    pub usdt: u64,
     pub tokens: u64,
     pub price_bps: u16,
     pub fee_bps: u16,
@@ -463,7 +463,7 @@ pub struct Trade1x2 {
     pub outcome: u8,
     /// true = buy, false = sell.
     pub is_buy: bool,
-    pub usdc: u64,
+    pub usdt: u64,
     pub tokens: u64,
     /// Post-trade softmax price (bps) of the traded outcome.
     pub price_bps: u16,

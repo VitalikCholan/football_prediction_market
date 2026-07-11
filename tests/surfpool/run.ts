@@ -131,7 +131,7 @@ const BASE_FIXTURE_ID = 17_588_316n;
 const SEED_YES = 1_000_000_000n; // 1000 USDT virtual reserve
 const SEED_NO = 1_000_000_000n;
 const SEED_LIQUIDITY = 1_000_000_000n; // 1000 USDT real collateral
-const BUY_USDC_IN = 50_000_000n; // 50 USDT
+const BUY_USDT_IN = 50_000_000n; // 50 USDT
 const GRACE_SECS = 3_600n;
 
 /* ------------------------------------------------------------- utilities */
@@ -508,7 +508,7 @@ async function main() {
         existing.data.authority === admin.address &&
           existing.data.keeper === admin.address &&
           existing.data.txlineProgram === TXLINE_PROGRAM &&
-          existing.data.usdcMint === USDT_MINT,
+          existing.data.usdtMint === USDT_MINT,
         "GlobalConfig exists with foreign values — restart surfpool fresh",
       );
       return "already initialized (reused instance) — values match";
@@ -517,7 +517,7 @@ async function main() {
       authority: admin,
       keeper: admin.address,
       txlineProgram: TXLINE_PROGRAM,
-      usdcMint: USDT_MINT,
+      usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
     });
     await sendTx(rpc, admin, [ix]);
@@ -556,7 +556,7 @@ async function main() {
   });
 
   // ---- 4a. fund admin USDT ATA via cheatcode (REAL devnet mint, lazily cloned) ----
-  let adminUsdc!: Address;
+  let adminUsdt!: Address;
   await step("surfnet_setTokenAccount: fund USDT ATA", async () => {
     await rawRpc("surfnet_setTokenAccount", [
       admin.address,
@@ -571,9 +571,9 @@ async function main() {
       )
       .send();
     assert(value.length > 0, "no USDT token account after cheatcode");
-    adminUsdc = value[0].pubkey;
+    adminUsdt = value[0].pubkey;
     const amount = value[0].account.data.parsed.info.tokenAmount.amount;
-    return `ATA ${adminUsdc} = ${amount} (raw)`;
+    return `ATA ${adminUsdt} = ${amount} (raw)`;
   });
 
   // ---- 4b. init_market ----
@@ -601,8 +601,8 @@ async function main() {
       marketConfig: marketConfigPda,
       market: marketPda,
       vault: vaultPda,
-      usdcMint: USDT_MINT,
-      authorityUsdc: adminUsdc,
+      usdtMint: USDT_MINT,
+      authorityUsdt: adminUsdt,
       tokenProgram: TOKEN_PROGRAM,
       fixtureId,
       kickoffTs,
@@ -639,12 +639,12 @@ async function main() {
       market: marketPda,
       marketConfig: marketConfigPda,
       position: positionPda,
-      traderUsdc: adminUsdc,
+      traderUsdt: adminUsdt,
       vault: vaultPda,
-      usdcMint: USDT_MINT,
+      usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
       side: Side.Yes,
-      usdcIn: BUY_USDC_IN,
+      usdtIn: BUY_USDT_IN,
       minOut: 1n,
     });
 
@@ -685,10 +685,10 @@ async function main() {
       `YES price did not rise: ${before.data.lastPriceBps} -> ${after.data.lastPriceBps}`,
     );
     assert(
-      vaultAfter === vaultBefore + BUY_USDC_IN,
-      `vault delta ${vaultAfter - vaultBefore} != usdc_in ${BUY_USDC_IN}`,
+      vaultAfter === vaultBefore + BUY_USDT_IN,
+      `vault delta ${vaultAfter - vaultBefore} != usdt_in ${BUY_USDT_IN}`,
     );
-    return `yes_tokens=${pos.data.yesTokens}, price ${before.data.lastPriceBps}→${after.data.lastPriceBps} bps, vault +${BUY_USDC_IN}`;
+    return `yes_tokens=${pos.data.yesTokens}, price ${before.data.lastPriceBps}→${after.data.lastPriceBps} bps, vault +${BUY_USDT_IN}`;
   });
 
   // ---- 4g. timeTravel past freeze → freeze ----
@@ -895,18 +895,18 @@ async function main() {
   await step("redeem: winner payout 1 USDT per YES token", async () => {
     const posBefore = await fetchPosition(rpc, positionPda);
     const expected = posBefore.data.yesTokens;
-    const balBefore = await usdtBalance(rpc, adminUsdc);
+    const balBefore = await usdtBalance(rpc, adminUsdt);
     const ix = await getRedeemInstructionAsync({
       owner: admin,
       market: marketPda,
       position: positionPda,
       vault: vaultPda,
-      ownerUsdc: adminUsdc,
-      usdcMint: USDT_MINT,
+      ownerUsdt: adminUsdt,
+      usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
     });
     await sendTx(rpc, admin, [ix]);
-    const balAfter = await usdtBalance(rpc, adminUsdc);
+    const balAfter = await usdtBalance(rpc, adminUsdt);
     const pos = await fetchPosition(rpc, positionPda);
     assert(expected > 0n, "nothing to redeem");
     assert(
@@ -925,8 +925,8 @@ async function main() {
       market: marketPda,
       marketConfig: marketConfigPda,
       vault: vaultPda,
-      authorityUsdc: adminUsdc,
-      usdcMint: USDT_MINT,
+      authorityUsdt: adminUsdt,
+      usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
     });
     await sendTx(rpc, admin, [ix]);

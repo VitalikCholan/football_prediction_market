@@ -227,7 +227,7 @@ export const TradeDto = z.object({
   trader: z.string(),
   side: Side,
   action: TradeAction,
-  usdcAmount: z.string(),
+  usdtAmount: z.string(),
   tokensAmount: z.string(),
   feeBps: z.number().int(),
   yesPriceBps: z.number().int().min(0).max(10_000),

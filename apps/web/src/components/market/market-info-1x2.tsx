@@ -1,5 +1,5 @@
 import type { Market1x2Dto } from "@fpm/shared";
-import { volumeLabel, baseToUsdc, usdCompactLabel } from "@/lib/format";
+import { volumeLabel, baseToUsdt, usdCompactLabel } from "@/lib/format";
 import { FeeBar } from "@/components/market/fee-bar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 export function MarketInfo1x2({ market }: { market: Market1x2Dto }) {
   const rows: [string, string][] = [
     ["Total volume", volumeLabel(market.totalVolume)],
-    ["LMSR depth (b)", usdCompactLabel(baseToUsdc(market.b))],
+    ["LMSR depth (b)", usdCompactLabel(baseToUsdt(market.b))],
     ["Resolves", "At full time"],
     ["Source", "TxLINE oracle"],
   ];

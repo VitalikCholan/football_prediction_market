@@ -5,13 +5,13 @@
  */
 
 /** USDT base-unit decimals (6). */
-export const USDC_DECIMALS = 6;
-const USDC_SCALE = 1_000_000;
+export const USDT_DECIMALS = 6;
+const USDT_SCALE = 1_000_000;
 
 /** Parse a u64 base-unit string into a JS number of whole USDT (demo-scale). */
-export function baseToUsdc(base: string | number | bigint): number {
+export function baseToUsdt(base: string | number | bigint): number {
   const n = typeof base === "string" ? Number(base) : Number(base);
-  return n / USDC_SCALE;
+  return n / USDT_SCALE;
 }
 
 /** yesPriceBps (0–10000) → cents (0–100), rounded. */
@@ -60,7 +60,7 @@ export function usdCompactLabel(value: number): string {
 
 /** Volume string (base units) → "$842k". */
 export function volumeLabel(base: string): string {
-  return usdCompactLabel(baseToUsdc(base));
+  return usdCompactLabel(baseToUsdt(base));
 }
 
 const numFmt = new Intl.NumberFormat("en-US", {

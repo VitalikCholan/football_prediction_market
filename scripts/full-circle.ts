@@ -97,8 +97,8 @@ const TRADING_WINDOW_SECS = BigInt(process.env.TRADING_WINDOW_SECS ?? 90);
 const SEED_YES = 100_000_000n; // 100 USDT virtual — 50/50 odds
 const SEED_NO = 100_000_000n;
 const SEED_LIQUIDITY = 50_000_000n; // 50 USDT real collateral
-const BUY_USDC_IN = 5_000_000n; // 5 USDT of YES so redeem pays out
-const MIN_USDT = SEED_LIQUIDITY + BUY_USDC_IN + 1_000_000n; // +1 USDT headroom
+const BUY_USDT_IN = 5_000_000n; // 5 USDT of YES so redeem pays out
+const MIN_USDT = SEED_LIQUIDITY + BUY_USDT_IN + 1_000_000n; // +1 USDT headroom
 const STATE_FILE = process.env.STATE_FILE;
 
 // TxLINE request_devnet_faucet (100 USDT/call) — same recovered wiring as
@@ -318,7 +318,7 @@ async function main() {
     }
     if (bal < MIN_USDT) {
       // FaucetTracker cooldown — shrink the seed to what the wallet can cover.
-      const spendable = bal - BUY_USDC_IN - 1_000_000n;
+      const spendable = bal - BUY_USDT_IN - 1_000_000n;
       if (spendable < 5_000_000n) {
         throw new Error(`insufficient USDT even after faucet attempt: ${bal} raw`);
       }
@@ -343,8 +343,8 @@ async function main() {
       marketConfig: marketConfigPda,
       market: marketPda,
       vault: vaultPda,
-      usdcMint: USDT_MINT,
-      authorityUsdc: ownerUsdtAta,
+      usdtMint: USDT_MINT,
+      authorityUsdt: ownerUsdtAta,
       tokenProgram: TOKEN_PROGRAM,
       fixtureId: FIXTURE_ID,
       kickoffTs,
@@ -424,12 +424,12 @@ async function main() {
       market: marketPda,
       marketConfig: marketConfigPda,
       position: positionPda,
-      traderUsdc: ownerUsdtAta,
+      traderUsdt: ownerUsdtAta,
       vault: vaultPda,
-      usdcMint: USDT_MINT,
+      usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
       side: Side.Yes,
-      usdcIn: BUY_USDC_IN,
+      usdtIn: BUY_USDT_IN,
       minOut: 1n,
     });
     txSigs.buy = await sendTx(owner, [ix], "buy");
@@ -437,7 +437,7 @@ async function main() {
       fetchMaybePosition(rpc, positionPda),
     );
     const yes = after.exists ? after.data.yesTokens : 0n;
-    return `bought ${BUY_USDC_IN} raw USDT of YES → ${yes} YES tokens`;
+    return `bought ${BUY_USDT_IN} raw USDT of YES → ${yes} YES tokens`;
   });
 
   // ---- 5. wait for the KEEPER to freeze + RESOLVE (real TxLINE proof) ----
@@ -487,8 +487,8 @@ async function main() {
       market: marketPda,
       position: positionPda,
       vault: vaultPda,
-      ownerUsdc: ownerUsdtAta,
-      usdcMint: USDT_MINT,
+      ownerUsdt: ownerUsdtAta,
+      usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
     });
     txSigs.redeem = await sendTx(owner, [ix], "redeem");

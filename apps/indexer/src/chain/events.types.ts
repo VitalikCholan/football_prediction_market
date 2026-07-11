@@ -60,7 +60,7 @@ export interface TradeEventData {
   sideYes: boolean;
   /** true = buy, false = sell. */
   isBuy: boolean;
-  usdc: bigint;
+  usdt: bigint;
   tokens: bigint;
   priceBps: number;
   feeBps: number;
@@ -130,7 +130,7 @@ export interface Trade1x2EventData {
   outcome: number;
   /** true = buy, false = sell. */
   isBuy: boolean;
-  usdc: bigint;
+  usdt: bigint;
   tokens: bigint;
   /** Post-trade softmax price (bps) of the traded outcome. */
   priceBps: number;
