@@ -3,7 +3,7 @@
  * trade BEFORE signing (the DESIGN_SPEC 1d summary box: shares, avg price,
  * slippage, payout). This is a v0 approximation of the program's math and MUST
  * be kept in parity with `programs/amm/src/math.rs` once the buy/sell
- * instructions land (see lib/tx). Amounts here are in whole USDC / shares for
+ * instructions land (see lib/tx). Amounts here are in whole USDT / shares for
  * legibility; the tx layer converts to base units.
  *
  * Model (constant-product share AMM, Polymarket/CPMM style):
@@ -23,7 +23,7 @@ export interface QuoteInput {
   side: Side;
   /** Buy or sell. */
   action: "buy" | "sell";
-  /** USDC in (buy) or shares in (sell). */
+  /** USDT in (buy) or shares in (sell). */
   amount: number;
   /** Current YES price in bps (0–10000). */
   yesPriceBps: number;
@@ -46,13 +46,13 @@ export interface Quote {
   markPriceCents: number;
   /** Price impact vs mark, fraction. */
   priceImpact: number;
-  /** Fee paid, whole USDC. */
+  /** Fee paid, whole USDT. */
   feePaid: number;
-  /** Payout if the position wins ($1.00/share), whole USDC. */
+  /** Payout if the position wins ($1.00/share), whole USDT. */
   payoutIfWins: number;
-  /** min_out guard from slippage tolerance (shares on buy, USDC on sell). */
+  /** min_out guard from slippage tolerance (shares on buy, USDT on sell). */
   minOut: number;
-  /** USDC returned (sell only). */
+  /** USDT returned (sell only). */
   usdcOut: number;
 }
 
@@ -126,7 +126,7 @@ export function quoteTrade(input: QuoteInput): Quote {
     };
   }
 
-  // SELL: user sells `amount` shares back to the pool for USDC.
+  // SELL: user sells `amount` shares back to the pool for USDT.
   const impact = Math.min(
     0.5,
     (amount / Math.max(1, sideReserve)) * (0.5 + convexity),

@@ -6,7 +6,7 @@
  *     → build ixs (PDAs from @fpm/shared, builders from @fpm/idl)
  *     → compile unsigned tx → `simulateTransaction` (sigVerify:false) with
  *       post-state account capture, so the review box can show the EXACT
- *       simulated output (shares out / USDC out) next to the client quote
+ *       simulated output (shares out / USDT out) next to the client quote
  *     → PreparedTx.send(): sign (wallet session OR demo keypair) → send →
  *       poll-confirm (bounded) → { signature }.
  *
@@ -130,9 +130,9 @@ export interface TradeTxParams {
   configId: string;
   side: Side;
   action: "buy" | "sell";
-  /** Base units (u64 as string): USDC in for buy, position tokens in for sell. */
+  /** Base units (u64 as string): USDT in for buy, position tokens in for sell. */
   amountBase: string;
-  /** Slippage guard, base units (shares min for buy, USDC min for sell). */
+  /** Slippage guard, base units (shares min for buy, USDT min for sell). */
   minOutBase: string;
 }
 
@@ -153,7 +153,7 @@ export interface SimSummary {
   /** Friendly decoded error when !ok. */
   error?: string;
   computeUnits?: number;
-  /** Simulated output in base units: shares (buy) / USDC (sell, redeem, faucet). */
+  /** Simulated output in base units: shares (buy) / USDT (sell, redeem, faucet). */
   outBase?: bigint;
 }
 

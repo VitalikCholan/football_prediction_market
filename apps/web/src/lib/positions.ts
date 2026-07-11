@@ -16,7 +16,7 @@ export interface UserPosition {
   address: string;
   yesTokens: bigint;
   noTokens: bigint;
-  /** Net USDC basis deposited (buys − sell proceeds), base units. */
+  /** Net USDT basis deposited (buys − sell proceeds), base units. */
   collateralBase: bigint;
   redeemed: boolean;
 }

@@ -1,14 +1,14 @@
 /**
  * Formatting helpers for a money UI. Everything numeric renders with tabular
- * figures (see `.tnum` in globals.css). USDC has 6 decimals on-chain; the DTOs
+ * figures (see `.tnum` in globals.css). USDT has 6 decimals on-chain; the DTOs
  * carry u64 base units as strings, so parse carefully.
  */
 
-/** USDC base-unit decimals (6). */
+/** USDT base-unit decimals (6). */
 export const USDC_DECIMALS = 6;
 const USDC_SCALE = 1_000_000;
 
-/** Parse a u64 base-unit string into a JS number of whole USDC (demo-scale). */
+/** Parse a u64 base-unit string into a JS number of whole USDT (demo-scale). */
 export function baseToUsdc(base: string | number | bigint): number {
   const n = typeof base === "string" ? Number(base) : Number(base);
   return n / USDC_SCALE;

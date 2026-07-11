@@ -345,10 +345,10 @@ function TradeTicket({
                 setAmount(e.target.value.replace(/[^0-9.]/g, ""));
                 resetReview();
               }}
-              aria-label="Trade amount in USDC"
+              aria-label="Trade amount in USDT"
             />
             <span className="text-[12px] text-muted">
-              {action === "buy" ? "USDC" : "shares"} ▾
+              {action === "buy" ? "USDT" : "shares"} ▾
             </span>
           </div>
           <div className="mt-2 flex gap-1.5">
@@ -380,7 +380,7 @@ function TradeTicket({
         {/* Summary box (1d) — client quote + pre-sign simulation result */}
         <div className="box flex flex-col gap-2 p-3">
           <Row
-            k={action === "buy" ? "Shares" : "USDC out"}
+            k={action === "buy" ? "Shares" : "USDT out"}
             v={action === "buy" ? fmtShares(quote.shares) : usd(quote.usdcOut)}
           />
           <Row k="Avg price" v={`${quote.avgPriceCents.toFixed(0)}¢`} />
@@ -395,7 +395,7 @@ function TradeTicket({
                 k={
                   action === "buy"
                     ? "Simulated shares out"
-                    : "Simulated USDC out"
+                    : "Simulated USDT out"
                 }
                 v={
                   prepared.sim.outBase !== undefined

@@ -22,7 +22,7 @@ export function OrderBook({ market }: { market: MarketDto }) {
     const q = quoteTrade({
       side,
       action: "buy",
-      amount: size, // treat as whole-USDC notional at ~mark for a depth probe
+      amount: size, // treat as whole-USDT notional at ~mark for a depth probe
       yesPriceBps: market.yesPriceBps,
       yesReserve,
       noReserve,

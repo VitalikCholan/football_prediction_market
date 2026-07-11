@@ -55,7 +55,7 @@ describe('decodeAmmEvent (real devnet payloads)', () => {
     });
   });
 
-  it('decodes a Trade (buy YES, 5 USDC, price 5000 -> 5243 bps)', () => {
+  it('decodes a Trade (buy YES, 5 USDT, price 5000 -> 5243 bps)', () => {
     const ev = decodeAmmEvent(b64(TRADE_BUY_YES));
     expect(ev).toMatchObject({
       name: 'Trade',
