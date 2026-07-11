@@ -2,7 +2,7 @@
 //! (plan §4.9).
 //!
 //! Order matters (a token account with a nonzero balance cannot be closed):
-//! 1. sweep remaining vault USDC → admin ATA (signed by the market PDA),
+//! 1. sweep remaining vault USDT → admin ATA (signed by the market PDA),
 //! 2. `close_account` CPI on the vault (rent → admin),
 //! 3. Anchor `close = authority` reclaims the `Market` data account
 //!    (secure close: data zeroed + discriminator poisoned → revival-safe).
@@ -45,14 +45,14 @@ pub struct CloseMarket<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = authority,
         token::token_program = token_program,
     )]
-    pub authority_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub authority_usdt: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(address = market.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = market.usdt_mint)]
+    pub usdt_mint: Box<InterfaceAccount<'info, Mint>>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -78,15 +78,15 @@ pub(crate) fn handler(ctx: Context<CloseMarket>) -> Result<()> {
     let market_bump = ctx.accounts.market.bump;
     let signer_seeds: &[&[&[u8]]] = &[&[MARKET_SEED, &fixture_le, &[market_bump]]];
 
-    // ---- 1. sweep residual vault USDC → admin (policy: after grace, dust
+    // ---- 1. sweep residual vault USDT → admin (policy: after grace, dust
     //         and unredeemed funds go to the treasury/admin) ----
     let swept = ctx.accounts.vault.amount;
     if swept > 0 {
-        let decimals = ctx.accounts.usdc_mint.decimals;
+        let decimals = ctx.accounts.usdt_mint.decimals;
         let cpi_accounts = TransferChecked {
             from: ctx.accounts.vault.to_account_info(),
-            mint: ctx.accounts.usdc_mint.to_account_info(),
-            to: ctx.accounts.authority_usdc.to_account_info(),
+            mint: ctx.accounts.usdt_mint.to_account_info(),
+            to: ctx.accounts.authority_usdt.to_account_info(),
             authority: ctx.accounts.market.to_account_info(),
         };
         let cpi_ctx = CpiContext::new_with_signer(
@@ -113,7 +113,7 @@ pub(crate) fn handler(ctx: Context<CloseMarket>) -> Result<()> {
     // ---- 3. mark Closed; Anchor `close = authority` reclaims Market ----
     let market = &mut ctx.accounts.market;
     market.state = MarketState::Closed;
-    market.usdc_collateral = 0;
+    market.usdt_collateral = 0;
 
     emit!(MarketClosed { fixture_id, swept });
     Ok(())

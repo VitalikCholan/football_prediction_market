@@ -1,4 +1,4 @@
-//! `sell(side, tokens_in, min_usdc_out)` — inverse of buy. Vault pays out signed
+//! `sell(side, tokens_in, min_usdt_out)` — inverse of buy. Vault pays out signed
 //! by the `market` PDA (the vault's authority). (plan §4.6)
 
 use anchor_lang::prelude::*;
@@ -39,17 +39,17 @@ pub struct Sell<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = trader,
         token::token_program = token_program,
     )]
-    pub trader_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub trader_usdt: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut, address = market.vault)]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(address = market.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = market.usdt_mint)]
+    pub usdt_mint: Box<InterfaceAccount<'info, Mint>>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -58,7 +58,7 @@ pub(crate) fn handler(
     ctx: Context<Sell>,
     side: Side,
     tokens_in: u64,
-    min_usdc_out: u64,
+    min_usdt_out: u64,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
 
@@ -102,14 +102,14 @@ pub(crate) fn handler(
         tokens_in,
     )?;
 
-    // usdc_out = usdc_gross * (10_000 - fee_bps) / 10_000
-    let out = (res.usdc_gross as u128)
+    // usdt_out = usdt_gross * (10_000 - fee_bps) / 10_000
+    let out = (res.usdt_gross as u128)
         .checked_mul((BPS_DENOM - fee_bps as u64) as u128)
         .ok_or(AmmError::MathOverflow)?
         .checked_div(BPS_DENOM as u128)
         .ok_or(AmmError::DivideByZero)?;
-    let usdc_out = u64::try_from(out).map_err(|_| AmmError::NumericConversion)?;
-    require!(usdc_out >= min_usdc_out, AmmError::SlippageExceeded);
+    let usdt_out = u64::try_from(out).map_err(|_| AmmError::NumericConversion)?;
+    require!(usdt_out >= min_usdt_out, AmmError::SlippageExceeded);
 
     // capture fixture_id + bump for signing before taking the mutable borrow chain
     let fixture_id = ctx.accounts.market.fixture_id;
@@ -137,9 +137,9 @@ pub(crate) fn handler(
                 .checked_sub(tokens_in)
                 .ok_or(AmmError::MathOverflow)?;
         }
-        market.usdc_collateral = market
-            .usdc_collateral
-            .checked_sub(usdc_out)
+        market.usdt_collateral = market
+            .usdt_collateral
+            .checked_sub(usdt_out)
             .ok_or(AmmError::MathOverflow)?;
     }
     {
@@ -156,18 +156,18 @@ pub(crate) fn handler(
                 .ok_or(AmmError::MathOverflow)?;
         }
         // reduce the trader's basis by the proceeds (saturating; can't go below 0).
-        position.collateral = position.collateral.saturating_sub(usdc_out);
+        position.collateral = position.collateral.saturating_sub(usdt_out);
     }
 
-    // ---- payout: vault -> trader_usdc, signed by the market PDA ----
-    let decimals = ctx.accounts.usdc_mint.decimals;
+    // ---- payout: vault -> trader_usdt, signed by the market PDA ----
+    let decimals = ctx.accounts.usdt_mint.decimals;
     let fixture_le = fixture_id.to_le_bytes();
     let signer_seeds: &[&[&[u8]]] = &[&[MARKET_SEED, &fixture_le, &[market_bump]]];
 
     let cpi_accounts = TransferChecked {
         from: ctx.accounts.vault.to_account_info(),
-        mint: ctx.accounts.usdc_mint.to_account_info(),
-        to: ctx.accounts.trader_usdc.to_account_info(),
+        mint: ctx.accounts.usdt_mint.to_account_info(),
+        to: ctx.accounts.trader_usdt.to_account_info(),
         authority: ctx.accounts.market.to_account_info(),
     };
     let cpi_ctx = CpiContext::new_with_signer(
@@ -175,7 +175,7 @@ pub(crate) fn handler(
         cpi_accounts,
         signer_seeds,
     );
-    token_interface::transfer_checked(cpi_ctx, usdc_out, decimals)?;
+    token_interface::transfer_checked(cpi_ctx, usdt_out, decimals)?;
 
     // ---- re-validate reserves + solvency ----
     ctx.accounts.vault.reload()?;
@@ -188,7 +188,7 @@ pub(crate) fn handler(
         owner: ctx.accounts.trader.key(),
         side_yes,
         is_buy: false,
-        usdc: usdc_out,
+        usdt: usdt_out,
         tokens: tokens_in,
         price_bps: market.last_price_bps,
         fee_bps,

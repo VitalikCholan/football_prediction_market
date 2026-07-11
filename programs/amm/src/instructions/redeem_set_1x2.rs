@@ -58,17 +58,17 @@ pub struct RedeemSet1x2<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = trader,
         token::token_program = token_program,
     )]
-    pub trader_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub trader_usdt: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut, address = market.vault)]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(address = market.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = market.usdt_mint)]
+    pub usdt_mint: Box<InterfaceAccount<'info, Mint>>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -103,8 +103,8 @@ pub(crate) fn handler(ctx: Context<RedeemSet1x2>, amount: u64) -> Result<()> {
                 .checked_sub(amount)
                 .ok_or(AmmError::MathOverflow)?;
         }
-        market.usdc_collateral = market
-            .usdc_collateral
+        market.usdt_collateral = market
+            .usdt_collateral
             .checked_sub(amount)
             .ok_or(AmmError::MathOverflow)?;
     }
@@ -120,14 +120,14 @@ pub(crate) fn handler(ctx: Context<RedeemSet1x2>, amount: u64) -> Result<()> {
     }
 
     // ---- interaction: pay EXACTLY `amount` USDT, vault -> trader, PDA-signed ----
-    let decimals = ctx.accounts.usdc_mint.decimals;
+    let decimals = ctx.accounts.usdt_mint.decimals;
     let fixture_le = fixture_id.to_le_bytes();
     let signer_seeds: &[&[&[u8]]] = &[&[MARKET_1X2_SEED, &fixture_le, &[market_bump]]];
 
     let cpi_accounts = TransferChecked {
         from: ctx.accounts.vault.to_account_info(),
-        mint: ctx.accounts.usdc_mint.to_account_info(),
-        to: ctx.accounts.trader_usdc.to_account_info(),
+        mint: ctx.accounts.usdt_mint.to_account_info(),
+        to: ctx.accounts.trader_usdt.to_account_info(),
         authority: ctx.accounts.market.to_account_info(),
     };
     let cpi_ctx = CpiContext::new_with_signer(

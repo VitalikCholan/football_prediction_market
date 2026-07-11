@@ -18,16 +18,16 @@ export function getInitializeConfigDiscriminatorBytes() { return fixEncoderSize(
 export type InitializeConfigInstruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountAuthority extends string | AccountMeta<string> = string, TAccountConfig extends string | AccountMeta<string> = string, TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
 Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountAuthority extends string ? WritableSignerAccount<TAccountAuthority> & AccountSignerMeta<TAccountAuthority> : TAccountAuthority, TAccountConfig extends string ? WritableAccount<TAccountConfig> : TAccountConfig, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
 
-export type InitializeConfigInstructionData = { discriminator: ReadonlyUint8Array; keeper: Address; txlineProgram: Address; usdcMint: Address; tokenProgram: Address;  };
+export type InitializeConfigInstructionData = { discriminator: ReadonlyUint8Array; keeper: Address; txlineProgram: Address; usdtMint: Address; tokenProgram: Address;  };
 
-export type InitializeConfigInstructionDataArgs = { keeper: Address; txlineProgram: Address; usdcMint: Address; tokenProgram: Address;  };
+export type InitializeConfigInstructionDataArgs = { keeper: Address; txlineProgram: Address; usdtMint: Address; tokenProgram: Address;  };
 
 export function getInitializeConfigInstructionDataEncoder(): FixedSizeEncoder<InitializeConfigInstructionDataArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['keeper', getAddressEncoder()], ['txlineProgram', getAddressEncoder()], ['usdcMint', getAddressEncoder()], ['tokenProgram', getAddressEncoder()]]), (value) => ({ ...value, discriminator: INITIALIZE_CONFIG_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['keeper', getAddressEncoder()], ['txlineProgram', getAddressEncoder()], ['usdtMint', getAddressEncoder()], ['tokenProgram', getAddressEncoder()]]), (value) => ({ ...value, discriminator: INITIALIZE_CONFIG_DISCRIMINATOR }));
 }
 
 export function getInitializeConfigInstructionDataDecoder(): FixedSizeDecoder<InitializeConfigInstructionData> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['keeper', getAddressDecoder()], ['txlineProgram', getAddressDecoder()], ['usdcMint', getAddressDecoder()], ['tokenProgram', getAddressDecoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['keeper', getAddressDecoder()], ['txlineProgram', getAddressDecoder()], ['usdtMint', getAddressDecoder()], ['tokenProgram', getAddressDecoder()]]);
 }
 
 export function getInitializeConfigInstructionDataCodec(): FixedSizeCodec<InitializeConfigInstructionDataArgs, InitializeConfigInstructionData> {
@@ -40,7 +40,7 @@ config?: Address<TAccountConfig>;
 systemProgram?: Address<TAccountSystemProgram>;
 keeper: InitializeConfigInstructionDataArgs["keeper"];
 txlineProgram: InitializeConfigInstructionDataArgs["txlineProgram"];
-usdcMint: InitializeConfigInstructionDataArgs["usdcMint"];
+usdtMint: InitializeConfigInstructionDataArgs["usdtMint"];
 tokenProgram: InitializeConfigInstructionDataArgs["tokenProgram"];
 }
 
@@ -75,7 +75,7 @@ config: Address<TAccountConfig>;
 systemProgram?: Address<TAccountSystemProgram>;
 keeper: InitializeConfigInstructionDataArgs["keeper"];
 txlineProgram: InitializeConfigInstructionDataArgs["txlineProgram"];
-usdcMint: InitializeConfigInstructionDataArgs["usdcMint"];
+usdtMint: InitializeConfigInstructionDataArgs["usdtMint"];
 tokenProgram: InitializeConfigInstructionDataArgs["tokenProgram"];
 }
 

@@ -1,5 +1,5 @@
-//! `buy(side, usdc_in, min_out)` — dynamic fee → CPMM → credit position → deposit
-//! USDC → re-validate solvency (plan §4.5).
+//! `buy(side, usdt_in, min_out)` — dynamic fee → CPMM → credit position → deposit
+//! USDT → re-validate solvency (plan §4.5).
 
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
@@ -39,17 +39,17 @@ pub struct Buy<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = trader,
         token::token_program = token_program,
     )]
-    pub trader_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub trader_usdt: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut, address = market.vault)]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(address = market.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = market.usdt_mint)]
+    pub usdt_mint: Box<InterfaceAccount<'info, Mint>>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -57,14 +57,14 @@ pub struct Buy<'info> {
 pub(crate) fn handler(
     ctx: Context<Buy>,
     side: Side,
-    usdc_in: u64,
+    usdt_in: u64,
     min_out: u64,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let market = &mut ctx.accounts.market;
 
     require!(market.state == MarketState::Trading, AmmError::InvalidMarketState);
-    require!(usdc_in > 0, AmmError::ZeroAmount);
+    require!(usdt_in > 0, AmmError::ZeroAmount);
     require!(now >= market.last_ts, AmmError::MonotonicClock);
 
     // ---- Step A+B: dynamic fee from pre-trade state ----
@@ -85,8 +85,8 @@ pub(crate) fn handler(
     };
     let (fee_bps, v_ref) = fee::compute_fee_bps(&params, &state, now)?;
 
-    // amount_in_after_fee = usdc_in * (10_000 - fee_bps) / 10_000
-    let net = (usdc_in as u128)
+    // amount_in_after_fee = usdt_in * (10_000 - fee_bps) / 10_000
+    let net = (usdt_in as u128)
         .checked_mul((BPS_DENOM - fee_bps as u64) as u128)
         .ok_or(AmmError::MathOverflow)?
         .checked_div(BPS_DENOM as u128)
@@ -130,20 +130,20 @@ pub(crate) fn handler(
     }
     position.collateral = position
         .collateral
-        .checked_add(usdc_in)
+        .checked_add(usdt_in)
         .ok_or(AmmError::MathOverflow)?;
 
-    // ---- deposit USDC: trader_usdc -> vault (trader signs, plain CPI) ----
-    let decimals = ctx.accounts.usdc_mint.decimals;
+    // ---- deposit USDT: trader_usdt -> vault (trader signs, plain CPI) ----
+    let decimals = ctx.accounts.usdt_mint.decimals;
     let before = ctx.accounts.vault.amount;
     let cpi_accounts = TransferChecked {
-        from: ctx.accounts.trader_usdc.to_account_info(),
-        mint: ctx.accounts.usdc_mint.to_account_info(),
+        from: ctx.accounts.trader_usdt.to_account_info(),
+        mint: ctx.accounts.usdt_mint.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
         authority: ctx.accounts.trader.to_account_info(),
     };
     let cpi_ctx = CpiContext::new(ctx.accounts.token_program.key(), cpi_accounts);
-    token_interface::transfer_checked(cpi_ctx, usdc_in, decimals)?;
+    token_interface::transfer_checked(cpi_ctx, usdt_in, decimals)?;
 
     ctx.accounts.vault.reload()?;
     let credited = ctx
@@ -152,8 +152,8 @@ pub(crate) fn handler(
         .amount
         .checked_sub(before)
         .ok_or(AmmError::MathOverflow)?;
-    market.usdc_collateral = market
-        .usdc_collateral
+    market.usdt_collateral = market
+        .usdt_collateral
         .checked_add(credited)
         .ok_or(AmmError::MathOverflow)?;
 
@@ -166,7 +166,7 @@ pub(crate) fn handler(
         owner: ctx.accounts.trader.key(),
         side_yes,
         is_buy: true,
-        usdc: usdc_in,
+        usdt: usdt_in,
         tokens: res.tokens_out,
         price_bps: new_price_bps,
         fee_bps,

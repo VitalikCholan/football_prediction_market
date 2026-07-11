@@ -29,10 +29,10 @@ pub mod amm {
         ctx: Context<InitializeConfig>,
         keeper: Pubkey,
         txline_program: Pubkey,
-        usdc_mint: Pubkey,
+        usdt_mint: Pubkey,
         token_program: Pubkey,
     ) -> Result<()> {
-        initialize_config::handler(ctx, keeper, txline_program, usdc_mint, token_program)
+        initialize_config::handler(ctx, keeper, txline_program, usdt_mint, token_program)
     }
 
     /// Create a reusable per-tournament `MarketConfig` (fee + resolution params).
@@ -70,19 +70,19 @@ pub mod amm {
         open_position::handler(ctx)
     }
 
-    /// Buy YES/NO for USDC.
-    pub fn buy(ctx: Context<Buy>, side: Side, usdc_in: u64, min_out: u64) -> Result<()> {
-        buy::handler(ctx, side, usdc_in, min_out)
+    /// Buy YES/NO for USDT.
+    pub fn buy(ctx: Context<Buy>, side: Side, usdt_in: u64, min_out: u64) -> Result<()> {
+        buy::handler(ctx, side, usdt_in, min_out)
     }
 
-    /// Sell YES/NO tokens back for USDC.
+    /// Sell YES/NO tokens back for USDT.
     pub fn sell(
         ctx: Context<Sell>,
         side: Side,
         tokens_in: u64,
-        min_usdc_out: u64,
+        min_usdt_out: u64,
     ) -> Result<()> {
-        sell::handler(ctx, side, tokens_in, min_usdc_out)
+        sell::handler(ctx, side, tokens_in, min_usdt_out)
     }
 
     /// Keeper-gated, clock-guarded `Open -> Trading` at kickoff.

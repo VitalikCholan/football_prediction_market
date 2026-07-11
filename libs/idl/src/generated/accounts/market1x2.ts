@@ -26,12 +26,12 @@ q: Array<bigint>;
 /** LMSR liquidity parameter (base units). Max LP subsidy = `b·ln 3`. */
 b: bigint; 
 /** Total USDT held for this market (mirrors vault balance). */
-usdcCollateral: bigint; 
+usdtCollateral: bigint; 
 /**
  * Outstanding USER positions per outcome (excludes seed offsets) —
  * redeem liability + solvency invariant input.
  */
-supply: Array<bigint>; state: MarketState; outcome: Outcome1x2; vault: Address; vaultBump: number; kickoffTs: bigint; freezeTs: bigint; usdcMint: Address; 
+supply: Array<bigint>; state: MarketState; outcome: Outcome1x2; vault: Address; vaultBump: number; kickoffTs: bigint; freezeTs: bigint; usdtMint: Address; 
 /** Price (bps) of the most recently traded outcome, post-trade. */
 lastPriceBps: number; 
 /** Timestamp of last trade. */
@@ -56,12 +56,12 @@ q: Array<number | bigint>;
 /** LMSR liquidity parameter (base units). Max LP subsidy = `b·ln 3`. */
 b: number | bigint; 
 /** Total USDT held for this market (mirrors vault balance). */
-usdcCollateral: number | bigint; 
+usdtCollateral: number | bigint; 
 /**
  * Outstanding USER positions per outcome (excludes seed offsets) —
  * redeem liability + solvency invariant input.
  */
-supply: Array<number | bigint>; state: MarketStateArgs; outcome: Outcome1x2Args; vault: Address; vaultBump: number; kickoffTs: number | bigint; freezeTs: number | bigint; usdcMint: Address; 
+supply: Array<number | bigint>; state: MarketStateArgs; outcome: Outcome1x2Args; vault: Address; vaultBump: number; kickoffTs: number | bigint; freezeTs: number | bigint; usdtMint: Address; 
 /** Price (bps) of the most recently traded outcome, post-trade. */
 lastPriceBps: number; 
 /** Timestamp of last trade. */
@@ -75,12 +75,12 @@ reserved: ReadonlyUint8Array;  };
 
 /** Gets the encoder for {@link Market1x2Args} account data. */
 export function getMarket1x2Encoder(): FixedSizeEncoder<Market1x2Args> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['config', getAddressEncoder()], ['fixtureId', getI64Encoder()], ['q', getArrayEncoder(getU64Encoder(), { size: 3 })], ['b', getU64Encoder()], ['usdcCollateral', getU64Encoder()], ['supply', getArrayEncoder(getU64Encoder(), { size: 3 })], ['state', getMarketStateEncoder()], ['outcome', getOutcome1x2Encoder()], ['vault', getAddressEncoder()], ['vaultBump', getU8Encoder()], ['kickoffTs', getI64Encoder()], ['freezeTs', getI64Encoder()], ['usdcMint', getAddressEncoder()], ['lastPriceBps', getU16Encoder()], ['lastTs', getI64Encoder()], ['vAcc', getU64Encoder()], ['bump', getU8Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 64)]]), (value) => ({ ...value, discriminator: MARKET1X2_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['config', getAddressEncoder()], ['fixtureId', getI64Encoder()], ['q', getArrayEncoder(getU64Encoder(), { size: 3 })], ['b', getU64Encoder()], ['usdtCollateral', getU64Encoder()], ['supply', getArrayEncoder(getU64Encoder(), { size: 3 })], ['state', getMarketStateEncoder()], ['outcome', getOutcome1x2Encoder()], ['vault', getAddressEncoder()], ['vaultBump', getU8Encoder()], ['kickoffTs', getI64Encoder()], ['freezeTs', getI64Encoder()], ['usdtMint', getAddressEncoder()], ['lastPriceBps', getU16Encoder()], ['lastTs', getI64Encoder()], ['vAcc', getU64Encoder()], ['bump', getU8Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 64)]]), (value) => ({ ...value, discriminator: MARKET1X2_DISCRIMINATOR }));
 }
 
 /** Gets the decoder for {@link Market1x2} account data. */
 export function getMarket1x2Decoder(): FixedSizeDecoder<Market1x2> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['config', getAddressDecoder()], ['fixtureId', getI64Decoder()], ['q', getArrayDecoder(getU64Decoder(), { size: 3 })], ['b', getU64Decoder()], ['usdcCollateral', getU64Decoder()], ['supply', getArrayDecoder(getU64Decoder(), { size: 3 })], ['state', getMarketStateDecoder()], ['outcome', getOutcome1x2Decoder()], ['vault', getAddressDecoder()], ['vaultBump', getU8Decoder()], ['kickoffTs', getI64Decoder()], ['freezeTs', getI64Decoder()], ['usdcMint', getAddressDecoder()], ['lastPriceBps', getU16Decoder()], ['lastTs', getI64Decoder()], ['vAcc', getU64Decoder()], ['bump', getU8Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 64)]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['config', getAddressDecoder()], ['fixtureId', getI64Decoder()], ['q', getArrayDecoder(getU64Decoder(), { size: 3 })], ['b', getU64Decoder()], ['usdtCollateral', getU64Decoder()], ['supply', getArrayDecoder(getU64Decoder(), { size: 3 })], ['state', getMarketStateDecoder()], ['outcome', getOutcome1x2Decoder()], ['vault', getAddressDecoder()], ['vaultBump', getU8Decoder()], ['kickoffTs', getI64Decoder()], ['freezeTs', getI64Decoder()], ['usdtMint', getAddressDecoder()], ['lastPriceBps', getU16Decoder()], ['lastTs', getI64Decoder()], ['vAcc', getU64Decoder()], ['bump', getU8Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 64)]]);
 }
 
 /** Gets the codec for {@link Market1x2} account data. */

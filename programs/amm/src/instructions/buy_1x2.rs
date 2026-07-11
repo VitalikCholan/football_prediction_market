@@ -49,17 +49,17 @@ pub struct Buy1x2<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = trader,
         token::token_program = token_program,
     )]
-    pub trader_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub trader_usdt: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut, address = market.vault)]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(address = market.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = market.usdt_mint)]
+    pub usdt_mint: Box<InterfaceAccount<'info, Mint>>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -131,12 +131,12 @@ pub(crate) fn handler(
         .checked_add(usdt_in)
         .ok_or(AmmError::MathOverflow)?;
 
-    // ---- deposit USDT: trader_usdc -> vault (trader signs, plain CPI) ----
-    let decimals = ctx.accounts.usdc_mint.decimals;
+    // ---- deposit USDT: trader_usdt -> vault (trader signs, plain CPI) ----
+    let decimals = ctx.accounts.usdt_mint.decimals;
     let before = ctx.accounts.vault.amount;
     let cpi_accounts = TransferChecked {
-        from: ctx.accounts.trader_usdc.to_account_info(),
-        mint: ctx.accounts.usdc_mint.to_account_info(),
+        from: ctx.accounts.trader_usdt.to_account_info(),
+        mint: ctx.accounts.usdt_mint.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
         authority: ctx.accounts.trader.to_account_info(),
     };
@@ -150,8 +150,8 @@ pub(crate) fn handler(
         .amount
         .checked_sub(before)
         .ok_or(AmmError::MathOverflow)?;
-    market.usdc_collateral = market
-        .usdc_collateral
+    market.usdt_collateral = market
+        .usdt_collateral
         .checked_add(credited)
         .ok_or(AmmError::MathOverflow)?;
 
@@ -163,7 +163,7 @@ pub(crate) fn handler(
         owner: ctx.accounts.trader.key(),
         outcome,
         is_buy: true,
-        usdc: usdt_in,
+        usdt: usdt_in,
         tokens: delta,
         price_bps: new_price_bps,
         fee_bps,

@@ -20,7 +20,7 @@ keeper: Address;
 /** Trusted callee id for the `resolve` CPI (arbitrary-CPI guard). */
 txlineProgram: Address; 
 /** Pinned collateral mint (TxLINE devnet USDT, D-6). */
-usdcMint: Address; 
+usdtMint: Address; 
 /** Pinned token program id for the collateral mint (classic SPL Token). */
 tokenProgram: Address; 
 /** Canonical bump. */
@@ -36,7 +36,7 @@ keeper: Address;
 /** Trusted callee id for the `resolve` CPI (arbitrary-CPI guard). */
 txlineProgram: Address; 
 /** Pinned collateral mint (TxLINE devnet USDT, D-6). */
-usdcMint: Address; 
+usdtMint: Address; 
 /** Pinned token program id for the collateral mint (classic SPL Token). */
 tokenProgram: Address; 
 /** Canonical bump. */
@@ -46,12 +46,12 @@ reserved: ReadonlyUint8Array;  };
 
 /** Gets the encoder for {@link GlobalConfigArgs} account data. */
 export function getGlobalConfigEncoder(): FixedSizeEncoder<GlobalConfigArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['authority', getAddressEncoder()], ['keeper', getAddressEncoder()], ['txlineProgram', getAddressEncoder()], ['usdcMint', getAddressEncoder()], ['tokenProgram', getAddressEncoder()], ['bump', getU8Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 64)]]), (value) => ({ ...value, discriminator: GLOBAL_CONFIG_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['authority', getAddressEncoder()], ['keeper', getAddressEncoder()], ['txlineProgram', getAddressEncoder()], ['usdtMint', getAddressEncoder()], ['tokenProgram', getAddressEncoder()], ['bump', getU8Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 64)]]), (value) => ({ ...value, discriminator: GLOBAL_CONFIG_DISCRIMINATOR }));
 }
 
 /** Gets the decoder for {@link GlobalConfig} account data. */
 export function getGlobalConfigDecoder(): FixedSizeDecoder<GlobalConfig> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['authority', getAddressDecoder()], ['keeper', getAddressDecoder()], ['txlineProgram', getAddressDecoder()], ['usdcMint', getAddressDecoder()], ['tokenProgram', getAddressDecoder()], ['bump', getU8Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 64)]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['authority', getAddressDecoder()], ['keeper', getAddressDecoder()], ['txlineProgram', getAddressDecoder()], ['usdtMint', getAddressDecoder()], ['tokenProgram', getAddressDecoder()], ['bump', getU8Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 64)]]);
 }
 
 /** Gets the codec for {@link GlobalConfig} account data. */

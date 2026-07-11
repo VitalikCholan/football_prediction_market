@@ -1,7 +1,7 @@
 //! Shared LiteSVM harness for the AMM program (plan §10.1).
 //!
-//! Fabricates a classic-SPL USDC-like mint + funded ATAs via `set_account`
-//! (the "infinite USDC" pattern — no mint keypair needed), controls the clock
+//! Fabricates a classic-SPL USDT-like mint + funded ATAs via `set_account`
+//! (the "infinite USDT" pattern — no mint keypair needed), controls the clock
 //! via the Clock sysvar, and provides PDA derivation + instruction builders.
 
 #![allow(dead_code)]
@@ -28,8 +28,8 @@ use amm::constants::{
 };
 
 pub const BASE_TS: i64 = 1_700_000_000;
-pub const USDC_DECIMALS: u8 = 6;
-pub const ONE_USDC: u64 = 1_000_000;
+pub const USDT_DECIMALS: u8 = 6;
+pub const ONE_USDT: u64 = 1_000_000;
 
 /// Program ids we treat as fixed inside tests.
 pub fn program_id() -> Pubkey {
@@ -40,8 +40,8 @@ pub fn token_program_id() -> Pubkey {
     spl_token::ID
 }
 
-/// A convenient fabricated USDC mint address (arbitrary — we own its bytes).
-pub fn usdc_mint() -> Pubkey {
+/// A convenient fabricated USDT mint address (arbitrary — we own its bytes).
+pub fn usdt_mint() -> Pubkey {
     Pubkey::new_from_array([7u8; 32])
 }
 
@@ -57,11 +57,11 @@ pub struct Harness {
     pub svm: LiteSVM,
     pub admin: Keypair,
     pub keeper: Keypair,
-    pub usdc_mint: Pubkey,
+    pub usdt_mint: Pubkey,
 }
 
 impl Harness {
-    /// Fresh SVM with the AMM program loaded, admin+keeper funded, USDC mint
+    /// Fresh SVM with the AMM program loaded, admin+keeper funded, USDT mint
     /// fabricated, and the clock set to `BASE_TS`.
     pub fn new() -> Self {
         let mut svm = LiteSVM::new();
@@ -74,10 +74,10 @@ impl Harness {
         svm.airdrop(&admin.pubkey(), LAMPORTS_PER_SOL * 100).unwrap();
         svm.airdrop(&keeper.pubkey(), LAMPORTS_PER_SOL * 100).unwrap();
 
-        let mint = usdc_mint();
-        write_mint(&mut svm, &mint, USDC_DECIMALS);
+        let mint = usdt_mint();
+        write_mint(&mut svm, &mint, USDT_DECIMALS);
 
-        let mut h = Self { svm, admin, keeper, usdc_mint: mint };
+        let mut h = Self { svm, admin, keeper, usdt_mint: mint };
         h.set_time(BASE_TS);
         h
     }
@@ -104,10 +104,10 @@ impl Harness {
         clock.unix_timestamp
     }
 
-    /// Create + fund an ATA for `owner` holding `amount` of the USDC mint.
+    /// Create + fund an ATA for `owner` holding `amount` of the USDT mint.
     pub fn fund_ata(&mut self, owner: &Pubkey, amount: u64) -> Pubkey {
-        let ata = get_associated_token_address(owner, &self.usdc_mint);
-        write_token_account(&mut self.svm, &ata, &self.usdc_mint, owner, amount);
+        let ata = get_associated_token_address(owner, &self.usdt_mint);
+        write_token_account(&mut self.svm, &ata, &self.usdt_mint, owner, amount);
         ata
     }
 
@@ -247,7 +247,7 @@ pub fn ix_initialize_config(
         data: amm::instruction::InitializeConfig {
             keeper: *keeper,
             txline_program: *txline_program,
-            usdc_mint: *mint,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .data(),
@@ -312,8 +312,8 @@ pub fn ix_init_market(
             market_config: market_config_pda(config_id),
             market,
             vault: vault_pda(&market),
-            usdc_mint: *mint,
-            authority_usdc: *admin_ata,
+            usdt_mint: *mint,
+            authority_usdt: *admin_ata,
             token_program: token_program_id(),
             system_program: sys_program(),
         }
@@ -350,7 +350,7 @@ pub fn ix_buy(
     config_id: u16,
     fixture_id: i64,
     side: amm::Side,
-    usdc_in: u64,
+    usdt_in: u64,
     min_out: u64,
     mint: &Pubkey,
     trader_ata: &Pubkey,
@@ -363,13 +363,13 @@ pub fn ix_buy(
             market,
             market_config: market_config_pda(config_id),
             position: position_pda(&market, trader),
-            trader_usdc: *trader_ata,
+            trader_usdt: *trader_ata,
             vault: vault_pda(&market),
-            usdc_mint: *mint,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
-        data: amm::instruction::Buy { side, usdc_in, min_out }.data(),
+        data: amm::instruction::Buy { side, usdt_in, min_out }.data(),
     }
 }
 
@@ -379,7 +379,7 @@ pub fn ix_sell(
     fixture_id: i64,
     side: amm::Side,
     tokens_in: u64,
-    min_usdc_out: u64,
+    min_usdt_out: u64,
     mint: &Pubkey,
     trader_ata: &Pubkey,
 ) -> Instruction {
@@ -391,13 +391,13 @@ pub fn ix_sell(
             market,
             market_config: market_config_pda(config_id),
             position: position_pda(&market, trader),
-            trader_usdc: *trader_ata,
+            trader_usdt: *trader_ata,
             vault: vault_pda(&market),
-            usdc_mint: *mint,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
-        data: amm::instruction::Sell { side, tokens_in, min_usdc_out }.data(),
+        data: amm::instruction::Sell { side, tokens_in, min_usdt_out }.data(),
     }
 }
 
@@ -557,8 +557,8 @@ pub fn ix_redeem(owner: &Pubkey, fixture_id: i64, mint: &Pubkey, owner_ata: &Pub
             market,
             position: position_pda(&market, owner),
             vault: vault_pda(&market),
-            owner_usdc: *owner_ata,
-            usdc_mint: *mint,
+            owner_usdt: *owner_ata,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
@@ -582,8 +582,8 @@ pub fn ix_close_market(
             market,
             market_config: market_config_pda(config_id),
             vault: vault_pda(&market),
-            authority_usdc: *authority_ata,
-            usdc_mint: *mint,
+            authority_usdt: *authority_ata,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
@@ -695,8 +695,8 @@ pub fn ix_init_market_1x2(
             market_config: market_config_pda(config_id),
             market,
             vault: vault_pda(&market),
-            usdc_mint: *mint,
-            authority_usdc: *admin_ata,
+            usdt_mint: *mint,
+            authority_usdt: *admin_ata,
             token_program: token_program_id(),
             system_program: sys_program(),
         }
@@ -747,9 +747,9 @@ pub fn ix_buy_1x2(
             market,
             market_config: market_config_pda(config_id),
             position: position_1x2_pda(&market, trader),
-            trader_usdc: *trader_ata,
+            trader_usdt: *trader_ata,
             vault: vault_pda(&market),
-            usdc_mint: *mint,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
@@ -776,9 +776,9 @@ pub fn ix_sell_1x2(
             market,
             market_config: market_config_pda(config_id),
             position: position_1x2_pda(&market, trader),
-            trader_usdc: *trader_ata,
+            trader_usdt: *trader_ata,
             vault: vault_pda(&market),
-            usdc_mint: *mint,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
@@ -881,9 +881,9 @@ pub fn ix_mint_set_1x2(
             trader: *trader,
             market,
             position: position_1x2_pda(&market, trader),
-            trader_usdc: *trader_ata,
+            trader_usdt: *trader_ata,
             vault: vault_pda(&market),
-            usdc_mint: *mint,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
@@ -905,9 +905,9 @@ pub fn ix_redeem_set_1x2(
             trader: *trader,
             market,
             position: position_1x2_pda(&market, trader),
-            trader_usdc: *trader_ata,
+            trader_usdt: *trader_ata,
             vault: vault_pda(&market),
-            usdc_mint: *mint,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
@@ -929,8 +929,8 @@ pub fn ix_redeem_1x2(
             market,
             position: position_1x2_pda(&market, owner),
             vault: vault_pda(&market),
-            owner_usdc: *owner_ata,
-            usdc_mint: *mint,
+            owner_usdt: *owner_ata,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
@@ -954,8 +954,8 @@ pub fn ix_close_market_1x2(
             market,
             market_config: market_config_pda(config_id),
             vault: vault_pda(&market),
-            authority_usdc: *authority_ata,
-            usdc_mint: *mint,
+            authority_usdt: *authority_ata,
+            usdt_mint: *mint,
             token_program: token_program_id(),
         }
         .to_account_metas(None),

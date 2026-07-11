@@ -74,11 +74,11 @@ fn buy_yes_raises_yes_price() {
 
 #[test]
 fn round_trip_never_profits() {
-    // buy YES then immediately sell the tokens back: usdc_gross <= usdc_in.
-    let usdc_in = 20_000u64;
-    let b = buy(true, 1_000_000, 1_000_000, usdc_in).unwrap();
+    // buy YES then immediately sell the tokens back: usdt_gross <= usdt_in.
+    let usdt_in = 20_000u64;
+    let b = buy(true, 1_000_000, 1_000_000, usdt_in).unwrap();
     let s = sell(true, b.new_yes_reserve, b.new_no_reserve, b.tokens_out).unwrap();
-    assert!(s.usdc_gross <= usdc_in, "gross={} in={}", s.usdc_gross, usdc_in);
+    assert!(s.usdt_gross <= usdt_in, "gross={} in={}", s.usdt_gross, usdt_in);
 }
 
 #[test]

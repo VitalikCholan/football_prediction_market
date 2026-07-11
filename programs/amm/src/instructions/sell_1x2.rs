@@ -42,17 +42,17 @@ pub struct Sell1x2<'info> {
 
     #[account(
         mut,
-        token::mint = usdc_mint,
+        token::mint = usdt_mint,
         token::authority = trader,
         token::token_program = token_program,
     )]
-    pub trader_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub trader_usdt: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut, address = market.vault)]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(address = market.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(address = market.usdt_mint)]
+    pub usdt_mint: Box<InterfaceAccount<'info, Mint>>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -133,8 +133,8 @@ pub(crate) fn handler(
         market.v_acc = fee::next_v_acc(&params, v_ref, old_price_bps, new_price_bps)?;
         market.last_price_bps = new_price_bps;
         market.last_ts = now;
-        market.usdc_collateral = market
-            .usdc_collateral
+        market.usdt_collateral = market
+            .usdt_collateral
             .checked_sub(usdt_out)
             .ok_or(AmmError::MathOverflow)?;
     }
@@ -147,15 +147,15 @@ pub(crate) fn handler(
         position.collateral = position.collateral.saturating_sub(usdt_out);
     }
 
-    // ---- payout: vault -> trader_usdc, signed by the market PDA ----
-    let decimals = ctx.accounts.usdc_mint.decimals;
+    // ---- payout: vault -> trader_usdt, signed by the market PDA ----
+    let decimals = ctx.accounts.usdt_mint.decimals;
     let fixture_le = fixture_id.to_le_bytes();
     let signer_seeds: &[&[&[u8]]] = &[&[MARKET_1X2_SEED, &fixture_le, &[market_bump]]];
 
     let cpi_accounts = TransferChecked {
         from: ctx.accounts.vault.to_account_info(),
-        mint: ctx.accounts.usdc_mint.to_account_info(),
-        to: ctx.accounts.trader_usdc.to_account_info(),
+        mint: ctx.accounts.usdt_mint.to_account_info(),
+        to: ctx.accounts.trader_usdt.to_account_info(),
         authority: ctx.accounts.market.to_account_info(),
     };
     let cpi_ctx = CpiContext::new_with_signer(
@@ -175,7 +175,7 @@ pub(crate) fn handler(
         owner: ctx.accounts.trader.key(),
         outcome,
         is_buy: false,
-        usdc: usdt_out,
+        usdt: usdt_out,
         tokens: tokens_in,
         price_bps: new_price_bps,
         fee_bps,

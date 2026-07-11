@@ -53,7 +53,7 @@ export interface Quote {
   /** min_out guard from slippage tolerance (shares on buy, USDT on sell). */
   minOut: number;
   /** USDT returned (sell only). */
-  usdcOut: number;
+  usdtOut: number;
 }
 
 /** Price of the chosen side in fraction (0..1) from the YES bps. */
@@ -96,7 +96,7 @@ export function quoteTrade(input: QuoteInput): Quote {
       feePaid: 0,
       payoutIfWins: 0,
       minOut: 0,
-      usdcOut: 0,
+      usdtOut: 0,
     };
   }
 
@@ -122,7 +122,7 @@ export function quoteTrade(input: QuoteInput): Quote {
       feePaid,
       payoutIfWins: shares, // $1.00/share
       minOut: shares * (1 - slippageTolerance),
-      usdcOut: 0,
+      usdtOut: 0,
     };
   }
 
@@ -134,8 +134,8 @@ export function quoteTrade(input: QuoteInput): Quote {
   const avgPrice = p * (1 - impact);
   const gross = amount * avgPrice;
   const feePaid = gross * feeRate;
-  const usdcOut = gross - feePaid;
-  const minOut = usdcOut * (1 - slippageTolerance);
+  const usdtOut = gross - feePaid;
+  const minOut = usdtOut * (1 - slippageTolerance);
   return {
     shares: amount,
     avgPriceCents: avgPrice * 100,
@@ -144,7 +144,7 @@ export function quoteTrade(input: QuoteInput): Quote {
     feePaid,
     payoutIfWins: amount, // if held to resolution instead
     minOut,
-    usdcOut,
+    usdtOut,
   };
 }
 
@@ -197,7 +197,7 @@ export function quoteTrade1x2(input: Quote1x2Input): Quote {
       feePaid: 0,
       payoutIfWins: 0,
       minOut: 0,
-      usdcOut: 0,
+      usdtOut: 0,
     };
   }
 
@@ -222,7 +222,7 @@ export function quoteTrade1x2(input: Quote1x2Input): Quote {
       feePaid,
       payoutIfWins: shares, // $1.00/winning token
       minOut: shares * (1 - slippageTolerance),
-      usdcOut: 0,
+      usdtOut: 0,
     };
   }
 
@@ -231,7 +231,7 @@ export function quoteTrade1x2(input: Quote1x2Input): Quote {
   const avgPrice = Math.max(0.001, p * (1 - impact));
   const gross = amount * avgPrice;
   const feePaid = gross * feeRate;
-  const usdcOut = gross - feePaid;
+  const usdtOut = gross - feePaid;
   return {
     shares: amount,
     avgPriceCents: avgPrice * 100,
@@ -239,7 +239,7 @@ export function quoteTrade1x2(input: Quote1x2Input): Quote {
     priceImpact: impact,
     feePaid,
     payoutIfWins: amount,
-    minOut: usdcOut * (1 - slippageTolerance),
-    usdcOut,
+    minOut: usdtOut * (1 - slippageTolerance),
+    usdtOut,
   };
 }

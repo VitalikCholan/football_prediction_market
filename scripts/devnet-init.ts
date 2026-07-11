@@ -107,8 +107,8 @@ const GRACE_SECS = 3_600n;
 const SEED_YES = 100_000_000n; // 100 USDT virtual — 50/50 odds
 const SEED_NO = 100_000_000n;
 const SEED_LIQUIDITY = 80_000_000n; // 80 USDT real collateral
-const BUY_USDC_IN = 5_000_000n; // 5 USDT
-const MIN_USDT_FOR_MARKET = SEED_LIQUIDITY + BUY_USDC_IN;
+const BUY_USDT_IN = 5_000_000n; // 5 USDT
+const MIN_USDT_FOR_MARKET = SEED_LIQUIDITY + BUY_USDT_IN;
 
 // request_devnet_faucet — discriminator from programs/amm/idls/txline.json.
 const FAUCET_DISCRIMINATOR = new Uint8Array([49, 178, 104, 8, 23, 120, 186, 21]);
@@ -340,7 +340,7 @@ async function main() {
         d.authority === admin.address &&
         d.keeper === admin.address &&
         d.txlineProgram === TXLINE_PROGRAM &&
-        d.usdcMint === USDT_MINT &&
+        d.usdtMint === USDT_MINT &&
         d.tokenProgram === TOKEN_PROGRAM;
       return `SKIP — already exists at ${configPda} (values ${matches ? "match" : "DIFFER — inspect manually!"})`;
     }
@@ -348,7 +348,7 @@ async function main() {
       authority: admin,
       keeper: admin.address,
       txlineProgram: TXLINE_PROGRAM,
-      usdcMint: USDT_MINT,
+      usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
     });
     await sendTx(admin, [ix], "initialize_config");
@@ -431,8 +431,8 @@ async function main() {
       marketConfig: marketConfigPda,
       market: marketPda,
       vault: vaultPda,
-      usdcMint: USDT_MINT,
-      authorityUsdc: adminUsdtAta,
+      usdtMint: USDT_MINT,
+      authorityUsdt: adminUsdtAta,
       tokenProgram: TOKEN_PROGRAM,
       fixtureId: FIXTURE_ID,
       kickoffTs,
@@ -509,12 +509,12 @@ async function main() {
       market: marketPda,
       marketConfig: marketConfigPda,
       position: positionPda,
-      traderUsdc: adminUsdtAta,
+      traderUsdt: adminUsdtAta,
       vault: vaultPda,
-      usdcMint: USDT_MINT,
+      usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
       side: Side.Yes,
-      usdcIn: BUY_USDC_IN,
+      usdtIn: BUY_USDT_IN,
       minOut: 1n,
     });
     await sendTx(admin, [ix], "buy");
@@ -522,7 +522,7 @@ async function main() {
       fetchMaybePosition(rpc, positionPda),
     );
     const yes = after.exists ? after.data.yesTokens : 0n;
-    return `bought ${BUY_USDC_IN} raw USDT of YES → ${yes} YES tokens`;
+    return `bought ${BUY_USDT_IN} raw USDT of YES → ${yes} YES tokens`;
   });
 
   // ---- 6. verify + report ----

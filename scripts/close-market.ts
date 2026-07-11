@@ -212,10 +212,10 @@ async function main() {
   const [marketConfigPda] = await findMarketConfigPda(CONFIG_ID);
   const [marketPda] = await findMarketPda(FIXTURE_ID);
   const [vaultPda] = await findVaultPda(marketPda);
-  const authorityUsdc = await findAtaPda(authority.address, USDT_MINT);
+  const authorityUsdt = await findAtaPda(authority.address, USDT_MINT);
   console.log(`market PDA:    ${marketPda}`);
   console.log(`vault PDA:     ${vaultPda}`);
-  console.log(`authority ATA: ${authorityUsdc}\n`);
+  console.log(`authority ATA: ${authorityUsdt}\n`);
 
   // ---- pre-flight: fetch market + config so we can explain any gate failure ----
   const market = await withRpc("fetchMaybeMarket", (rpc) => fetchMaybeMarket(rpc, marketPda));
@@ -247,8 +247,8 @@ async function main() {
     market: marketPda,
     marketConfig: marketConfigPda,
     vault: vaultPda,
-    authorityUsdc,
-    usdcMint: USDT_MINT,
+    authorityUsdt,
+    usdtMint: USDT_MINT,
     tokenProgram: TOKEN_PROGRAM,
   });
 
@@ -295,10 +295,10 @@ async function main() {
   console.log(
     "    NOTE: sweeps residual vault USDT -> admin ATA and DELETES the Market account (by-design).",
   );
-  const authBalBefore = await usdtBalance(authorityUsdc);
+  const authBalBefore = await usdtBalance(authorityUsdt);
   const sig = await sendTx(authority, [ix], "close_market");
 
-  const authBalAfter = await usdtBalance(authorityUsdc);
+  const authBalAfter = await usdtBalance(authorityUsdt);
   const swept = authBalAfter - authBalBefore;
   console.log(`\ntx signature: ${sig}`);
   console.log(`  ${EXPLORER("tx", sig)}`);

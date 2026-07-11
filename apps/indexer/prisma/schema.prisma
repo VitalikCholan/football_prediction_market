@@ -132,8 +132,8 @@ model Trade {
   trader       String
   side         Int // 0 = NO, 1 = YES
   action       String // buy | sell
-  usdcIn       Decimal  @map("usdc_in") @db.Decimal(40, 0) // collateral in (buy)
-  usdcOut      Decimal  @map("usdc_out") @db.Decimal(40, 0) // collateral out (sell)
+  usdtIn       Decimal  @map("usdt_in") @db.Decimal(40, 0) // collateral in (buy)
+  usdtOut      Decimal  @map("usdt_out") @db.Decimal(40, 0) // collateral out (sell)
   tokensAmount Decimal  @map("tokens_amount") @db.Decimal(40, 0)
   priceBps     Int      @map("price_bps") // YES price after trade
   feeBps       Int      @map("fee_bps")

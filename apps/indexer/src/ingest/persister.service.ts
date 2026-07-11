@@ -309,7 +309,7 @@ export class EventPersister {
       },
     );
 
-    const usdc = ev.kind === 'buy' ? ev.usdcIn : ev.usdcOut;
+    const usdt = ev.kind === 'buy' ? ev.usdtIn : ev.usdtOut;
     await this.prisma.$transaction([
       this.prisma.trade.create({
         data: {
@@ -319,8 +319,8 @@ export class EventPersister {
           trader: ev.trader,
           side: ev.side,
           action: ev.kind,
-          usdcIn: ev.usdcIn.toString(),
-          usdcOut: ev.usdcOut.toString(),
+          usdtIn: ev.usdtIn.toString(),
+          usdtOut: ev.usdtOut.toString(),
           tokensAmount: ev.tokensAmount.toString(),
           priceBps: ev.yesPriceBps,
           feeBps: ev.feeBps,
@@ -344,7 +344,7 @@ export class EventPersister {
           marketId: id,
           ts: ev.ts,
           slot: ev.slot,
-          volume: usdc.toString(),
+          volume: usdt.toString(),
         },
       }),
       this.prisma.market.update({
@@ -354,7 +354,7 @@ export class EventPersister {
           noReserve: noReserve.toString(),
           yesPriceBps: ev.yesPriceBps,
           totalVolume: {
-            increment: new Prisma.Decimal(usdc.toString()),
+            increment: new Prisma.Decimal(usdt.toString()),
           },
           updatedSlot: ev.slot,
         },
@@ -499,8 +499,8 @@ export class EventPersister {
           trader: ev.trader,
           side: ev.outcome, // 0 = Team1, 1 = Draw, 2 = Team2
           action: ev.isBuy ? 'buy' : 'sell',
-          usdcIn: ev.isBuy ? ev.usdc.toString() : '0',
-          usdcOut: ev.isBuy ? '0' : ev.usdc.toString(),
+          usdtIn: ev.isBuy ? ev.usdt.toString() : '0',
+          usdtOut: ev.isBuy ? '0' : ev.usdt.toString(),
           tokensAmount: ev.tokens.toString(),
           priceBps: ev.priceBps,
           feeBps: ev.feeBps,
@@ -524,14 +524,14 @@ export class EventPersister {
           marketId: id,
           ts: ev.ts,
           slot: ev.slot,
-          volume: ev.usdc.toString(),
+          volume: ev.usdt.toString(),
         },
       }),
       this.prisma.market.update({
         where: { id },
         data: {
           yesPriceBps: ev.priceBps,
-          totalVolume: { increment: new Prisma.Decimal(ev.usdc.toString()) },
+          totalVolume: { increment: new Prisma.Decimal(ev.usdt.toString()) },
           updatedSlot: ev.slot,
         },
       }),

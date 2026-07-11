@@ -420,7 +420,7 @@ export async function prepareTrade(
   const marketConfig = address(params.configId);
   const [vault] = await findVaultPda(market);
   const [position] = await findPositionPda(market, owner);
-  const traderUsdc = await findUsdtAta(owner);
+  const traderUsdt = await findUsdtAta(owner);
 
   const ixs: Instruction[] = [];
   let probe: OutProbe;
@@ -442,12 +442,12 @@ export async function prepareTrade(
         market,
         marketConfig,
         position,
-        traderUsdc,
+        traderUsdt,
         vault,
-        usdcMint: USDT_MINT,
+        usdtMint: USDT_MINT,
         tokenProgram: TOKEN_PROGRAM,
         side: sideToIdl(params.side),
-        usdcIn: BigInt(params.amountBase),
+        usdtIn: BigInt(params.amountBase),
         minOut: BigInt(params.minOutBase),
       }),
     );
@@ -468,18 +468,18 @@ export async function prepareTrade(
         market,
         marketConfig,
         position,
-        traderUsdc,
+        traderUsdt,
         vault,
-        usdcMint: USDT_MINT,
+        usdtMint: USDT_MINT,
         tokenProgram: TOKEN_PROGRAM,
         side: sideToIdl(params.side),
         tokensIn: BigInt(params.amountBase),
-        minUsdcOut: BigInt(params.minOutBase),
+        minUsdtOut: BigInt(params.minOutBase),
       }),
     );
     probe = {
       kind: "tokenAccount",
-      address: traderUsdc,
+      address: traderUsdt,
       preAmount: await getUsdtBalanceBase(owner),
     };
   }
@@ -497,15 +497,15 @@ export async function prepareClaim(
   const market = address(params.marketId);
   const [vault] = await findVaultPda(market);
   const [position] = await findPositionPda(market, owner);
-  const ownerUsdc = await findUsdtAta(owner);
+  const ownerUsdt = await findUsdtAta(owner);
 
   const ix = await getRedeemInstructionAsync({
     owner: signer,
     market,
     position,
     vault,
-    ownerUsdc,
-    usdcMint: USDT_MINT,
+    ownerUsdt,
+    usdtMint: USDT_MINT,
     tokenProgram: TOKEN_PROGRAM,
   });
 
@@ -514,7 +514,7 @@ export async function prepareClaim(
     [ix],
     {
       kind: "tokenAccount",
-      address: ownerUsdc,
+      address: ownerUsdt,
       preAmount: await getUsdtBalanceBase(owner),
     },
     "redeem",
@@ -568,7 +568,7 @@ export async function prepareTrade1x2(
   const marketConfig = address(params.configId);
   const [vault] = await findVaultPda(market);
   const [position] = await findPosition1x2Pda(market, owner);
-  const traderUsdc = await findUsdtAta(owner);
+  const traderUsdt = await findUsdtAta(owner);
   const outcomeIdx = OUTCOME_1X2_IDX[params.outcome];
 
   // Raised CU budget first — the LMSR softmax overruns the default limit.
@@ -592,9 +592,9 @@ export async function prepareTrade1x2(
         market,
         marketConfig,
         position,
-        traderUsdc,
+        traderUsdt,
         vault,
-        usdcMint: USDT_MINT,
+        usdtMint: USDT_MINT,
         tokenProgram: TOKEN_PROGRAM,
         outcome: outcomeIdx,
         usdtIn: BigInt(params.amountBase),
@@ -616,9 +616,9 @@ export async function prepareTrade1x2(
         market,
         marketConfig,
         position,
-        traderUsdc,
+        traderUsdt,
         vault,
-        usdcMint: USDT_MINT,
+        usdtMint: USDT_MINT,
         tokenProgram: TOKEN_PROGRAM,
         outcome: outcomeIdx,
         tokensIn: BigInt(params.amountBase),
@@ -627,7 +627,7 @@ export async function prepareTrade1x2(
     );
     probe = {
       kind: "tokenAccount",
-      address: traderUsdc,
+      address: traderUsdt,
       preAmount: await getUsdtBalanceBase(owner),
     };
   }
@@ -645,15 +645,15 @@ export async function prepareClaim1x2(
   const market = address(params.marketId);
   const [vault] = await findVaultPda(market);
   const [position] = await findPosition1x2Pda(market, owner);
-  const ownerUsdc = await findUsdtAta(owner);
+  const ownerUsdt = await findUsdtAta(owner);
 
   const ix = await getRedeem1x2InstructionAsync({
     owner: signer,
     market,
     position,
     vault,
-    ownerUsdc,
-    usdcMint: USDT_MINT,
+    ownerUsdt,
+    usdtMint: USDT_MINT,
     tokenProgram: TOKEN_PROGRAM,
   });
 
@@ -662,7 +662,7 @@ export async function prepareClaim1x2(
     [ix],
     {
       kind: "tokenAccount",
-      address: ownerUsdc,
+      address: ownerUsdt,
       preAmount: await getUsdtBalanceBase(owner),
     },
     "redeem",

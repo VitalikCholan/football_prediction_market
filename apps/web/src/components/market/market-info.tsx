@@ -1,5 +1,5 @@
 import type { MarketDto } from "@fpm/shared";
-import { volumeLabel, baseToUsdc, usdCompactLabel } from "@/lib/format";
+import { volumeLabel, baseToUsdt, usdCompactLabel } from "@/lib/format";
 import { FeeBar } from "@/components/market/fee-bar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 /** Market info sidebar (1c): volume, liquidity, resolution source, fee. */
 export function MarketInfo({ market }: { market: MarketDto }) {
   const liquidity =
-    baseToUsdc(market.yesReserve) + baseToUsdc(market.noReserve);
+    baseToUsdt(market.yesReserve) + baseToUsdt(market.noReserve);
 
   const rows: [string, string][] = [
     ["Total volume", volumeLabel(market.totalVolume)],

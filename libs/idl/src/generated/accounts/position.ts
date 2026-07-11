@@ -22,7 +22,7 @@ yesTokens: bigint;
 /** NO balance. */
 noTokens: bigint; 
 /**
- * Net USDC basis deposited (buys − sell proceeds). Used for Void refund (D-4)
+ * Net USDT basis deposited (buys − sell proceeds). Used for Void refund (D-4)
  * and reserved for v1 leverage collateral.
  */
 collateral: bigint; 
@@ -51,7 +51,7 @@ yesTokens: number | bigint;
 /** NO balance. */
 noTokens: number | bigint; 
 /**
- * Net USDC basis deposited (buys − sell proceeds). Used for Void refund (D-4)
+ * Net USDT basis deposited (buys − sell proceeds). Used for Void refund (D-4)
  * and reserved for v1 leverage collateral.
  */
 collateral: number | bigint; 
