@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --watch --experimental-transform-types --import ./hooks/register.mjs src/index.ts",
     "start": "node --experimental-transform-types --import ./hooks/register.mjs src/index.ts",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/keeper.cjs",
     "smoke": "node --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke",
     "smoke:txline": "node --env-file-if-exists=.env --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke-txline",
     "smoke:seed": "node --env-file-if-exists=.env --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke-seed",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@fpm/tsconfig": "workspace:*",
-    "@types/node": "^24"
+    "@types/node": "^24",
+    "esbuild": "^0.25"
   }
 }

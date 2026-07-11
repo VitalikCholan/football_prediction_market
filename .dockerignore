@@ -1,0 +1,19 @@
+# Build context = repo root (workspace install needs libs/ + packages/).
+# Trim everything heavy or irrelevant to the keeper/indexer runtime images.
+.git
+**/node_modules
+target/                 # Rust/Anchor build output — huge, not needed by JS images
+**/.next
+**/dist                 # indexer dist is rebuilt inside the image
+.claude
+.turbo
+**/*.log
+
+# Never bake secrets into an image — they come from env at runtime.
+**/.env
+**/.env.local
+**/*.keypair.json
+**/id.json
+
+# Web app is deployed separately (Vercel/Amplify), not in these images.
+apps/web/.next
