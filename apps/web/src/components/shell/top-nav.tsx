@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { WalletChip } from "@/components/wallet/wallet-chip";
 import { useAccountAddress } from "@/components/wallet/use-account";
 import { useUsdtBalance } from "@/lib/use-live";
+import { useSearch } from "@/lib/search";
 import { usd } from "@/lib/format";
 
 const NAV = [
@@ -28,6 +29,8 @@ function Brand() {
 
 export function TopNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { query, setQuery } = useSearch();
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
@@ -65,6 +68,12 @@ export function TopNav() {
             style={{ paddingLeft: 34 }}
             placeholder="Search matches, teams, outrights…"
             aria-label="Search markets"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              // Search only filters the markets grid — hop to it if typing elsewhere.
+              if (pathname !== "/") router.push("/");
+            }}
           />
         </label>
 

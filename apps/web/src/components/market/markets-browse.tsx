@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { MarketDto } from "@fpm/shared";
 import { MatchCard } from "@/components/market/match-card";
+import { useSearch } from "@/lib/search";
 
 type Sort = "volume" | "closing";
 
@@ -69,9 +70,19 @@ function matches(m: MarketDto, filter: Filter): boolean {
   }
 }
 
+/** Free-text search over team names + competition (case-insensitive substring). */
+function matchesQuery(m: MarketDto, q: string): boolean {
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  return [m.homeTeam, m.awayTeam, m.competition].some(
+    (f) => f != null && f.toLowerCase().includes(needle),
+  );
+}
+
 export function MarketsBrowse({ markets }: { markets: MarketDto[] }) {
   const [activeId, setActiveId] = useState<string>(ALL_PILL.id);
   const [sort, setSort] = useState<Sort>("volume");
+  const { query } = useSearch();
 
   const pills = useMemo(() => buildPills(markets), [markets]);
 
@@ -80,13 +91,15 @@ export function MarketsBrowse({ markets }: { markets: MarketDto[] }) {
     pills.find((p) => p.id === activeId)?.filter ?? ALL_PILL.filter;
 
   const shown = useMemo(() => {
-    const list = markets.filter((m) => matches(m, active));
+    const list = markets.filter(
+      (m) => matches(m, active) && matchesQuery(m, query),
+    );
     return [...list].sort((a, b) =>
       sort === "volume"
         ? Number(b.totalVolume) - Number(a.totalVolume)
         : (a.freezeTs ?? Infinity) - (b.freezeTs ?? Infinity),
     );
-  }, [markets, active, sort]);
+  }, [markets, active, sort, query]);
 
   return (
     <div>

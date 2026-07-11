@@ -4,6 +4,7 @@ import { SolanaProvider } from "@solana/react-hooks";
 import type { ClusterUrl } from "@solana/kit";
 import { RPC_URL } from "@/lib/solana";
 import { ToastProvider } from "@/components/ui/toast";
+import { SearchProvider } from "@/lib/search";
 
 /**
  * App providers. framework-kit `SolanaProvider` composes the Solana client
@@ -17,7 +18,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       config={{ endpoint: RPC_URL as ClusterUrl }}
       walletPersistence={{ autoConnect: true }}
     >
-      <ToastProvider>{children}</ToastProvider>
+      <ToastProvider>
+        <SearchProvider>{children}</SearchProvider>
+      </ToastProvider>
     </SolanaProvider>
   );
 }
