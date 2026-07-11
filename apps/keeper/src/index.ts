@@ -25,6 +25,7 @@ import { LifecycleStateMachine } from "./lifecycle/stateMachine.ts";
 import { Scheduler } from "./lifecycle/scheduler.ts";
 import { MarketSeeder } from "./lifecycle/seeder.ts";
 import { runSmoke } from "./smoke.ts";
+import { runSmoke1x2 } from "./smoke1x2.ts";
 import { runSmokeTxline } from "./smokeTxline.ts";
 import { runSmokeSeed } from "./smokeSeed.ts";
 import type { ActionContext } from "./actions/context.ts";
@@ -38,6 +39,11 @@ async function main(): Promise<void> {
   // TxLINE API smoke: live SSE + historical + stat-validation parser proof.
   if (process.argv.includes("--smoke-txline") || process.env.SMOKE_TXLINE === "1") {
     await runSmokeTxline();
+    return;
+  }
+  // 1X2 devnet smoke: prove the new *_1x2 wiring, simulate-only (nothing sent).
+  if (process.argv.includes("--smoke-1x2") || process.env.SMOKE_1X2 === "1") {
+    await runSmoke1x2();
     return;
   }
   // Devnet smoke mode: prove wiring against the live program, simulate-only.
