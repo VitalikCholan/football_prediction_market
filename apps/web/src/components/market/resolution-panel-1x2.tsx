@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { MarketDto } from "@fpm/shared";
+import type { Market1x2Dto } from "@fpm/shared";
 import { friendlyTxError } from "@fpm/shared";
 import { usd, shares as fmtShares } from "@/lib/format";
 import { explorerTx } from "@/lib/solana";
-import { prepareClaim } from "@/lib/tx";
+import { prepareClaim1x2 } from "@/lib/tx";
 import { notifyTxConfirmed, useMarketPosition } from "@/lib/use-live";
 import { winningTokens } from "@/lib/positions";
 import { useTxAuthority } from "@/components/wallet/use-account";
@@ -16,12 +16,12 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
 /**
- * Resolution & payout (DESIGN_SPEC 1g). Shown when the market is Resolved:
- * green banner + final result, the user's winning position (REAL on-chain
- * `Position` decode), and Claim → redeem (1 token = 1 USDT). Claim simulates
- * first and only signs when the simulation passes.
+ * 1X2 resolution & payout (1g, C2). Shown when a 1X2 market is Resolved: the
+ * resolved `outcome1x2` (Team1 / Draw / Team2, or Void → refund), the user's
+ * winning-outcome balance (REAL on-chain `Position1x2` decode), and Claim →
+ * `redeem_1x2` (1 winning token = 1 USDT). Simulates before signing.
  */
-export function ResolutionPanel({ market }: { market: MarketDto }) {
+export function ResolutionPanel1x2({ market }: { market: Market1x2Dto }) {
   const { address, getAuthority } = useTxAuthority();
   const toast = useToast();
   const [claimed, setClaimed] = useState(false);
@@ -29,28 +29,38 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
   const [error, setError] = useState<string | null>(null);
 
   const { position, refresh } = useMarketPosition(market.id, address);
-  // The binary panel only renders for a binary market.
-  const binaryPosition = position?.kind === "binary" ? position : null;
+  const pos = position?.kind === "1x2" ? position : null;
 
-  const winnerSide = market.outcome ?? "YES";
-  const winner =
-    (winnerSide === "YES" ? market.homeTeam : market.awayTeam) ??
-    (winnerSide === "YES" ? "Yes" : "No");
+  const outcome = market.outcome1x2;
+  const isVoid = outcome === "Void";
+  const winnerLabel =
+    outcome === "Team1"
+      ? market.homeTeam ?? "Home"
+      : outcome === "Team2"
+        ? market.awayTeam ?? "Away"
+        : outcome === "Draw"
+          ? "Draw"
+          : isVoid
+            ? "Void — refunded"
+            : "—";
 
-  // Authoritative on-chain balances from the decoded Position PDA.
-  const tokens = binaryPosition ? winningTokens(binaryPosition) : 0n;
+  // Authoritative on-chain winning balance (0 for Void; that path refunds
+  // pro-rata basis rather than paying a single winning side).
+  const tokens = pos ? winningTokens(pos) : 0n;
   const heldShares = Number(tokens) / 1_000_000;
-  const totalTokens = binaryPosition
-    ? Number(binaryPosition.yesTokens + binaryPosition.noTokens)
+  const totalHeld = pos
+    ? (Number(pos.tokens[0]) + Number(pos.tokens[1]) + Number(pos.tokens[2])) /
+      1_000_000
     : 0;
-  const avgCents =
-    binaryPosition && totalTokens > 0
-      ? Math.round((Number(binaryPosition.collateralBase) / totalTokens) * 100)
-      : 0;
-  const alreadyRedeemed = binaryPosition?.redeemed ?? false;
-  const payout = heldShares * 1.0;
-  const profit = payout - (heldShares * avgCents) / 100;
-  const claimable = heldShares > 0 && !alreadyRedeemed && !claimed;
+  const collateral = pos ? Number(pos.collateralBase) / 1_000_000 : 0;
+  const alreadyRedeemed = pos?.redeemed ?? false;
+
+  // Void refunds net basis; a decided outcome pays $1/winning token.
+  const payout = isVoid ? collateral : heldShares * 1.0;
+  const claimable =
+    (isVoid ? totalHeld > 0 : heldShares > 0) &&
+    !alreadyRedeemed &&
+    !claimed;
 
   async function claim() {
     if (!address) return;
@@ -59,7 +69,7 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
     try {
       const authority = await getAuthority();
       if (!authority) throw new Error("Wallet cannot sign — reconnect");
-      const prepared = await prepareClaim(authority, { marketId: market.id });
+      const prepared = await prepareClaim1x2(authority, { marketId: market.id });
       if (!prepared.sim.ok) {
         throw new Error(prepared.sim.error ?? "Simulation failed");
       }
@@ -87,16 +97,18 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
     <Card className="overflow-hidden">
       <div className="flex items-center gap-2 bg-verified-bg px-4 py-3 text-verified-fg">
         <span className="dot" style={{ background: "var(--verified-fg)" }} />
-        <span className="text-[14px] font-700">Resolved · {winner} won</span>
+        <span className="text-[14px] font-700">
+          Resolved · {isVoid ? "Void" : `${winnerLabel} won`}
+        </span>
       </div>
 
       <div className="flex flex-col gap-4 p-4">
         <div className="text-[13px]">
           <span className="text-muted">Final result: </span>
-          <span className="font-700">{winner}</span>
+          <span className="font-700">{winnerLabel}</span>
         </div>
 
-        {(!binaryPosition || heldShares === 0) && !alreadyRedeemed ? (
+        {(!pos || (!isVoid && heldShares === 0)) && !alreadyRedeemed ? (
           <div className="box p-3 text-[13px] text-muted">
             {address
               ? "No winning position to claim on this market."
@@ -105,14 +117,18 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
         ) : (
           <div className="box flex flex-col gap-2 p-3">
             <h3 className="text-[13px] font-700">Your position</h3>
+            {isVoid ? (
+              <Row k="Held (all outcomes)" v={`${fmtShares(totalHeld)} shares`} />
+            ) : (
+              <Row
+                k="Held"
+                v={`${fmtShares(heldShares)} × ${winnerLabel}`}
+              />
+            )}
             <Row
-              k="Held"
-              v={`${fmtShares(heldShares)} × ${winner} ${
-                winnerSide === "YES" ? "Yes" : "No"
-              }`}
+              k="Resolved at"
+              v={isVoid ? "Net basis refund" : "$1.00 / share"}
             />
-            <Row k="Avg cost" v={avgCents > 0 ? `${avgCents}¢` : "—"} />
-            <Row k="Resolved at" v="$1.00 / share" />
             <Separator className="my-1" />
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-600">Payout</span>
@@ -120,7 +136,6 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
                 {usd(payout)}
               </span>
             </div>
-            {avgCents > 0 ? <Row k="Profit" v={usd(profit)} pos /> : null}
           </div>
         )}
 
@@ -163,11 +178,11 @@ export function ResolutionPanel({ market }: { market: MarketDto }) {
   );
 }
 
-function Row({ k, v, pos }: { k: string; v: string; pos?: boolean }) {
+function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex items-center justify-between text-[13px]">
       <span className="text-muted">{k}</span>
-      <span className={`tnum font-600 ${pos ? "pos" : ""}`}>{v}</span>
+      <span className="tnum font-600">{v}</span>
     </div>
   );
 }

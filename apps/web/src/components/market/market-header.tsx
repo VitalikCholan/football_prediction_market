@@ -1,11 +1,14 @@
 import Link from "next/link";
-import type { MarketDto } from "@fpm/shared";
+import type { AnyMarketDto } from "@fpm/shared";
 import { StateBadge } from "@/components/market/state-badge";
 import { Badge } from "@/components/ui/badge";
 import { scoreLabel, matchStatusLine, kickoffLabel } from "@/lib/format";
 
-/** Match detail header (1c): breadcrumb, verified feed, title, score. */
-export function MarketHeader({ market }: { market: MarketDto }) {
+/**
+ * Match detail header (1c): breadcrumb, verified feed, title, score. Reads only
+ * shared fields, so it renders identically for binary and 1X2 markets (C2).
+ */
+export function MarketHeader({ market }: { market: AnyMarketDto }) {
   const score = scoreLabel(market.homeScore, market.awayScore);
   // Status line only makes sense once a match has scores/finalised; fall back
   // to a plain "Score · updates ~60s delay" caption while a match is in play.

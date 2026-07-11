@@ -8,9 +8,13 @@ import {
   useUsdtBalance,
   useUserPositions,
 } from "@/lib/use-live";
-import { winningTokens, type UserPosition } from "@/lib/positions";
+import {
+  winningTokens,
+  totalTokens,
+  type UserPosition,
+} from "@/lib/positions";
 import { friendlyTxError } from "@fpm/shared";
-import { prepareClaim } from "@/lib/tx";
+import { prepareClaim, prepareClaim1x2 } from "@/lib/tx";
 import { explorerTx } from "@/lib/solana";
 import { useAccountAddress, useTxAuthority } from "@/components/wallet/use-account";
 import { useFaucet } from "@/components/wallet/use-faucet";
@@ -32,15 +36,24 @@ export function PositionsView() {
 
 const SCALE = 1_000_000;
 
-/** Mark value of a position at current odds, whole USDT. */
+/** Mark value of a position at current odds, whole USDT (both market kinds). */
 function markValue(p: UserPosition): number {
-  const yes = Number(p.yesTokens) / SCALE;
-  const no = Number(p.noTokens) / SCALE;
   if (p.market.state === "Resolved") {
     return p.redeemed ? 0 : Number(winningTokens(p)) / SCALE;
   }
-  const yesPrice = p.market.yesPriceBps / 10_000;
-  return yes * yesPrice + no * (1 - yesPrice);
+  if (p.kind === "binary") {
+    const yes = Number(p.yesTokens) / SCALE;
+    const no = Number(p.noTokens) / SCALE;
+    const yesPrice = p.market.yesPriceBps / 10_000;
+    return yes * yesPrice + no * (1 - yesPrice);
+  }
+  // 1X2: each outcome token marked at its own softmax price.
+  const [t1, td, t2] = p.tokens;
+  return (
+    (Number(t1) / SCALE) * (p.market.team1PriceBps / 10_000) +
+    (Number(td) / SCALE) * (p.market.drawPriceBps / 10_000) +
+    (Number(t2) / SCALE) * (p.market.team2PriceBps / 10_000)
+  );
 }
 
 function LivePositions() {
@@ -54,8 +67,7 @@ function LivePositions() {
   });
 
   const open = positions.filter(
-    (p) =>
-      p.market.state !== "Resolved" && (p.yesTokens > 0n || p.noTokens > 0n),
+    (p) => p.market.state !== "Resolved" && totalTokens(p) > 0n,
   );
   const claims = positions.filter(
     (p) => p.market.state === "Resolved" && !p.redeemed && winningTokens(p) > 0n,
@@ -154,29 +166,75 @@ function marketLabel(p: UserPosition): string {
     : `Fixture ${p.market.fixtureId}`;
 }
 
+/** Per-outcome legs of a position (binary YES/NO or 1X2 Team1/Draw/Team2). */
+function positionLegs(
+  p: UserPosition,
+): { label: string; tint: "yc" | "nc"; tokensBase: bigint; priceBps: number }[] {
+  if (p.kind === "binary") {
+    return [
+      {
+        label: "YES",
+        tint: "yc" as const,
+        tokensBase: p.yesTokens,
+        priceBps: p.market.yesPriceBps,
+      },
+      {
+        label: "NO",
+        tint: "nc" as const,
+        tokensBase: p.noTokens,
+        priceBps: 10_000 - p.market.yesPriceBps,
+      },
+    ];
+  }
+  return [
+    {
+      label: p.market.homeTeam ?? "Team 1",
+      tint: "yc" as const,
+      tokensBase: p.tokens[0],
+      priceBps: p.market.team1PriceBps,
+    },
+    {
+      label: "Draw",
+      tint: "nc" as const,
+      tokensBase: p.tokens[1],
+      priceBps: p.market.drawPriceBps,
+    },
+    {
+      label: p.market.awayTeam ?? "Team 2",
+      tint: "nc" as const,
+      tokensBase: p.tokens[2],
+      priceBps: p.market.team2PriceBps,
+    },
+  ];
+}
+
 function LiveTable({ positions }: { positions: UserPosition[] }) {
-  // One row per held side so YES and NO books read separately.
-  const rows = positions.flatMap((p) =>
-    (["YES", "NO"] as const)
-      .filter((side) => (side === "YES" ? p.yesTokens : p.noTokens) > 0n)
-      .map((side) => {
-        const tokens =
-          Number(side === "YES" ? p.yesTokens : p.noTokens) / SCALE;
-        const priceBps =
-          side === "YES"
-            ? p.market.yesPriceBps
-            : 10_000 - p.market.yesPriceBps;
-        const nowCents = priceBps / 100;
-        const totalTokens = Number(p.yesTokens + p.noTokens) / SCALE;
-        const avgCents =
-          totalTokens > 0
-            ? (Number(p.collateralBase) / SCALE / totalTokens) * 100
-            : 0;
+  // One row per held outcome so each book reads separately (both market kinds).
+  const rows = positions.flatMap((p) => {
+    const totalBase = Number(totalTokens(p)) / SCALE;
+    const avgCents =
+      totalBase > 0 ? (Number(p.collateralBase) / SCALE / totalBase) * 100 : 0;
+    return positionLegs(p)
+      .filter((leg) => leg.tokensBase > 0n)
+      .map((leg, li) => {
+        const tokens = Number(leg.tokensBase) / SCALE;
+        const nowCents = leg.priceBps / 100;
         const value = (tokens * nowCents) / 100;
         const cost = (tokens * avgCents) / 100;
-        return { p, side, tokens, avgCents, nowCents, value, pnl: value - cost, cost };
-      }),
-  );
+        return {
+          p,
+          key: `${p.address}-${li}`,
+          side: leg.label,
+          tint: leg.tint,
+          tokens,
+          avgCents,
+          nowCents,
+          value,
+          pnl: value - cost,
+          cost,
+        };
+      });
+  });
 
   return (
     <Card className="overflow-x-auto">
@@ -198,7 +256,7 @@ function LiveTable({ positions }: { positions: UserPosition[] }) {
             const pnlPct = r.cost > 0 ? (r.pnl / r.cost) * 100 : 0;
             return (
               <tr
-                key={r.p.address + r.side}
+                key={r.key}
                 className="border-b border-box-border last:border-0"
               >
                 <td className="td px-4 py-3">
@@ -217,9 +275,7 @@ function LiveTable({ positions }: { positions: UserPosition[] }) {
                 </td>
                 <td className="td px-4 py-3">
                   <span
-                    className={`chip ${
-                      r.side === "YES" ? "yc" : "nc"
-                    } inline-block px-2 py-0.5 text-[12px] font-600`}
+                    className={`chip ${r.tint} inline-block px-2 py-0.5 text-[12px] font-600`}
                   >
                     {r.side}
                   </span>
@@ -271,7 +327,10 @@ function ClaimsList({
     try {
       const authority = await getAuthority();
       if (!authority) throw new Error("Wallet cannot sign — reconnect");
-      const prepared = await prepareClaim(authority, { marketId: p.market.id });
+      const prepared =
+        p.kind === "1x2"
+          ? await prepareClaim1x2(authority, { marketId: p.market.id })
+          : await prepareClaim(authority, { marketId: p.market.id });
       if (!prepared.sim.ok) {
         throw new Error(prepared.sim.error ?? "Simulation failed");
       }
@@ -312,7 +371,8 @@ function ClaimsList({
                 {marketLabel(p)}
               </Link>
               <div className="text-[12px] text-muted">
-                Resolved {p.market.outcome} ·{" "}
+                Resolved{" "}
+                {p.kind === "1x2" ? p.market.outcome1x2 : p.market.outcome} ·{" "}
                 {fmtShares(payout)} winning shares · $1.00 / share
               </div>
             </div>
