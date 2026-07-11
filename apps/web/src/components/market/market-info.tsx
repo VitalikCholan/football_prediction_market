@@ -1,6 +1,8 @@
 import type { MarketDto } from "@fpm/shared";
 import { volumeLabel, baseToUsdc, usdCompactLabel } from "@/lib/format";
 import { FeeBar } from "@/components/market/fee-bar";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 /** Market info sidebar (1c): volume, liquidity, resolution source, fee. */
 export function MarketInfo({ market }: { market: MarketDto }) {
@@ -15,7 +17,7 @@ export function MarketInfo({ market }: { market: MarketDto }) {
   ];
 
   return (
-    <div className="scr flex flex-col gap-3 p-4">
+    <Card className="flex flex-col gap-3 p-4">
       <h3 className="text-[13px] font-700">Market info</h3>
       <dl className="flex flex-col gap-2">
         {rows.map(([k, v]) => (
@@ -31,9 +33,9 @@ export function MarketInfo({ market }: { market: MarketDto }) {
         baseFeeBps={market.baseFeeBps}
       />
 
-      <div className="verified mt-1 justify-center">
+      <Badge variant="verified" className="mt-1 self-center">
         ◆ Settlement verified on-chain
-      </div>
-    </div>
+      </Badge>
+    </Card>
   );
 }

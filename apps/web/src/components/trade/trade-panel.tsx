@@ -11,6 +11,10 @@ import { useTxAuthority } from "@/components/wallet/use-account";
 import { useFaucet } from "@/components/wallet/use-faucet";
 import { useToast } from "@/components/ui/toast";
 import { ConnectModal } from "@/components/wallet/connect-modal";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const QUICK = [10, 50, 100];
 
@@ -222,7 +226,8 @@ function TradeTicket({
       <div className="flex items-center justify-between border-b border-box-border px-4 py-3">
         <h2 className="text-[15px] font-700">Trade</h2>
         <button
-          className="text-muted hover:text-ink"
+          type="button"
+          className="text-muted transition-colors hover:text-ink"
           onClick={onClose}
           aria-label="Close"
         >
@@ -232,22 +237,22 @@ function TradeTicket({
 
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
         {/* Buy / Sell */}
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-skeleton p-1">
-          {(["buy", "sell"] as const).map((a) => (
-            <button
-              key={a}
-              className={`rounded-md py-1.5 text-[13px] font-600 capitalize ${
-                action === a ? "bg-surface shadow-sm" : "text-muted"
-              }`}
-              onClick={() => {
-                setAction(a);
-                resetReview();
-              }}
-            >
-              {a}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          value={action}
+          onValueChange={(v) => {
+            setAction(v as "buy" | "sell");
+            resetReview();
+          }}
+        >
+          <TabsList>
+            <TabsTrigger value="buy" className="capitalize">
+              Buy
+            </TabsTrigger>
+            <TabsTrigger value="sell" className="capitalize">
+              Sell
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {/* Market row */}
         <div className="box flex items-center justify-between p-3">
@@ -266,24 +271,26 @@ function TradeTicket({
 
         {/* Yes / No */}
         <div className="grid grid-cols-2 gap-2">
-          <button
-            className={`btn btn-y ${side === "YES" ? "" : "opacity-60"}`}
+          <Button
+            variant="yes"
+            className={side === "YES" ? "" : "opacity-60"}
             onClick={() => {
               setSide("YES");
               resetReview();
             }}
           >
             {homeTeam} · Yes
-          </button>
-          <button
-            className={`btn btn-n ${side === "NO" ? "" : "opacity-60"}`}
+          </Button>
+          <Button
+            variant="no"
+            className={side === "NO" ? "" : "opacity-60"}
             onClick={() => {
               setSide("NO");
               resetReview();
             }}
           >
             {awayTeam} · No
-          </button>
+          </Button>
         </div>
 
         {/* Wallet balances */}
@@ -309,13 +316,14 @@ function TradeTicket({
               ) : null}
             </div>
             {showFaucet ? (
-              <button
-                className="btn px-2 py-1 text-[12px]"
+              <Button
+                size="sm"
+                className="px-2 py-1 text-[12px]"
                 disabled={busy !== null || faucet.busy}
                 onClick={faucet.run}
               >
                 {faucet.busy ? "Requesting…" : "Get test USDT"}
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : null}
@@ -341,23 +349,27 @@ function TradeTicket({
           </div>
           <div className="mt-2 flex gap-1.5">
             {QUICK.map((q) => (
-              <button
+              <Button
                 key={q}
-                className="pill flex-1 justify-center px-0 py-1 text-[12px]"
+                variant="pill"
+                size="pill"
+                className="flex-1 justify-center px-0 py-1 text-[12px]"
                 onClick={() => {
                   setAmount(String(q));
                   resetReview();
                 }}
               >
                 ${q}
-              </button>
+              </Button>
             ))}
-            <button
-              className="pill flex-1 justify-center px-0 py-1 text-[12px]"
+            <Button
+              variant="pill"
+              size="pill"
+              className="flex-1 justify-center px-0 py-1 text-[12px]"
               onClick={setMax}
             >
               Max
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -374,7 +386,7 @@ function TradeTicket({
           />
           {inReview && prepared ? (
             <>
-              <div className="my-1 h-px bg-box-border" />
+              <Separator className="my-1" />
               <Row
                 k={
                   action === "buy"
@@ -390,7 +402,7 @@ function TradeTicket({
                 }
               />
               <div className="flex items-center justify-between text-[12px]">
-                <span className="verified">◆ Simulation passed</span>
+                <Badge variant="verified">◆ Simulation passed</Badge>
                 <span className="tnum text-muted">
                   {prepared.sim.computeUnits
                     ? `${prepared.sim.computeUnits.toLocaleString()} CU`
@@ -399,7 +411,7 @@ function TradeTicket({
               </div>
             </>
           ) : null}
-          <div className="my-1 h-px bg-box-border" />
+          <Separator className="my-1" />
           <div className="flex items-center justify-between">
             <span className="text-[13px] font-600">Payout if wins</span>
             <span className="tnum text-[17px] font-700 text-yes-strong">
@@ -416,13 +428,14 @@ function TradeTicket({
       </div>
 
       <div className="border-t border-box-border px-4 py-3">
-        <button
-          className="btn btn-p w-full"
+        <Button
+          variant="primary"
+          className="w-full"
           disabled={!tradable || !validAmount || busy !== null}
           onClick={inReview ? confirm : review}
         >
           {buttonLabel}
-        </button>
+        </Button>
         <p className="mt-2 text-center text-[11px] text-muted">
           {inReview
             ? "Simulated on devnet · signs 1 Solana tx"

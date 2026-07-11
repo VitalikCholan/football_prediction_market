@@ -1,6 +1,7 @@
 import type { MarketDto } from "@fpm/shared";
 import { quoteTrade } from "@/lib/quote";
 import { usd } from "@/lib/format";
+import { Card } from "@/components/ui/card";
 
 /**
  * Liquidity depth (1c sidebar). A constant-product AMM has NO order book, so
@@ -67,7 +68,7 @@ export function OrderBook({ market }: { market: MarketDto }) {
   );
 
   return (
-    <div className="scr overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-box-border px-3 py-2">
         <h3 className="text-[13px] font-700">Liquidity depth</h3>
         <span className="th">on-chain reserves</span>
@@ -77,6 +78,6 @@ export function OrderBook({ market }: { market: MarketDto }) {
         Price impact to buy at each size · CPMM, no order book
       </div>
       {side("NO")}
-    </div>
+    </Card>
   );
 }

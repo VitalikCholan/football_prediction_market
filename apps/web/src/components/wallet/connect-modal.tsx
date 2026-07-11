@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Modal } from "@/components/ui/modal";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import { useWalletUi } from "@/components/wallet/use-wallet-ui";
 import { useDemoWallet } from "@/components/wallet/demo-wallet";
 import { useFaucet } from "@/components/wallet/use-faucet";
@@ -43,60 +53,63 @@ export function ConnectModal({
 
   if (address) {
     return (
-      <Modal open={open} onClose={onClose} labelledBy="wallet-account-title">
-        <h2 id="wallet-account-title" className="text-[17px] font-700">
-          Your wallet
-        </h2>
-        <div className="box mt-4 flex items-center justify-between p-3">
-          <div>
-            <div className="tnum text-[15px] font-600">
-              ◎ {shortAddress(address, 6, 6)}
+      <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent className="max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Your wallet</DialogTitle>
+          </DialogHeader>
+          <div className="box flex items-center justify-between p-3">
+            <div>
+              <div className="tnum text-[15px] font-600">
+                ◎ {shortAddress(address, 6, 6)}
+              </div>
+              <div className="text-[12px] text-muted">
+                {wallet.address ? "Connected" : "Demo custodial wallet"} ·{" "}
+                {CLUSTER}
+              </div>
             </div>
-            <div className="text-[12px] text-muted">
-              {wallet.address ? "Connected" : "Demo custodial wallet"} · {CLUSTER}
-            </div>
+            <a
+              className="text-link text-[12px] font-600 no-underline hover:underline"
+              href={explorerTx(address)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View ↗
+            </a>
           </div>
-          <a
-            className="link text-[12px] font-600 no-underline"
-            href={explorerTx(address)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            View ↗
-          </a>
-        </div>
-        <div className="box mt-2 flex items-center justify-between p-3">
-          <div>
-            <div className="th">USDT balance</div>
-            <div className="tnum text-[15px] font-700">
-              {balanceBase === null
-                ? "…"
-                : usd(Number(balanceBase) / 1_000_000)}
+          <div className="box flex items-center justify-between p-3">
+            <div>
+              <div className="th">USDT balance</div>
+              <div className="tnum text-[15px] font-700">
+                {balanceBase === null
+                  ? "…"
+                  : usd(Number(balanceBase) / 1_000_000)}
+              </div>
             </div>
+            <Button
+              size="sm"
+              disabled={faucet.busy}
+              onClick={faucet.run}
+            >
+              {faucet.busy ? "Requesting…" : "Get test USDT"}
+            </Button>
           </div>
-          <button
-            className="btn px-3 py-1.5 text-[12px]"
-            disabled={faucet.busy}
-            onClick={faucet.run}
+          {faucet.error ? (
+            <p className="text-[12px] font-600 text-no-strong" role="alert">
+              {faucet.error}
+            </p>
+          ) : null}
+          <Button
+            className="w-full"
+            onClick={() => {
+              onDisconnect?.();
+              onClose();
+            }}
           >
-            {faucet.busy ? "Requesting…" : "Get test USDT"}
-          </button>
-        </div>
-        {faucet.error ? (
-          <p className="mt-2 text-[12px] font-600 text-no-strong" role="alert">
-            {faucet.error}
-          </p>
-        ) : null}
-        <button
-          className="btn mt-4 w-full"
-          onClick={() => {
-            onDisconnect?.();
-            onClose();
-          }}
-        >
-          Disconnect
-        </button>
-      </Modal>
+            Disconnect
+          </Button>
+        </DialogContent>
+      </Dialog>
     );
   }
 
@@ -129,79 +142,80 @@ export function ConnectModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} labelledBy="wallet-connect-title">
-      <div className="text-center">
-        <div className="text-[15px]" aria-hidden>
-          ◆
-        </div>
-        <h2 id="wallet-connect-title" className="mt-1 text-[19px] font-700">
-          TXL·Markets
-        </h2>
-        <p className="mt-1 text-[13px] text-muted">
-          Trade the outcome of every World Cup match
-        </p>
-      </div>
-
-      <button
-        className="btn btn-p mt-5 w-full"
-        onClick={() =>
-          discovered[0] ? onConnect(discovered[0].id) : onEmail()
-        }
-      >
-        ◎ Continue with Solana wallet
-      </button>
-
-      <div className="mt-4 space-y-2">
-        {discovered.length > 0 ? (
-          discovered.map((c) => (
-            <button
-              key={c.id}
-              className="btn w-full justify-between"
-              disabled={busy !== null}
-              onClick={() => onConnect(c.id)}
-            >
-              <span className="flex items-center gap-2">
-                <span aria-hidden>{c.glyph}</span>
-                {c.label}
-              </span>
-              <span className="text-[12px] text-muted">
-                {busy === c.id ? "Connecting…" : "Detected"}
-              </span>
-            </button>
-          ))
-        ) : (
-          <div className="box p-3 text-center text-[12px] text-muted">
-            No Solana wallet detected. Use email below to get a wallet created
-            for you.
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-[460px]">
+        <DialogHeader className="text-center sm:text-center">
+          <div className="text-[15px]" aria-hidden>
+            ◆
           </div>
-        )}
-      </div>
+          <DialogTitle className="text-[19px]">TXL·Markets</DialogTitle>
+          <DialogDescription>
+            Trade the outcome of every World Cup match
+          </DialogDescription>
+        </DialogHeader>
 
-      <div className="my-4 flex items-center gap-3 text-[11px] text-muted">
-        <span className="h-px flex-1 bg-box-border" />
-        OR
-        <span className="h-px flex-1 bg-box-border" />
-      </div>
+        <Button
+          variant="primary"
+          className="w-full"
+          onClick={() =>
+            discovered[0] ? onConnect(discovered[0].id) : onEmail()
+          }
+        >
+          ◎ Continue with Solana wallet
+        </Button>
 
-      <div className="flex gap-2">
-        <input
-          className="field flex-1"
-          type="email"
-          placeholder="you@email.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          aria-label="Email"
-        />
-        <button className="btn" onClick={onEmail}>
-          Continue
-        </button>
-      </div>
+        <div className="space-y-2">
+          {discovered.length > 0 ? (
+            discovered.map((c) => (
+              <Button
+                key={c.id}
+                className="w-full justify-between"
+                disabled={busy !== null}
+                onClick={() => onConnect(c.id)}
+              >
+                <span className="flex items-center gap-2">
+                  <span aria-hidden>{c.glyph}</span>
+                  {c.label}
+                </span>
+                <span className="text-[12px] font-500 text-muted">
+                  {busy === c.id ? "Connecting…" : "Detected"}
+                </span>
+              </Button>
+            ))
+          ) : (
+            <div className="box p-3 text-center text-[12px] text-muted">
+              No Solana wallet detected. Use email below to get a wallet created
+              for you.
+            </div>
+          )}
+        </div>
 
-      <p className="mt-4 flex items-start gap-2 text-[11px] leading-relaxed text-muted">
-        <span className="verified shrink-0">◆ On-chain</span>
-        Balances &amp; trades settle on Solana. A wallet is created for you — no
-        crypto knowledge needed.
-      </p>
-    </Modal>
+        <div className="flex items-center gap-3 text-[11px] text-muted">
+          <Separator className="flex-1" />
+          OR
+          <Separator className="flex-1" />
+        </div>
+
+        <div className="flex gap-2">
+          <Input
+            className="flex-1"
+            type="email"
+            placeholder="you@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-label="Email"
+          />
+          <Button onClick={onEmail}>Continue</Button>
+        </div>
+
+        <p className="flex items-start gap-2 text-[11px] leading-relaxed text-muted">
+          <Badge variant="verified" className="shrink-0">
+            ◆ On-chain
+          </Badge>
+          Balances &amp; trades settle on Solana. A wallet is created for you —
+          no crypto knowledge needed.
+        </p>
+      </DialogContent>
+    </Dialog>
   );
 }

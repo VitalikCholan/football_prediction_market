@@ -1,4 +1,5 @@
 import type { MarketState } from "@fpm/shared";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Maps the on-chain market state to a meaningful badge (DESIGN_SPEC tags):
@@ -8,18 +9,18 @@ export function StateBadge({ state }: { state: MarketState }) {
   switch (state) {
     case "Trading":
       return (
-        <span className="tag tag-live">
+        <Badge variant="live">
           <span className="dot dot-pulse" aria-hidden /> Live
-        </span>
+        </Badge>
       );
     case "Locked":
-      return <span className="tag bg-[#fff5e6] text-[#b7791f]">Awaiting proof</span>;
+      return <Badge variant="warning">Awaiting proof</Badge>;
     case "Resolved":
-      return <span className="tag bg-verified-bg text-verified-fg">Resolved</span>;
+      return <Badge variant="resolved">Resolved</Badge>;
     case "Closed":
-      return <span className="tag bg-skeleton text-muted">Closed</span>;
+      return <Badge variant="muted">Closed</Badge>;
     case "Open":
     default:
-      return <span className="tag bg-skeleton text-muted">Upcoming</span>;
+      return <Badge variant="muted">Upcoming</Badge>;
   }
 }

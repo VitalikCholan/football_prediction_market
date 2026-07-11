@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { MarketDto } from "@fpm/shared";
 import { StateBadge } from "@/components/market/state-badge";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   volumeLabel,
   bpsToCents,
@@ -65,21 +67,25 @@ export function MatchCard({
   );
 
   return (
-    <Link
-      href={`/markets/${market.id}`}
-      className="scr reveal flex flex-col gap-3 p-4 no-underline transition-shadow hover:shadow-[0_4px_14px_rgba(0,0,0,0.08)]"
-      style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}
+    <Card
+      asChild
+      className="reveal transition-shadow hover:shadow-[0_4px_14px_rgba(0,0,0,0.08)]"
     >
-      <div className="flex items-center justify-between">
-        <StateBadge state={market.state} />
-        {score ? (
-          <span className="tag tnum bg-skeleton text-ink" title={status ?? undefined}>
-            {score}
-          </span>
-        ) : market.competition ? (
-          <span className="tag">{market.competition}</span>
-        ) : null}
-      </div>
+      <Link
+        href={`/markets/${market.id}`}
+        className="flex flex-col gap-3 p-4 no-underline"
+        style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}
+      >
+        <div className="flex items-center justify-between">
+          <StateBadge state={market.state} />
+          {score ? (
+            <Badge variant="score" className="tnum" title={status ?? undefined}>
+              {score}
+            </Badge>
+          ) : market.competition ? (
+            <Badge>{market.competition}</Badge>
+          ) : null}
+        </div>
 
       <div>
         <div className="text-[16px] font-700 leading-tight">
@@ -101,11 +107,12 @@ export function MatchCard({
         {chip(market.awayTeam ?? "Away", away, leader === "away" ? "nc" : null)}
       </div>
 
-      <div className="mt-1 flex items-center justify-between">
-        <span className="text-[12px] text-muted">
-          Vol {volumeLabel(market.totalVolume)}
-        </span>
-      </div>
-    </Link>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-[12px] text-muted">
+            Vol {volumeLabel(market.totalVolume)}
+          </span>
+        </div>
+      </Link>
+    </Card>
   );
 }

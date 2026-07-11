@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
 
 /* ==========================================================================
    TXL·Markets design tokens — verbatim from DESIGN_SPEC.md (Prediction
@@ -42,6 +45,39 @@
   --verified-fg: #1c7a45;
   --verified-bg: #eef7f1;
   --verified-border: #cfe8d9;
+
+  /* ------------------------------------------------------------------
+     shadcn/ui semantic variables — mapped onto the TXL brand tokens so
+     shadcn primitives inherit the existing identity (NOT default zinc).
+     ------------------------------------------------------------------ */
+  --radius: 0.5rem; /* 8px — matches the old .btn radius */
+
+  --background: var(--page);
+  --foreground: var(--ink);
+
+  /* Card / popover surfaces = white .scr surface */
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+
+  /* Primary = the signature black ink (old .btn-p / .pill-on) */
+  --primary: var(--ink);
+  --primary-foreground: var(--surface);
+
+  /* Secondary / accent = subtle warm hover on the cream palette */
+  --secondary: #f6f4ef;
+  --secondary-foreground: var(--ink);
+  --accent: #f6f4ef;
+  --accent-foreground: var(--ink);
+
+  --muted-foreground: var(--muted);
+
+  --destructive: var(--no);
+
+  --border: var(--box-border);
+  --input: var(--box-border);
+  --ring: var(--link);
 }
 
 @theme inline {
@@ -71,12 +107,39 @@
   --color-verified-bg: var(--verified-bg);
   --color-verified-border: var(--verified-border);
 
+  /* shadcn semantic color utilities (bg-background, text-foreground, …) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-hand: var(--font-kalam), var(--font-inter), cursive;
 }
 
-* {
-  border-color: var(--box-border);
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: color-mix(in srgb, var(--ring) 50%, transparent);
+  }
 }
 
 html {
@@ -97,131 +160,14 @@ body {
   font-feature-settings: "tnum" 1;
 }
 
-/* --- Reusable component classes mirroring the wireframe --- */
-
-.scr {
-  background: var(--surface);
-  border: 1.5px solid var(--card-border);
-  border-radius: 12px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-}
+/* --- Reusable component classes mirroring the wireframe ---
+   NOTE: the .scr / .tag / .verified / .pill / .btn families were migrated to
+   shadcn/ui primitives (see src/components/ui/*). What remains below are the
+   structural helpers still shared across components. --- */
 
 .box {
   border: 1.5px solid var(--box-border);
   border-radius: 9px;
-}
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--tag-bg);
-  color: var(--link);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 2px 7px;
-  border-radius: 5px;
-}
-
-.tag-live {
-  background: var(--live-bg);
-  color: var(--live-fg);
-}
-
-.verified {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--verified-fg);
-  background: var(--verified-bg);
-  border: 1px solid var(--verified-border);
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 8px;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1.5px solid var(--card-border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 500;
-  padding: 6px 14px;
-  cursor: pointer;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease,
-    border-color 0.12s ease;
-  white-space: nowrap;
-}
-.pill:hover {
-  border-color: var(--muted);
-}
-.pill-on {
-  background: var(--ink);
-  color: var(--surface);
-  border-color: var(--ink);
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1.5px solid #2b2926;
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 600;
-  padding: 9px 16px;
-  cursor: pointer;
-  transition:
-    transform 0.06s ease,
-    background 0.12s ease,
-    opacity 0.12s ease;
-}
-.btn:hover {
-  background: #f6f4ef;
-}
-.btn:active {
-  transform: translateY(0.5px);
-}
-.btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.btn-p {
-  background: var(--ink);
-  color: var(--surface);
-  border-color: var(--ink);
-}
-.btn-p:hover {
-  background: #322e29;
-}
-
-.btn-y {
-  background: var(--yes-btn-bg);
-  border-color: var(--yes);
-  color: var(--yes-strong);
-}
-.btn-y:hover {
-  background: #ddf0e4;
-}
-.btn-n {
-  background: var(--no-btn-bg);
-  border-color: var(--no);
-  color: var(--no-strong);
-}
-.btn-n:hover {
-  background: #f7dfe2;
 }
 
 /* Outcome price cell */
@@ -256,14 +202,6 @@ body {
 }
 .neg {
   color: var(--no-strong);
-}
-
-.link {
-  color: var(--link);
-  cursor: pointer;
-}
-.link:hover {
-  text-decoration: underline;
 }
 
 /* Live dot */
@@ -354,23 +292,6 @@ body {
   outline: 2px solid var(--link);
   outline-offset: 2px;
   border-radius: 6px;
-}
-
-/* Field placeholder input */
-.field {
-  border: 1.5px solid var(--box-border);
-  border-radius: 9px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 14px;
-  padding: 9px 12px;
-}
-.field::placeholder {
-  color: var(--muted);
-}
-.field:focus {
-  outline: none;
-  border-color: var(--link);
 }
 
 ::-webkit-scrollbar {

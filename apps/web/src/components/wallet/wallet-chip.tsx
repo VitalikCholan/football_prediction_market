@@ -5,6 +5,7 @@ import { useWalletUi } from "@/components/wallet/use-wallet-ui";
 import { ConnectModal } from "@/components/wallet/connect-modal";
 import { useDemoWallet } from "@/components/wallet/demo-wallet";
 import { shortAddress } from "@/lib/format";
+import { Button } from "@/components/ui/button";
 
 /**
  * Wallet chip in the top nav. Shows `◎ 4xK…9Fa` when connected (real wallet or
@@ -20,13 +21,19 @@ export function WalletChip() {
   if (address) {
     return (
       <>
-        <button className="pill tnum" onClick={() => setOpen(true)} title="Wallet">
+        <Button
+          variant="pill"
+          size="pill"
+          className="tnum"
+          onClick={() => setOpen(true)}
+          title="Wallet"
+        >
           <span aria-hidden>◎</span>
           {shortAddress(address)}
           {demo.address && !wallet.address ? (
             <span className="text-muted">· demo</span>
           ) : null}
-        </button>
+        </Button>
         <ConnectModal
           open={open}
           onClose={() => setOpen(false)}
@@ -41,9 +48,9 @@ export function WalletChip() {
 
   return (
     <>
-      <button className="btn btn-p" onClick={() => setOpen(true)}>
+      <Button variant="primary" onClick={() => setOpen(true)}>
         Connect
-      </button>
+      </Button>
       <ConnectModal open={open} onClose={() => setOpen(false)} />
     </>
   );

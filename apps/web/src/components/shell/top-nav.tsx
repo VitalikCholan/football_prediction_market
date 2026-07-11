@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { Search } from "lucide-react";
 import { WalletChip } from "@/components/wallet/wallet-chip";
 import { useAccountAddress } from "@/components/wallet/use-account";
 import { useUsdtBalance } from "@/lib/use-live";
 import { useSearch } from "@/lib/search";
 import { usd } from "@/lib/format";
+import { Input } from "@/components/ui/input";
 
 const NAV = [
   { href: "/", label: "Markets" },
@@ -49,23 +51,12 @@ export function TopNav() {
         <Brand />
 
         <label className="relative hidden min-w-0 flex-1 items-center md:flex">
-          <svg
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-[15px] -translate-y-1/2 text-muted"
             aria-hidden
-          >
-            <circle cx="11" cy="11" r="7" />
-            <line x1="16.5" y1="16.5" x2="21" y2="21" />
-          </svg>
-          <input
-            className="field w-full"
-            style={{ paddingLeft: 34 }}
+          />
+          <Input
+            className="w-full pl-[34px]"
             placeholder="Search matches, teams, outrights…"
             aria-label="Search markets"
             value={query}
