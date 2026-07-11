@@ -677,6 +677,292 @@ fn redeem_void_refunds_net_basis() {
 }
 
 // ===========================================================================
+// complete sets (SPEC §3.1 phase C-add) — mint_set / redeem_set
+// ===========================================================================
+
+/// Drive to Trading with an open trader position (no buys).
+fn to_trading_with_position(live: &mut Live) {
+    to_trading(live);
+    let trader = live.trader.pubkey();
+    live.h
+        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position_1x2(&trader, FIXTURE))
+        .unwrap();
+}
+
+fn mint_set(live: &mut Live, amount: u64) -> litesvm::types::TransactionResult {
+    let trader = live.trader.pubkey();
+    send_tx(
+        &mut live.h.svm,
+        &[&live.trader.insecure_clone()],
+        &trader,
+        ix_mint_set_1x2(&trader, FIXTURE, amount, &live.h.usdc_mint, &live.trader_ata),
+    )
+}
+
+fn redeem_set(live: &mut Live, amount: u64) -> litesvm::types::TransactionResult {
+    let trader = live.trader.pubkey();
+    send_tx(
+        &mut live.h.svm,
+        &[&live.trader.insecure_clone()],
+        &trader,
+        ix_redeem_set_1x2(&trader, FIXTURE, amount, &live.h.usdc_mint, &live.trader_ata),
+    )
+}
+
+/// (a) round-trip zero-loss/zero-fee + (b) shift-invariant prices + (c) solvency.
+#[test]
+fn set_round_trip_price_neutral_and_lossless() {
+    let mut live = bootstrap_open();
+    to_trading_with_position(&mut live);
+    let trader = live.trader.pubkey();
+    let market_key = market_1x2_pda(FIXTURE);
+    let amount = 40 * ONE_USDC;
+
+    // prices + trader balance BEFORE any set op
+    let m0: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    let prices_before = lmsr::prices_bps(&m0.q, m0.b).unwrap();
+    let bal_before = live.h.token_balance(&live.trader_ata);
+    let vault_before = live.h.token_balance(&vault_pda(&market_key));
+
+    // ---- mint_set: exactly `amount` USDT in, `amount` of each outcome ----
+    mint_set(&mut live, amount).unwrap();
+    let m1: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    // (b) prices UNCHANGED (equal q shift → softmax invariant)
+    assert_eq!(
+        lmsr::prices_bps(&m1.q, m1.b).unwrap(),
+        prices_before,
+        "mint_set must not move prices"
+    );
+    // exact charge: trader down by `amount`, vault up by `amount`
+    assert_eq!(live.h.token_balance(&live.trader_ata), bal_before - amount);
+    assert_eq!(live.h.token_balance(&vault_pda(&market_key)), vault_before + amount);
+    // supply + q both rose by `amount` on every outcome (q = seed_q + supply)
+    for i in 0..3 {
+        assert_eq!(m1.supply[i], m0.supply[i] + amount);
+        assert_eq!(m1.q[i], m0.q[i] + amount);
+    }
+    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    assert_eq!(pos.tokens, [amount, amount, amount], "one of each outcome");
+    assert_eq!(pos.collateral, amount, "net basis += amount");
+    assert_market_invariants(&live); // (c) solvency
+
+    // ---- redeem_set the same amount: back to par, prices still fixed ----
+    redeem_set(&mut live, amount).unwrap();
+    let m2: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    assert_eq!(
+        lmsr::prices_bps(&m2.q, m2.b).unwrap(),
+        prices_before,
+        "redeem_set must not move prices"
+    );
+    // (a) trader USDT fully restored — zero loss, zero fee
+    assert_eq!(
+        live.h.token_balance(&live.trader_ata),
+        bal_before,
+        "round trip returns exactly the deposit (no fee, no slippage)"
+    );
+    assert_eq!(live.h.token_balance(&vault_pda(&market_key)), vault_before);
+    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    assert_eq!(pos.tokens, [0, 0, 0]);
+    assert_eq!(pos.collateral, 0);
+    // market fully back to its pre-set q/supply
+    assert_eq!(m2.q, m0.q);
+    assert_eq!(m2.supply, m0.supply);
+    assert_market_invariants(&live);
+}
+
+/// (b') set ops leave prices fixed even when the book is SKEWED by prior buys.
+#[test]
+fn set_price_neutral_on_skewed_book() {
+    let mut live = bootstrap_open();
+    to_trading_with_position(&mut live);
+    // skew the book: heavy Team1 + light Team2
+    buy(&mut live, 0, 120 * ONE_USDC);
+    buy(&mut live, 2, 30 * ONE_USDC);
+    let market_key = market_1x2_pda(FIXTURE);
+    let m0: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    let prices_before = lmsr::prices_bps(&m0.q, m0.b).unwrap();
+    // (not all equal — confirm the book is genuinely skewed)
+    assert!(prices_before[0] != prices_before[2], "test setup: book must be skewed");
+
+    mint_set(&mut live, 55 * ONE_USDC).unwrap();
+    let m1: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    assert_eq!(lmsr::prices_bps(&m1.q, m1.b).unwrap(), prices_before);
+    assert_market_invariants(&live);
+}
+
+/// (d) redeem_set more than held on ANY leg → InsufficientPositionBalance.
+#[test]
+fn redeem_set_rejects_overdraw() {
+    let mut live = bootstrap_open();
+    to_trading_with_position(&mut live);
+    mint_set(&mut live, 20 * ONE_USDC).unwrap();
+    // buy extra Team1 so leg 0 is fine but legs 1/2 stay at 20 — overdraw at 21
+    buy(&mut live, 0, 10 * ONE_USDC);
+    let res = redeem_set(&mut live, 21 * ONE_USDC);
+    assert_amm_error(&res, AmmError::InsufficientPositionBalance);
+    // zero amount rejected too
+    let res = redeem_set(&mut live, 0);
+    assert_amm_error(&res, AmmError::ZeroAmount);
+    let res = mint_set(&mut live, 0);
+    assert_amm_error(&res, AmmError::ZeroAmount);
+}
+
+/// (e) set ops only in Trading — Open / Locked / Resolved all rejected.
+#[test]
+fn set_ops_rejected_outside_trading() {
+    // Open (pre-activate): position can't exist yet, but the state gate fires
+    // first on mint. Build a position via a Trading detour, then force Locked.
+    let mut live = bootstrap_open();
+    to_trading_with_position(&mut live);
+    mint_set(&mut live, 30 * ONE_USDC).unwrap();
+
+    // freeze → Locked; both set ops must reject with InvalidMarketState
+    live.h.set_time(live.freeze);
+    let keeper = live.h.keeper.insecure_clone();
+    live.h
+        .send(&[&keeper], &keeper.pubkey(), ix_freeze_market_1x2(&keeper.pubkey(), FIXTURE))
+        .unwrap();
+
+    let res = mint_set(&mut live, 10 * ONE_USDC);
+    assert_amm_error(&res, AmmError::InvalidMarketState);
+    let res = redeem_set(&mut live, 10 * ONE_USDC);
+    assert_amm_error(&res, AmmError::InvalidMarketState);
+
+    // resolve → Resolved: still rejected
+    do_resolve(&mut live, 0, 2, 0, FINAL_PERIOD).unwrap();
+    let res = redeem_set(&mut live, 10 * ONE_USDC);
+    assert_amm_error(&res, AmmError::InvalidMarketState);
+}
+
+/// (f) the core invariant: a minted set redeems for EXACTLY `amount` under
+/// EVERY resolved outcome — winning leg pays 1:1, losing legs pay 0.
+#[test]
+fn minted_set_redeems_to_amount_under_each_outcome() {
+    // (hint, home, away) whose winning leg is the given index
+    for (hint, home, away) in [(0u8, 2, 0), (1u8, 1, 1), (2u8, 0, 3)] {
+        let mut live = bootstrap_open();
+        to_trading_with_position(&mut live);
+        let amount = 45 * ONE_USDC;
+        mint_set(&mut live, amount).unwrap();
+
+        // freeze + resolve to this outcome
+        live.h.set_time(live.freeze);
+        let keeper = live.h.keeper.insecure_clone();
+        live.h
+            .send(&[&keeper], &keeper.pubkey(), ix_freeze_market_1x2(&keeper.pubkey(), FIXTURE))
+            .unwrap();
+        do_resolve(&mut live, hint, home, away, FINAL_PERIOD).unwrap();
+
+        // redeem: exactly ONE leg (= `amount`) pays; the set is worth `amount`
+        let trader = live.trader.pubkey();
+        let before = live.h.token_balance(&live.trader_ata);
+        live.h
+            .send(
+                &[&live.trader.insecure_clone()],
+                &trader,
+                ix_redeem_1x2(&trader, FIXTURE, &live.h.usdc_mint, &live.trader_ata),
+            )
+            .unwrap();
+        assert_eq!(
+            live.h.token_balance(&live.trader_ata),
+            before + amount,
+            "a minted set redeems for exactly `amount` regardless of outcome (hint {hint})"
+        );
+    }
+}
+
+/// (g) Void after mint_set refunds the `collateral` basis = `amount`.
+#[test]
+fn void_after_mint_set_refunds_basis() {
+    let mut live = bootstrap_open();
+    to_trading_with_position(&mut live);
+    let amount = 70 * ONE_USDC;
+    mint_set(&mut live, amount).unwrap();
+    force_market_1x2(&mut live.h, FIXTURE, MarketState::Resolved, Outcome1x2::Void);
+
+    let trader = live.trader.pubkey();
+    let market_key = market_1x2_pda(FIXTURE);
+    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    assert_eq!(pos.collateral, amount, "mint_set set the net basis to `amount`");
+
+    let before = live.h.token_balance(&live.trader_ata);
+    live.h
+        .send(
+            &[&live.trader.insecure_clone()],
+            &trader,
+            ix_redeem_1x2(&trader, FIXTURE, &live.h.usdc_mint, &live.trader_ata),
+        )
+        .unwrap();
+    assert_eq!(
+        live.h.token_balance(&live.trader_ata),
+        before + amount,
+        "Void refunds the mint_set basis (D-4)"
+    );
+}
+
+/// (h) no-arb tie-in: acquiring `amount` tokens of EACH outcome via `buy_1x2`
+/// costs STRICTLY MORE USDT than the flat `amount` a fee-free set charges.
+///
+/// Proved two ways:
+///   1. Curve-exact (pure `lmsr::buy_cost`, before fees): the LMSR cost to buy
+///      `amount` on each of the three legs sums to > `amount` — the classic
+///      "sum of marginal legs ≥ face value, with strict curvature slack".
+///   2. On-chain: three real `buy_1x2` txs (which ALSO pay the dynamic fee)
+///      to reach ≥ `amount` tokens on every leg spend > the set's `amount`.
+#[test]
+fn separate_buys_never_cheaper_than_set() {
+    let amount = 50 * ONE_USDC;
+
+    // ---- (1) curve-exact, fee-free: Σ buy_cost of `amount` per leg > amount ----
+    // Sequential legs (each buy shifts q), symmetric seed book.
+    let mut q = SEED_Q;
+    let mut curve_sum = 0u64;
+    for outcome in 0..3usize {
+        let c = lmsr::buy_cost(&q, B, outcome, amount).unwrap();
+        curve_sum += c;
+        q[outcome] += amount; // reflect the buy for the next leg's cost
+    }
+    assert!(
+        curve_sum > amount,
+        "fee-free LMSR cost of one-of-each ({curve_sum}) must exceed the set's face value ({amount})"
+    );
+
+    // ---- (2) on-chain: reach ≥ `amount` tokens on every leg via real buys ----
+    // set cost = flat `amount` (exact USDT the trader spends)
+    let mut live_set = bootstrap_open();
+    to_trading_with_position(&mut live_set);
+    let bal0 = live_set.h.token_balance(&live_set.trader_ata);
+    mint_set(&mut live_set, amount).unwrap();
+    let set_cost = bal0 - live_set.h.token_balance(&live_set.trader_ata);
+    assert_eq!(set_cost, amount, "a set is charged its flat face value");
+
+    let mut live_buy = bootstrap_open();
+    to_trading_with_position(&mut live_buy);
+    let trader = live_buy.trader.pubkey();
+    let market_key = market_1x2_pda(FIXTURE);
+    let spend_before = live_buy.h.token_balance(&live_buy.trader_ata);
+    // Buy enough USDT per leg that each leg ends with >= `amount` tokens. At the
+    // 1/3 symmetric book a leg costs ~1/3 USDT/token, so `amount` USDT buys
+    // ~3·amount tokens — comfortably >= amount even after the fee + skew.
+    for outcome in 0..3u8 {
+        buy(&mut live_buy, outcome, amount);
+    }
+    let spent = spend_before - live_buy.h.token_balance(&live_buy.trader_ata);
+    let pos: Position1x2 = get_anchor(&live_buy.h.svm, &position_1x2_pda(&market_key, &trader));
+    let min_leg = pos.tokens[0].min(pos.tokens[1]).min(pos.tokens[2]);
+    assert!(
+        min_leg >= amount,
+        "test setup: each buy should yield >= `amount` tokens (got min leg {min_leg})"
+    );
+    // holding >= `amount` of every outcome cost `spent` > the set's `amount`:
+    // separate buys are never cheaper than the fee-free, curvature-free set.
+    assert!(
+        spent > set_cost,
+        "separate buys ({spent}) must cost more than one set ({set_cost}) for the same guaranteed par"
+    );
+}
+
+// ===========================================================================
 // full happy circle: init → activate → buy all 3 → sell → freeze → resolve →
 // redeem winner/loser → grace → close (real instructions, Clock warp only)
 // ===========================================================================
