@@ -1,6 +1,6 @@
 # SPEC.md — Design decisions + forward (unbuilt) spec
 
-**Purpose:** the durable "why it's built this way" record (resolved decisions) plus the concrete on-chain spec for what is **not yet coded** (v1 leverage, v2 pm-AMM), and the technical-debt worth tracking. This consolidates the former `anchor-programs-plan.md` / `backend-plan.md` / `frontend-plan.md` / `monorepo-setup.md`.
+**Purpose:** the durable "why it's built this way" record (resolved decisions) plus the concrete on-chain spec for what is **not yet coded** (v1 leverage §2, v2 pm-AMM curve §3, 3-way 1X2 LMSR market §3.1), and the technical-debt worth tracking. This consolidates the former `anchor-programs-plan.md` / `backend-plan.md` / `frontend-plan.md` / `monorepo-setup.md`.
 
 - **Shipped state (source of truth): `CLAUDE.md`** at repo root — current program/keeper/indexer/web as-built, commands, architecture seams, live gotchas. Do not duplicate it here.
 - **Master vision + roadmap: `PLAN.md`** — §9 phases, §10 v0/v1/v2 economics, §12 known bugs. Economic framing of leverage/pm-AMM lives there; SPEC.md holds the on-chain **mechanics** PLAN.md doesn't.
@@ -119,7 +119,49 @@ pub trait PricingCurve {
 - **Skip dynamic pm-AMM** — two reasons: on-chain, its `L ∝ √(T−t)` per-swap clock state is a rounding/monotonicity hazard; economically it surrenders ~half LP capital by expiry and is near-empty exactly at resolution, but ~80% of live-sports volume is the final minutes → counterproductive.
 - **Football caveat (verified):** pm-AMM's uniform-LVR optimality assumes **Gaussian** score dynamics (basketball fits). Football win-prob is a **jump process** (flat, then a discrete goal-jump), so pm-AMM here is "a better-shaped bounded-[0,1] prior with a jump caveat, NOT theoretically optimal." Frame as shape improvement, not optimality.
 - **Delivery even without shipping on-chain:** a README LVR benchmark (FPMM vs static pm-AMM, replayed on real TxLINE odds, O-4) via the offline `fee.rs`/`math.rs` harness. The v1 Gaussian theta (`φ(Φ⁻¹(p))/√(T−t)`) reuses the same erf/Φ code — the two stretch tracks share one math module. pm-AMM's role in v1 is deriving the funding formula, NOT the pool curve (curve swap is strictly v2).
-- **3-way (win/draw/lose) — roadmap note, not v0/v1.** v0 is binary FPMM. Three independent binary pools don't guarantee coherent probabilities; a proper 3-way market wants multi-outcome normalization (LMSR or multi-outcome pm-AMM) so `P(win)+P(draw)+P(lose)=1`. A jump-arbitrage auction around goals (Messari) is a v2/pitch item.
+- **3-way (win/draw/lose)** — v0 (and v1 leverage) are **binary FPMM** on a home-win predicate; a proper football **1X2** market (Team1 / Draw / Team2) needs multi-outcome normalization so `P1+PX+P2=1`. Full LMSR spec in **§3.1** below. A jump-arbitrage auction around goals (Messari) is a v2/pitch item.
+
+### 3.1 — 3-way (1X2) LMSR market (UNBUILT, v1)
+
+**Why this exists.** The shipped market is **binary**: one predicate (`(P1_goals − P2_goals) > 0` = Team1 win, D-8), two tokens. `NO` = "Team1 does NOT win" = **{draw ∪ Team2 win}** — a single token covering two football results. So YES/NO cannot be relabeled to "Team1 / Team2" without lying on draws (~25% of matches): a draw settles `NO`, but a "Team2" label implies Team2 won. A truthful Team1 / Draw / Team2 market needs **three outcomes**, which a 2-reserve CPMM cannot express. This is a program-level feature, not a UI relabel.
+
+**Model — 3 tokens, exactly one pays.** Outcomes `{Team1, Draw, Team2}` (+ `Void`); at resolution exactly one is true and its token redeems for 1 USDT, the others 0. Coherence is structural: a **complete set** `{1×P1, 1×PX, 1×P2}` always redeems for exactly 1 USDT (one guaranteed winner), which forces `price(P1)+price(PX)+price(P2)=1`. Binary FPMM gets this free (YES+NO=1 via `x·y=k`); N>2 needs a curve that preserves the sum.
+
+**Curve = LMSR (primary).** Hanson's Logarithmic Market Scoring Rule — the natural multi-outcome maker:
+```
+cost:   C(q) = b · ln( Σ_i exp(q_i / b) )          // q_i = net tokens of outcome i minted; b = liquidity depth
+price:  price_i = exp(q_i/b) / Σ_j exp(q_j/b)      // softmax → in (0,1), Σ price_i = 1 BY CONSTRUCTION
+trade:  cost_to_buy(Δ on outcome i) = C(q + Δ·e_i) − C(q)
+loss:   bounded = b · ln(3)                        // max subsidy the LP/vault can lose
+```
+Softmax normalization gives `Σ price = 1` for free — no separate invariant to enforce. On-chain cost = fixed-point `exp`/`ln` (Q64.64 via LUT or minimax polynomial, pure + property-tested) — the one genuinely new math burden.
+
+**pm-AMM (multi-dim) considered, not chosen.** The multi-outcome pm-AMM is the alternative, but its uniform-LVR optimality assumes **Gaussian** dynamics; football is a **jump process** (§3 caveat), so pm-AMM's advantage doesn't formally hold here while it costs more implementation. **LMSR is the pick for 3-way football**; pm-AMM stays the binary-curve v2 experiment (§3).
+
+**Rejected surrogate — three independent binary markets.** Spinning up "Team1 win?", "Draw?", "Team2 win?" as three separate binary CPMMs reuses all shipped code and gives the 1X2 *look* cheaply, BUT (a) three independent pools' prices **don't sum to 1** (incoherent probabilities, cross-market arb — exactly what a shared-invariant curve fixes), and (b) the "Draw?" market's `resolve` hits the **EqualTo wall** below. It's a stopgap, not the real thing.
+
+**On-chain rework (this is the "big" part):**
+
+| Layer | Binary (shipped) | 1X2 LMSR |
+|---|---|---|
+| `state.rs` `Market` | `yes_reserve`, `no_reserve` | LMSR state: `q: [u64;3]` (or `[i64;3]`) + `b: u64` |
+| `state.rs` `Position` | `yes_tokens`, `no_tokens` | `tokens: [u64;3]` (Team1/Draw/Team2) |
+| `Outcome` enum | `{Yes, No, Void}` | `{Team1, Draw, Team2, Void}` (2-bit) |
+| `buy`/`sell` | `side: Side` | `outcome: u8 ∈ {0,1,2}`, price via LMSR cost delta |
+| new math | `math.rs` CPMM | **new `lmsr.rs`** — pure `exp`/`ln`/cost/price, exhaustive tests |
+| solvency (D-2 generalized) | `vault ≥ max(yes_supply, no_supply)` | `vault ≥ max(supply_Team1, supply_Draw, supply_Team2)` — re-checked after every mutate |
+| complete set | implicit | optional `mint_set` (deposit 1 USDT → 1 of each) / `redeem_set` (burn 1 of each → 1 USDT) to pin the ≤$1 arb band |
+| dynamic fee | `fee.rs` on YES price move | reuse; volatility measured on the traded outcome's price move |
+
+**`resolve` is the hard sub-problem.** TxLINE `validate_stat` returns a **bool for ONE predicate** (§5). Selecting one of three outcomes needs up-to-two CPI checks — e.g. prove `(P1−P2)>0` → Team1; else prove `(P1−P2)==0` → Draw; else Team2. Two blockers, both real:
+1. **EqualTo not soundly negatable** (`PredicateNotNegatable 6023`, current program): the Draw predicate uses `comparison=EqualTo`, and proving "NOT a draw" (to rule Draw out) can't negate cleanly. Fix options: add a sign-returning oracle path, add a `NotEqual` comparator, or structure resolve to prove the WINNER positively (one successful CPI names the outcome; no negation needed) and require the keeper to hint which of the three to prove.
+2. **Predicate storage (D-8)** must carry all three outcome definitions (or derive Draw/Team2 from the stored Team1 predicate by key-swap + comparator), stored on `MarketConfig` so the keeper still can't choose the outcome — the proof does.
+
+**Full-stack ripple:** IDL change → `pnpm codegen` → `libs/idl` regen → keeper (resolve picks 1-of-3, hint), indexer (3 prices, 3-outcome events, DTOs), web (3-chip Team1/Draw/Team2 trade panel — all buyable; card shows 3 real on-chain prices, not the current cosmetic 0.42-split Draw). `libs/shared` DTOs gain a 3-price shape + 3-balance position. Seeder creates **one** 3-way market per fixture (not three binaries).
+
+**Decision (LOCKED direction, UNBUILT):** true 1X2 = **single LMSR multi-outcome market**, chosen over (a) three independent binaries (incoherent prices + Draw-resolve wall) and (b) multi-outcome pm-AMM (Gaussian assumption fails on football jumps). Effort ≈ new `lmsr.rs` + `Market`/`Position`/`Outcome` reshape + `buy`/`sell`/`resolve` rework + codegen + full-stack adaptation. Not on the v0/demo path — demo uses **honest binary labels** ("{Team1} win" / "draw or {Team2}", PLAN §12 BUG-4).
+
+**v1 LiteSVM tests to add:** (a) `Σ price_i == 1` invariant holds after arbitrary buy/sell sequences (within rounding); (b) LMSR cost monotone + bounded loss `≤ b·ln(3)`; (c) `exp`/`ln` fixed-point vs a reference (property test, error bound); (d) solvency `vault ≥ max(supply_i)` after every mutate; (e) `mint_set`/`redeem_set` round-trip = 1 USDT; (f) resolve to each of the three outcomes (positive-proof path) + Void refund; (g) the Draw-resolve path specifically (the EqualTo fix).
 
 ---
 
