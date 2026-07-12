@@ -435,5 +435,21 @@ pub fn buy_delta_for_cost(
     Ok(lo)
 }
 
+// ---------------------------------------------------------------------------
+// Solvency invariant
+// ---------------------------------------------------------------------------
+
+/// D-2 solvency invariant generalized to N outcomes (SPEC §3.1):
+/// `vault_usdt >= max_i(supplies[i])` — exactly one outcome wins and each
+/// winning token redeems for 1 USDT, so the vault must cover the largest
+/// outstanding supply. Re-checked after every mutating instruction.
+pub fn assert_solvent_multi(vault_usdt: u64, supplies: &[u64]) -> Result<(), AmmError> {
+    let max_supply = supplies.iter().copied().max().unwrap_or(0);
+    if vault_usdt < max_supply {
+        return Err(AmmError::SolvencyViolation);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

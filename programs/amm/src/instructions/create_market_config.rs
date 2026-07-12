@@ -1,10 +1,19 @@
-//! `create_market_config` — reusable per-tournament fee + resolution params
-//! (plan §4.2). Admin-gated.
+//! `create_market_config` — admin-gated `MarketConfig` creation for the 3-way
+//! (1X2) LMSR market (SPEC §3.1). Reusable per-tournament fee + resolution
+//! params (plan §4.2).
+//!
+//! - stores `resolution_period` — the expected `stat_to_prove.period` pinned
+//!   at resolve time (stale-batch replay guard, resolve-1x2.md O-1x2-1;
+//!   TxLINE full-time final stats carry `period = 100`);
+//! - enforces the 1X2 predicate shape (`validate_config`): both stat keys
+//!   set + distinct, `stat_op = Subtract`. `resolution_comparison` is stored
+//!   but IGNORED by `resolve` (the comparator is derived per-hint).
 
 use anchor_lang::prelude::*;
 
 use crate::constants::{CONFIG_SEED, MAX_FEE_BPS_CAP, MKT_CONFIG_SEED, REDUCTION_FACTOR_DENOMINATOR};
 use crate::error::AmmError;
+use crate::instructions::resolve::predicate::{validate_config, StoredPredicate};
 use crate::state::{GlobalConfig, MarketConfig};
 
 /// Plain args struct mirroring the fee fields + grace + resolution predicate (D-8).
@@ -56,6 +65,7 @@ pub(crate) fn handler(
     ctx: Context<CreateMarketConfig>,
     config_id: u16,
     params: FeeParamsArgs,
+    resolution_period: i32,
 ) -> Result<()> {
     // ---- param validation (plan §4.2) ----
     require!(
@@ -76,6 +86,14 @@ pub(crate) fn handler(
     require!(params.resolution_comparison <= 2, AmmError::InvalidFeeParams);
     require!(params.stat_op <= 2, AmmError::InvalidFeeParams);
 
+    // ---- 1X2 predicate shape: two distinct stat keys, Subtract ----
+    validate_config(&StoredPredicate {
+        resolution_threshold: params.resolution_threshold,
+        stat_key_a: params.stat_key_a,
+        stat_key_b: params.stat_key_b,
+        stat_op: params.stat_op,
+    })?;
+
     let mc = &mut ctx.accounts.market_config;
     mc.config_id = config_id;
     mc.authority = ctx.accounts.global.authority;
@@ -93,10 +111,7 @@ pub(crate) fn handler(
     mc.stat_key_b = params.stat_key_b;
     mc.stat_op = params.stat_op;
     mc.bump = ctx.bumps.market_config;
-    // v0 path always creates a BINARY config (kind/period were carved from
-    // the former zero _reserved bytes — writing zeros keeps bytes identical).
-    mc.market_kind = crate::constants::MARKET_KIND_BINARY;
-    mc.resolution_period = 0;
-    mc._reserved = [0u8; 39];
+    mc.resolution_period = resolution_period;
+    mc._reserved = [0u8; 40];
     Ok(())
 }

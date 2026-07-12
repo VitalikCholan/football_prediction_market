@@ -6,7 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { combineCodec, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getI64Decoder, getI64Encoder, getStructDecoder, getStructEncoder, getU64Decoder, getU64Encoder, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlyUint8Array, type TransactionSigner, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
+import { combineCodec, fixDecoderSize, fixEncoderSize, getArrayDecoder, getArrayEncoder, getBytesDecoder, getBytesEncoder, getI64Decoder, getI64Encoder, getStructDecoder, getStructEncoder, getU64Decoder, getU64Encoder, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlyUint8Array, type TransactionSigner, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
 import { findGlobalPda, findMarketPda, findVaultPda } from '../pdas';
 import { AMM_PROGRAM_ADDRESS } from '../programs';
 import { expectAddress, expectSome, getAccountMetaFactory, type ResolvedAccount } from '../shared';
@@ -18,16 +18,16 @@ export function getInitMarketDiscriminatorBytes() { return fixEncoderSize(getByt
 export type InitMarketInstruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountAuthority extends string | AccountMeta<string> = string, TAccountGlobal extends string | AccountMeta<string> = string, TAccountMarketConfig extends string | AccountMeta<string> = string, TAccountMarket extends string | AccountMeta<string> = string, TAccountVault extends string | AccountMeta<string> = string, TAccountUsdtMint extends string | AccountMeta<string> = string, TAccountAuthorityUsdt extends string | AccountMeta<string> = string, TAccountTokenProgram extends string | AccountMeta<string> = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
 Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountAuthority extends string ? WritableSignerAccount<TAccountAuthority> & AccountSignerMeta<TAccountAuthority> : TAccountAuthority, TAccountGlobal extends string ? ReadonlyAccount<TAccountGlobal> : TAccountGlobal, TAccountMarketConfig extends string ? ReadonlyAccount<TAccountMarketConfig> : TAccountMarketConfig, TAccountMarket extends string ? WritableAccount<TAccountMarket> : TAccountMarket, TAccountVault extends string ? WritableAccount<TAccountVault> : TAccountVault, TAccountUsdtMint extends string ? ReadonlyAccount<TAccountUsdtMint> : TAccountUsdtMint, TAccountAuthorityUsdt extends string ? WritableAccount<TAccountAuthorityUsdt> : TAccountAuthorityUsdt, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
 
-export type InitMarketInstructionData = { discriminator: ReadonlyUint8Array; fixtureId: bigint; kickoffTs: bigint; freezeTs: bigint; seedYes: bigint; seedNo: bigint; seedLiquidity: bigint;  };
+export type InitMarketInstructionData = { discriminator: ReadonlyUint8Array; fixtureId: bigint; kickoffTs: bigint; freezeTs: bigint; b: bigint; seedQ: Array<bigint>; seedLiquidity: bigint;  };
 
-export type InitMarketInstructionDataArgs = { fixtureId: number | bigint; kickoffTs: number | bigint; freezeTs: number | bigint; seedYes: number | bigint; seedNo: number | bigint; seedLiquidity: number | bigint;  };
+export type InitMarketInstructionDataArgs = { fixtureId: number | bigint; kickoffTs: number | bigint; freezeTs: number | bigint; b: number | bigint; seedQ: Array<number | bigint>; seedLiquidity: number | bigint;  };
 
 export function getInitMarketInstructionDataEncoder(): FixedSizeEncoder<InitMarketInstructionDataArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['fixtureId', getI64Encoder()], ['kickoffTs', getI64Encoder()], ['freezeTs', getI64Encoder()], ['seedYes', getU64Encoder()], ['seedNo', getU64Encoder()], ['seedLiquidity', getU64Encoder()]]), (value) => ({ ...value, discriminator: INIT_MARKET_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['fixtureId', getI64Encoder()], ['kickoffTs', getI64Encoder()], ['freezeTs', getI64Encoder()], ['b', getU64Encoder()], ['seedQ', getArrayEncoder(getU64Encoder(), { size: 3 })], ['seedLiquidity', getU64Encoder()]]), (value) => ({ ...value, discriminator: INIT_MARKET_DISCRIMINATOR }));
 }
 
 export function getInitMarketInstructionDataDecoder(): FixedSizeDecoder<InitMarketInstructionData> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['fixtureId', getI64Decoder()], ['kickoffTs', getI64Decoder()], ['freezeTs', getI64Decoder()], ['seedYes', getU64Decoder()], ['seedNo', getU64Decoder()], ['seedLiquidity', getU64Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['fixtureId', getI64Decoder()], ['kickoffTs', getI64Decoder()], ['freezeTs', getI64Decoder()], ['b', getU64Decoder()], ['seedQ', getArrayDecoder(getU64Decoder(), { size: 3 })], ['seedLiquidity', getU64Decoder()]]);
 }
 
 export function getInitMarketInstructionDataCodec(): FixedSizeCodec<InitMarketInstructionDataArgs, InitMarketInstructionData> {
@@ -47,8 +47,8 @@ systemProgram?: Address<TAccountSystemProgram>;
 fixtureId: InitMarketInstructionDataArgs["fixtureId"];
 kickoffTs: InitMarketInstructionDataArgs["kickoffTs"];
 freezeTs: InitMarketInstructionDataArgs["freezeTs"];
-seedYes: InitMarketInstructionDataArgs["seedYes"];
-seedNo: InitMarketInstructionDataArgs["seedNo"];
+b: InitMarketInstructionDataArgs["b"];
+seedQ: InitMarketInstructionDataArgs["seedQ"];
 seedLiquidity: InitMarketInstructionDataArgs["seedLiquidity"];
 }
 
@@ -99,8 +99,8 @@ systemProgram?: Address<TAccountSystemProgram>;
 fixtureId: InitMarketInstructionDataArgs["fixtureId"];
 kickoffTs: InitMarketInstructionDataArgs["kickoffTs"];
 freezeTs: InitMarketInstructionDataArgs["freezeTs"];
-seedYes: InitMarketInstructionDataArgs["seedYes"];
-seedNo: InitMarketInstructionDataArgs["seedNo"];
+b: InitMarketInstructionDataArgs["b"];
+seedQ: InitMarketInstructionDataArgs["seedQ"];
 seedLiquidity: InitMarketInstructionDataArgs["seedLiquidity"];
 }
 

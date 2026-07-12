@@ -7,25 +7,15 @@
  */
 
 export * from './activateMarket';
-export * from './activateMarket1x2';
 export * from './buy';
-export * from './buy1x2';
 export * from './closeMarket';
-export * from './closeMarket1x2';
 export * from './createMarketConfig';
-export * from './createMarketConfig1x2';
 export * from './freezeMarket';
-export * from './freezeMarket1x2';
 export * from './initializeConfig';
 export * from './initMarket';
-export * from './initMarket1x2';
-export * from './mintSet1x2';
+export * from './mintSet';
 export * from './openPosition';
-export * from './openPosition1x2';
 export * from './redeem';
-export * from './redeem1x2';
-export * from './redeemSet1x2';
+export * from './redeemSet';
 export * from './resolve';
-export * from './resolve1x2';
 export * from './sell';
-export * from './sell1x2';

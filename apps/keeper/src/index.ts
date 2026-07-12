@@ -18,6 +18,7 @@ import { loadKeeperSigner } from "./solana/signer.ts";
 import { KitTxSender } from "./solana/txSender.ts";
 import { TxlineAuth } from "./txline/auth.ts";
 import { ScoreStream, type EndedEvent } from "./txline/scoreStream.ts";
+import { scoreFromEvent } from "./actions/resolve.ts";
 import { ProofFetcher } from "./txline/proof.ts";
 import { StaticFixtureSource, parseFixturesEnv } from "./txline/fixtures.ts";
 import { HistoryClient } from "./txline/history.ts";
@@ -25,7 +26,6 @@ import { LifecycleStateMachine } from "./lifecycle/stateMachine.ts";
 import { Scheduler } from "./lifecycle/scheduler.ts";
 import { MarketSeeder } from "./lifecycle/seeder.ts";
 import { runSmoke } from "./smoke.ts";
-import { runSmoke1x2 } from "./smoke1x2.ts";
 import { runSmokeTxline } from "./smokeTxline.ts";
 import { runSmokeSeed } from "./smokeSeed.ts";
 import type { ActionContext } from "./actions/context.ts";
@@ -39,11 +39,6 @@ async function main(): Promise<void> {
   // TxLINE API smoke: live SSE + historical + stat-validation parser proof.
   if (process.argv.includes("--smoke-txline") || process.env.SMOKE_TXLINE === "1") {
     await runSmokeTxline();
-    return;
-  }
-  // 1X2 devnet smoke: prove the new *_1x2 wiring, simulate-only (nothing sent).
-  if (process.argv.includes("--smoke-1x2") || process.env.SMOKE_1X2 === "1") {
-    await runSmoke1x2();
     return;
   }
   // Devnet smoke mode: prove wiring against the live program, simulate-only.
@@ -124,17 +119,19 @@ async function main(): Promise<void> {
   if (config.enableScoreStream) {
     const stream = new ScoreStream(config, auth);
     stream.on("ended", (e: EndedEvent) => {
+      const score = scoreFromEvent(e) ?? undefined;
       log.info(
         {
           fixtureId: e.fixtureId.toString(),
           seq: e.seq,
           statusId: e.statusId,
           action: e.action,
+          score,
         },
         "SSE match-end detected (StatusId 100 / game_finalised) -> resolve",
       );
       fsm.markEnded(e.fixtureId, e.seq);
-      void scheduler.tryResolve(e.fixtureId, e.seq);
+      void scheduler.tryResolve(e.fixtureId, e.seq, score);
     });
     stream.on("error", (err) => log.warn({ err }, "score-stream error"));
     void stream.start();

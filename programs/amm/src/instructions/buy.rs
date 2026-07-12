@@ -1,5 +1,14 @@
-//! `buy(side, usdt_in, min_out)` — dynamic fee → CPMM → credit position → deposit
-//! USDT → re-validate solvency (plan §4.5).
+//! `buy(outcome, usdt_in, min_tokens_out)` — dynamic fee → LMSR
+//! delta-for-cost solve → credit position → deposit USDT → re-validate
+//! solvency (SPEC §3.1).
+//!
+//! Flow: fee is charged on `usdt_in` (volatility measured on the traded
+//! outcome's price move, `fee.rs` unchanged); the net amount buys the LARGEST
+//! `delta` with `buy_cost(q, b, outcome, delta) ≤ net` (bracketed binary
+//! search, `lmsr::buy_delta_for_cost`, ≤ 61 cost evaluations — callers should
+//! request a raised CU limit for large trades). The whole `usdt_in` enters
+//! the vault (fee + any sub-token remainder stay with the pool —
+//! pool-favorable, mirroring the binary CPMM).
 
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
@@ -9,8 +18,8 @@ use anchor_spl::token_interface::{
 use crate::constants::{BPS_DENOM, MARKET_SEED, POSITION_SEED};
 use crate::error::AmmError;
 use crate::fee::{self, FeeParams, FeeState};
-use crate::math;
-use crate::state::{Market, MarketConfig, MarketState, Position, Side, Trade};
+use crate::lmsr;
+use crate::state::{Market, MarketConfig, MarketState, Position, Trade};
 
 #[derive(Accounts)]
 pub struct Buy<'info> {
@@ -56,9 +65,9 @@ pub struct Buy<'info> {
 
 pub(crate) fn handler(
     ctx: Context<Buy>,
-    side: Side,
+    outcome: u8,
     usdt_in: u64,
-    min_out: u64,
+    min_tokens_out: u64,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let market = &mut ctx.accounts.market;
@@ -66,8 +75,10 @@ pub(crate) fn handler(
     require!(market.state == MarketState::Trading, AmmError::InvalidMarketState);
     require!(usdt_in > 0, AmmError::ZeroAmount);
     require!(now >= market.last_ts, AmmError::MonotonicClock);
+    let idx = usize::from(outcome);
+    require!(idx < lmsr::N_OUTCOMES, AmmError::LmsrInvalidOutcomeIndex);
 
-    // ---- Step A+B: dynamic fee from pre-trade state ----
+    // ---- dynamic fee from pre-trade state (fee.rs reused verbatim) ----
     let mc = &ctx.accounts.market_config;
     let params = FeeParams {
         base_fee_bps: mc.base_fee_bps,
@@ -85,7 +96,7 @@ pub(crate) fn handler(
     };
     let (fee_bps, v_ref) = fee::compute_fee_bps(&params, &state, now)?;
 
-    // amount_in_after_fee = usdt_in * (10_000 - fee_bps) / 10_000
+    // net = usdt_in * (10_000 - fee_bps) / 10_000
     let net = (usdt_in as u128)
         .checked_mul((BPS_DENOM - fee_bps as u64) as u128)
         .ok_or(AmmError::MathOverflow)?
@@ -94,40 +105,26 @@ pub(crate) fn handler(
     let amount_in_net = u64::try_from(net).map_err(|_| AmmError::NumericConversion)?;
     require!(amount_in_net > 0, AmmError::ZeroAmount);
 
-    // ---- CPMM virtual-reserve swap (D-2): moves the price, mints the tokens ----
-    let side_yes = matches!(side, Side::Yes);
-    let res = math::buy(side_yes, market.yes_reserve, market.no_reserve, amount_in_net)?;
-    require!(res.tokens_out >= min_out, AmmError::SlippageExceeded);
+    // ---- LMSR delta-for-cost solve: largest delta affordable with `net` ----
+    let delta = lmsr::buy_delta_for_cost(&market.q, market.b, idx, amount_in_net)?;
+    require!(delta > 0, AmmError::SlippageExceeded);
+    require!(delta >= min_tokens_out, AmmError::SlippageExceeded);
 
-    // ---- update reserves + fee state ----
-    market.yes_reserve = res.new_yes_reserve;
-    market.no_reserve = res.new_no_reserve;
-    let new_price_bps = math::price_yes_bps(market.yes_reserve, market.no_reserve)?;
+    // ---- update curve + supply + fee state ----
+    market.q[idx] = market.q[idx].checked_add(delta).ok_or(AmmError::MathOverflow)?;
+    market.supply[idx] = market.supply[idx]
+        .checked_add(delta)
+        .ok_or(AmmError::MathOverflow)?;
+    let new_price_bps = lmsr::price_bps(&market.q, market.b, idx)?;
     market.v_acc = fee::next_v_acc(&params, v_ref, market.last_price_bps, new_price_bps)?;
     market.last_price_bps = new_price_bps;
     market.last_ts = now;
 
-    // ---- credit position + supply ----
+    // ---- credit position ----
     let position = &mut ctx.accounts.position;
-    if side_yes {
-        position.yes_tokens = position
-            .yes_tokens
-            .checked_add(res.tokens_out)
-            .ok_or(AmmError::MathOverflow)?;
-        market.yes_supply = market
-            .yes_supply
-            .checked_add(res.tokens_out)
-            .ok_or(AmmError::MathOverflow)?;
-    } else {
-        position.no_tokens = position
-            .no_tokens
-            .checked_add(res.tokens_out)
-            .ok_or(AmmError::MathOverflow)?;
-        market.no_supply = market
-            .no_supply
-            .checked_add(res.tokens_out)
-            .ok_or(AmmError::MathOverflow)?;
-    }
+    position.tokens[idx] = position.tokens[idx]
+        .checked_add(delta)
+        .ok_or(AmmError::MathOverflow)?;
     position.collateral = position
         .collateral
         .checked_add(usdt_in)
@@ -157,17 +154,16 @@ pub(crate) fn handler(
         .checked_add(credited)
         .ok_or(AmmError::MathOverflow)?;
 
-    // ---- re-validate reserves + solvency ----
-    require!(market.yes_reserve > 0 && market.no_reserve > 0, AmmError::ZeroReserve);
-    math::assert_solvent(ctx.accounts.vault.amount, market.yes_supply, market.no_supply)?;
+    // ---- re-validate solvency: vault ≥ max_i(supply_i) ----
+    lmsr::assert_solvent_multi(ctx.accounts.vault.amount, &market.supply)?;
 
     emit!(Trade {
         fixture_id: market.fixture_id,
         owner: ctx.accounts.trader.key(),
-        side_yes,
+        outcome,
         is_buy: true,
         usdt: usdt_in,
-        tokens: res.tokens_out,
+        tokens: delta,
         price_bps: new_price_bps,
         fee_bps,
     });

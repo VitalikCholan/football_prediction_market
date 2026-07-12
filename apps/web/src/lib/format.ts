@@ -14,12 +14,12 @@ export function baseToUsdt(base: string | number | bigint): number {
   return n / USDT_SCALE;
 }
 
-/** yesPriceBps (0–10000) → cents (0–100), rounded. */
+/** Price bps (0–10000) → cents (0–100), rounded. */
 export function bpsToCents(bps: number): number {
   return Math.round(bps / 100);
 }
 
-/** yesPriceBps → probability 0..1. */
+/** Price bps → probability 0..1. */
 export function bpsToProb(bps: number): number {
   return bps / 10_000;
 }

@@ -31,22 +31,6 @@ export const POSITION_SEED = "position";
 export const VAULT_SEED = "vault";
 
 /* --------------------------------------------------------------------------
- * 3-way (1X2) LMSR market seeds (programs/amm/src/constants.rs §3.1 phase C).
- *
- *   MARKET_1X2_SEED   = b"market3"   + fixture_id: i64 LE
- *   POSITION_1X2_SEED = b"position3" + market: Pubkey + owner: Pubkey
- *
- * The vault is shared: [VAULT_SEED, market1x2Key]. Distinct market seeds
- * (b"market" vs b"market3") keep binary and 1X2 vaults from colliding.
- * ------------------------------------------------------------------------ */
-export const MARKET_1X2_SEED = "market3";
-export const POSITION_1X2_SEED = "position3";
-
-/** MarketConfig.market_kind discriminant (on-chain u8). */
-export const MARKET_KIND_BINARY = 0;
-export const MARKET_KIND_1X2 = 1;
-
-/* --------------------------------------------------------------------------
  * Fixed-point denominators (must match programs/amm/src/constants.rs)
  * ------------------------------------------------------------------------ */
 /** Basis-points denominator (fees, prices). */

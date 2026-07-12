@@ -11,7 +11,7 @@
  *   tab is hidden (visibilitychange) to spare the public RPC.
  */
 import { useCallback, useEffect, useState } from "react";
-import type { AnyMarketDto } from "@fpm/shared";
+import type { MarketDto } from "@fpm/shared";
 import { fetchMarket, fetchMarkets } from "@/lib/data";
 import { getUsdtBalanceBase } from "@/lib/tx";
 import { fetchUserPositions, type UserPosition } from "@/lib/positions";
@@ -49,18 +49,15 @@ function useLiveTask(task: (() => void) | null, intervalMs: number): void {
 /* ------------------------------------------------------------ live market */
 
 /**
- * Keep a server-rendered market fresh: 5s poll + tx-confirm revalidate. Generic
- * over the market subtype (binary or 1X2) so callers keep their concrete type —
- * a market never changes kind between polls, so the refetched `AnyMarketDto` is
- * narrowed back to `T`.
+ * Keep a server-rendered market fresh: 5s poll + tx-confirm revalidate.
  */
-export function useLiveMarket<T extends AnyMarketDto>(initial: T): T {
-  const [market, setMarket] = useState<T>(initial);
+export function useLiveMarket(initial: MarketDto): MarketDto {
+  const [market, setMarket] = useState<MarketDto>(initial);
 
   const task = useCallback(() => {
     fetchMarket(initial.id, { fresh: true })
       .then((m) => {
-        if (m) setMarket(m as T);
+        if (m) setMarket(m);
       })
       .catch(() => {});
   }, [initial.id]);

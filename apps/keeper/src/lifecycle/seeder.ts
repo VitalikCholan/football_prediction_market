@@ -8,7 +8,7 @@
  * always has upcoming markets to show.
  *
  * This is the scheduled port of the one-shot `scripts/seed-markets.ts`; the
- * domain logic (future-fixture filter, reservesForProb, odds->prob with 50/50
+ * domain logic (future-fixture filter, 1X2 odds->seed_q with symmetric [0,0,0]
  * fallback, Market-PDA dedup, init_market build) is preserved.
  *
  * Contract (mirrors Scheduler): start() schedules a never-throw tick loop at
@@ -51,18 +51,20 @@ import type { SolanaClients } from "../solana/rpc.ts";
 import type { TxSender } from "../solana/txSender.ts";
 import type { TxlineAuth } from "../txline/auth.ts";
 import { fetchFixtureSnapshot } from "../txline/fixtures.ts";
-import { fetchImpliedHomeProb } from "../txline/odds.ts";
+import { fetchImplied1x2 } from "../txline/odds.ts";
 
 /* ----------------------------------------------------------- seed constants */
-// MarketConfig#1 — home-win predicate (stat1 - stat2) > 0. Matches the script.
-const CONFIG_ID = 1;
-// Virtual-reserve total (yes+no). Split per StablePrice odds when available,
-// else 50/50. price_yes = no/(yes+no), YES = home-win, so no = T·P(home).
-const SEED_TOTAL = 200_000_000n; // 200 USDT virtual
-const SEED_LIQUIDITY = 10_000_000n; // 10 USDT real collateral per market
-// Clamp implied prob so neither virtual reserve degenerates near 0/100¢.
-const MIN_PROB = 0.05;
-const MAX_PROB = 0.95;
+// MarketConfig#2 — 1X2 predicate (stat1 - stat2); resolve DERIVES the per-hint
+// comparator (Team1>Draw=Team2<). Matches scripts/seed-markets.ts.
+const CONFIG_ID = 2;
+const ONE_USDT = 1_000_000n; // 6 decimals
+// LMSR liquidity depth `b` (raw USDT units). Symmetric subsidy = ceil(b·ln3).
+const SEED_B = 100n * ONE_USDT; // 100 USDT depth (mirrors LiteSVM tests)
+// Real collateral seeded into the vault. Must cover C(seed_q,b) - min(seed_q);
+// for symmetric [0,0,0]: ceil(b·ln3) ≈ 109.86 USDT — 200 USDT gives headroom.
+const SEED_LIQUIDITY = 200n * ONE_USDT;
+// Clamp implied probs so no outcome degenerates to a ~0/100¢ seed offset.
+const MIN_PROB = 0.02;
 // Require StartTime > now + 2 min at tx time (init_market checks kickoff > now).
 const KICKOFF_BUFFER_SECS = 120;
 // Freeze 2h after kickoff (matches the script's schedule).
@@ -74,15 +76,25 @@ const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
 const addressEncoder = getAddressEncoder();
 
 /**
- * Split SEED_TOTAL so the opening YES price equals implied P(home win). YES =
- * home-win predicate, price_yes = no/(yes+no), so `no = T·p`, `yes = T·(1−p)`.
- * `p` clamped to [MIN_PROB, MAX_PROB].
+ * Map three implied probabilities to LMSR seed offsets `seed_q = [q1, qx, q2]`.
+ *
+ * Softmax is shift-invariant, so opening price_i = softmax(q_i / b). Setting
+ * `q_i = b · ln(p_i)` reproduces the probabilities exactly; we then shift so
+ * `min(seed_q) = 0` (seed offsets are pool-owned; the shift preserves prices).
+ * Probs are normalized + clamped to [MIN_PROB, ·] so no offset degenerates.
  */
-function reservesForProb(pHome: number): { seedYes: bigint; seedNo: bigint } {
-  const p = Math.min(MAX_PROB, Math.max(MIN_PROB, pHome));
-  const seedNo = BigInt(Math.round(Number(SEED_TOTAL) * p));
-  const seedYes = SEED_TOTAL - seedNo;
-  return { seedYes, seedNo };
+function seedQFromProbs(
+  probs: [number, number, number],
+  b: bigint,
+): [bigint, bigint, bigint] {
+  const clamped = probs.map((p) => Math.max(MIN_PROB, p));
+  const sum = clamped.reduce((a, c) => a + c, 0);
+  const norm = clamped.map((p) => p / sum);
+  const bNum = Number(b);
+  const rawQ = norm.map((p) => bNum * Math.log(p)); // <= 0
+  const minRaw = Math.min(...rawQ);
+  const shifted = rawQ.map((q) => Math.round(q - minRaw)); // >= 0, min = 0
+  return [BigInt(shifted[0]), BigInt(shifted[1]), BigInt(shifted[2])];
 }
 
 /** Derive the classic-SPL associated token account for owner+mint. */
@@ -282,21 +294,13 @@ export class MarketSeeder {
       // ---- 5. seed each candidate (one init_market per fixture) ----
       for (const c of toSeed) {
         try {
-          const pHome = await fetchImpliedHomeProb(
-            this.config,
-            this.auth,
-            c.fixtureId,
-            { minProb: MIN_PROB, maxProb: MAX_PROB },
-          );
-          const { seedYes, seedNo } =
-            pHome != null
-              ? reservesForProb(pHome)
-              : { seedYes: SEED_TOTAL / 2n, seedNo: SEED_TOTAL / 2n };
-          const openCents = Math.round((Number(seedNo) / Number(SEED_TOTAL)) * 100);
-          const probSource =
-            pHome != null
-              ? `StablePrice P(home)=${(pHome * 100).toFixed(1)}% -> open ${openCents}c`
-              : "50/50 fallback (no odds on feed) -> open 50c";
+          const probs = await fetchImplied1x2(this.config, this.auth, c.fixtureId);
+          const seedQ = probs
+            ? seedQFromProbs(probs, SEED_B)
+            : ([0n, 0n, 0n] as [bigint, bigint, bigint]);
+          const probSource = probs
+            ? `StablePrice [H ${(probs[0] * 100).toFixed(1)}%, X ${(probs[1] * 100).toFixed(1)}%, A ${(probs[2] * 100).toFixed(1)}%] -> seed_q ${seedQ.map(String).join(",")}`
+            : "symmetric seed_q [0,0,0] (no 1X2 odds on feed) -> 1/3 each";
 
           if (dry) {
             log.info(
@@ -305,8 +309,8 @@ export class MarketSeeder {
                 teams: c.teams,
                 kickoffTs: c.kickoffTs.toString(),
                 freezeTs: c.freezeTs.toString(),
-                seedYes: seedYes.toString(),
-                seedNo: seedNo.toString(),
+                b: SEED_B.toString(),
+                seedQ: seedQ.map(String),
                 seedLiquidity: SEED_LIQUIDITY.toString(),
                 market: c.marketPda,
                 probSource,
@@ -328,8 +332,8 @@ export class MarketSeeder {
             fixtureId: c.fixtureId,
             kickoffTs: c.kickoffTs,
             freezeTs: c.freezeTs,
-            seedYes,
-            seedNo,
+            b: SEED_B,
+            seedQ,
             seedLiquidity: SEED_LIQUIDITY,
           });
           const sig = await this.txSender.sendAndConfirm({

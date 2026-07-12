@@ -8,7 +8,6 @@
     "start": "node --experimental-transform-types --import ./hooks/register.mjs src/index.ts",
     "bundle": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/keeper.cjs",
     "smoke": "node --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke",
-    "smoke:1x2": "node --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke-1x2",
     "smoke:txline": "node --env-file-if-exists=.env --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke-txline",
     "smoke:seed": "node --env-file-if-exists=.env --experimental-transform-types --import ./hooks/register.mjs src/index.ts --smoke-seed",
     "typecheck": "tsc -p tsconfig.json --noEmit"

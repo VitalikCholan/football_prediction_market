@@ -17,7 +17,8 @@ pub const CONFIG_SEED: &[u8] = b"config";
 #[constant]
 pub const MKT_CONFIG_SEED: &[u8] = b"mkt_config";
 
-/// `Market` — seeds `[b"market", fixture_id: i64 LE]` (D-7).
+/// `Market` — seeds `[b"market", fixture_id: i64 LE]` (D-7). The 3-way (1X2)
+/// LMSR market is the program's sole market type.
 #[constant]
 pub const MARKET_SEED: &[u8] = b"market";
 
@@ -26,35 +27,8 @@ pub const MARKET_SEED: &[u8] = b"market";
 pub const POSITION_SEED: &[u8] = b"position";
 
 /// `EscrowVault` token account — seeds `[b"vault", market: Pubkey]`.
-/// Shared by binary and 1X2 markets: the market key differs per kind
-/// (`b"market"` vs `b"market3"` seeds), so vaults never collide.
 #[constant]
 pub const VAULT_SEED: &[u8] = b"vault";
-
-// ---------------------------------------------------------------------------
-// 3-way (1X2) LMSR market seeds (SPEC §3.1 phase C — parallel instruction set)
-// ---------------------------------------------------------------------------
-
-/// `Market1x2` — seeds `[b"market3", fixture_id: i64 LE]`. Distinct from
-/// `MARKET_SEED` so a binary and a 1X2 market can coexist for one fixture.
-#[constant]
-pub const MARKET_1X2_SEED: &[u8] = b"market3";
-
-/// `Position1x2` — seeds `[b"position3", market: Pubkey, owner: Pubkey]`.
-#[constant]
-pub const POSITION_1X2_SEED: &[u8] = b"position3";
-
-// ---------------------------------------------------------------------------
-// MarketConfig.market_kind (carved from _reserved; zero-default = Binary)
-// ---------------------------------------------------------------------------
-
-/// Binary YES/NO market (v0 default — every pre-existing config is this).
-#[constant]
-pub const MARKET_KIND_BINARY: u8 = 0;
-
-/// 3-way 1X2 (Team1/Draw/Team2) LMSR market.
-#[constant]
-pub const MARKET_KIND_1X2: u8 = 1;
 
 // ---------------------------------------------------------------------------
 // TxLINE PDA seeds (their program — we only READ this PDA; plan §11.1)

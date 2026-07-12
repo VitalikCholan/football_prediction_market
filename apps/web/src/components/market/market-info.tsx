@@ -4,14 +4,15 @@ import { FeeBar } from "@/components/market/fee-bar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-/** Market info sidebar (1c): volume, liquidity, resolution source, fee. */
+/**
+ * Market info sidebar (1c): volume, LMSR depth (the `b` liquidity parameter),
+ * resolution source, fee. The liquidity readout uses `b` since a 3-way LMSR
+ * market has no yes/no reserves.
+ */
 export function MarketInfo({ market }: { market: MarketDto }) {
-  const liquidity =
-    baseToUsdt(market.yesReserve) + baseToUsdt(market.noReserve);
-
   const rows: [string, string][] = [
     ["Total volume", volumeLabel(market.totalVolume)],
-    ["Liquidity", usdCompactLabel(liquidity)],
+    ["LMSR depth (b)", usdCompactLabel(baseToUsdt(market.b))],
     ["Resolves", "At full time"],
     ["Source", "TxLINE oracle"],
   ];

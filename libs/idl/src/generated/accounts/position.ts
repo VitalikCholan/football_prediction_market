@@ -6,7 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { assertAccountExists, assertAccountsExist, combineCodec, decodeAccount, fetchEncodedAccount, fetchEncodedAccounts, fixDecoderSize, fixEncoderSize, getAddressDecoder, getAddressEncoder, getBooleanDecoder, getBooleanEncoder, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU16Decoder, getU16Encoder, getU64Decoder, getU64Encoder, getU8Decoder, getU8Encoder, transformEncoder, type Account, type Address, type EncodedAccount, type FetchAccountConfig, type FetchAccountsConfig, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type MaybeAccount, type MaybeEncodedAccount, type ReadonlyUint8Array } from '@solana/kit';
+import { assertAccountExists, assertAccountsExist, combineCodec, decodeAccount, fetchEncodedAccount, fetchEncodedAccounts, fixDecoderSize, fixEncoderSize, getAddressDecoder, getAddressEncoder, getArrayDecoder, getArrayEncoder, getBooleanDecoder, getBooleanEncoder, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU64Decoder, getU64Encoder, getU8Decoder, getU8Encoder, transformEncoder, type Account, type Address, type EncodedAccount, type FetchAccountConfig, type FetchAccountsConfig, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type MaybeAccount, type MaybeEncodedAccount, type ReadonlyUint8Array } from '@solana/kit';
 
 export const POSITION_DISCRIMINATOR = new Uint8Array([170, 188, 143, 228, 122, 64, 247, 208]);
 
@@ -17,28 +17,15 @@ export type Position = { discriminator: ReadonlyUint8Array;
 market: Address; 
 /** Binds; part of seeds. */
 owner: Address; 
-/** YES balance. */
-yesTokens: bigint; 
-/** NO balance. */
-noTokens: bigint; 
-/**
- * Net USDT basis deposited (buys − sell proceeds). Used for Void refund (D-4)
- * and reserved for v1 leverage collateral.
- */
+/** Token balances per outcome [Team1, Draw, Team2]. */
+tokens: Array<bigint>; 
+/** Net USDT basis deposited (buys − sell proceeds). Void refund (D-4). */
 collateral: bigint; 
-/** v1 reserved; v0 writes 1. */
-leverage: number; 
-/** v1 reserved. */
-notional: bigint; 
-/** v1 reserved (leverage time-fee accrual origin). v0 = 0. */
-entrySlot: bigint; 
-/** v1 reserved (theta rate snapshot). v0 = 0. */
-feeRateSnapshot: bigint; 
 /** Double-redeem guard. */
 redeemed: boolean; 
 /** Canonical bump. */
 bump: number; 
-/** Future. */
+/** Future (v1 leverage-over-LMSR, SPEC §3.2). */
 reserved: ReadonlyUint8Array;  };
 
 export type PositionArgs = { 
@@ -46,38 +33,25 @@ export type PositionArgs = {
 market: Address; 
 /** Binds; part of seeds. */
 owner: Address; 
-/** YES balance. */
-yesTokens: number | bigint; 
-/** NO balance. */
-noTokens: number | bigint; 
-/**
- * Net USDT basis deposited (buys − sell proceeds). Used for Void refund (D-4)
- * and reserved for v1 leverage collateral.
- */
+/** Token balances per outcome [Team1, Draw, Team2]. */
+tokens: Array<number | bigint>; 
+/** Net USDT basis deposited (buys − sell proceeds). Void refund (D-4). */
 collateral: number | bigint; 
-/** v1 reserved; v0 writes 1. */
-leverage: number; 
-/** v1 reserved. */
-notional: number | bigint; 
-/** v1 reserved (leverage time-fee accrual origin). v0 = 0. */
-entrySlot: number | bigint; 
-/** v1 reserved (theta rate snapshot). v0 = 0. */
-feeRateSnapshot: number | bigint; 
 /** Double-redeem guard. */
 redeemed: boolean; 
 /** Canonical bump. */
 bump: number; 
-/** Future. */
+/** Future (v1 leverage-over-LMSR, SPEC §3.2). */
 reserved: ReadonlyUint8Array;  };
 
 /** Gets the encoder for {@link PositionArgs} account data. */
 export function getPositionEncoder(): FixedSizeEncoder<PositionArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['market', getAddressEncoder()], ['owner', getAddressEncoder()], ['yesTokens', getU64Encoder()], ['noTokens', getU64Encoder()], ['collateral', getU64Encoder()], ['leverage', getU16Encoder()], ['notional', getU64Encoder()], ['entrySlot', getU64Encoder()], ['feeRateSnapshot', getU64Encoder()], ['redeemed', getBooleanEncoder()], ['bump', getU8Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 16)]]), (value) => ({ ...value, discriminator: POSITION_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['market', getAddressEncoder()], ['owner', getAddressEncoder()], ['tokens', getArrayEncoder(getU64Encoder(), { size: 3 })], ['collateral', getU64Encoder()], ['redeemed', getBooleanEncoder()], ['bump', getU8Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 32)]]), (value) => ({ ...value, discriminator: POSITION_DISCRIMINATOR }));
 }
 
 /** Gets the decoder for {@link Position} account data. */
 export function getPositionDecoder(): FixedSizeDecoder<Position> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['market', getAddressDecoder()], ['owner', getAddressDecoder()], ['yesTokens', getU64Decoder()], ['noTokens', getU64Decoder()], ['collateral', getU64Decoder()], ['leverage', getU16Decoder()], ['notional', getU64Decoder()], ['entrySlot', getU64Decoder()], ['feeRateSnapshot', getU64Decoder()], ['redeemed', getBooleanDecoder()], ['bump', getU8Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 16)]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['market', getAddressDecoder()], ['owner', getAddressDecoder()], ['tokens', getArrayDecoder(getU64Decoder(), { size: 3 })], ['collateral', getU64Decoder()], ['redeemed', getBooleanDecoder()], ['bump', getU8Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 32)]]);
 }
 
 /** Gets the codec for {@link Position} account data. */
@@ -130,5 +104,5 @@ export async function fetchAllMaybePosition(
 }
 
 export function getPositionSize(): number {
-  return 140;
+  return 138;
 }

@@ -1,40 +1,42 @@
-//! `resolve` — verify the market outcome against the TxLINE oracle via CPI
-//! `validate_stat` and lock in `Outcome` (plan §4.7).
+//! `resolve` — hint-and-prove-positively resolution of the 3-way (1X2) market
+//! (SPEC §3.1; protocol in `plans/resolve-1x2.md`).
 //!
-//! Trust model:
-//! - The **predicate comes from `market_config` (D-8), never from the keeper.**
-//! - The keeper only *hints* the outcome direction (`Side::Yes | Side::No`):
-//!   - `Yes` → the STORED predicate is validated;
-//!   - `No`  → the sound integer NEGATION of the stored predicate is validated
-//!     (`negate_predicate`, pure fn below).
-//!   Either way the CPI must return `true` against the on-chain Merkle root —
-//!   **the keeper cannot choose an outcome the proof doesn't prove.**
-//! - `stat_a`/`stat_b` keys and the combining operator are pinned to the
-//!   stored `stat_key_a`/`stat_key_b`/`stat_op` (goalpost guard); the stat
-//!   *values* are pinned by the Merkle proof itself.
-//!
-//! Failure modes for the keeper (plan §4.7):
-//! - TxLINE CPI errors propagate VERBATIM (a failed CPI aborts the tx), so the
-//!   keeper distinguishes retryable `RootNotAvailable (6007)` from terminal
-//!   proof errors (6004/6021/6023/6062…) straight from the tx logs/error code.
-//! - A CPI that *returns* `false` (proof fine, predicate direction not proven)
-//!   surfaces as our `AmmError::ProofRejected` — keeper retries with the other
-//!   outcome hint or refetches the proof.
+//! Trust model (D-8 preserved):
+//! - The keeper's ONLY input is the outcome `hint ∈ {0=Team1, 1=Draw,
+//!   2=Team2}`. The comparator is derived ON-CHAIN from the hint
+//!   (`derive_predicate_for_outcome`): Team1→GreaterThan, Draw→EqualTo,
+//!   Team2→LessThan, on the same stored `stat_a − stat_b` vs `threshold`.
+//!   Draw is a POSITIVE `EqualTo` proof — no negation is ever needed.
+//! - Exactly ONE `validate_stat` CPI must return `true`;
+//!   `market.outcome = hint` only then. Integer trichotomy makes the three
+//!   derived predicates mutually exclusive + exhaustive (unit-proven in
+//!   `predicate.rs`): a wrong hint yields `false` → `ProofRejected`, no
+//!   state change (liveness-only cost).
+//! - Stat keys/op pinned to the stored config; stat VALUES pinned by the
+//!   Merkle proof; `stat_to_prove.period` pinned to the config's
+//!   `resolution_period` (stale-batch replay guard, O-1x2-1 — a mid-match
+//!   batch's stats cannot masquerade as the final whistle).
+//! - Arbitrary-CPI guard (`address = global.txline_program`), roots PDA
+//!   re-derivation, and the returned bool read via `Return::get()` before any
+//!   other CPI (this handler makes none).
 
-/// 1-of-3 (1X2) predicate derivation — pure prototype for the future
-/// 3-way market's `resolve_1x2` (SPEC §3.1, `plans/resolve-1x2.md`).
-/// Not called by this binary handler.
-pub mod predicate_1x2;
+/// 1-of-3 (1X2) predicate derivation — pure, unit-tested. Team1→GreaterThan,
+/// Draw→EqualTo, Team2→LessThan over the stored `stat_a − stat_b` vs threshold.
+pub mod predicate;
 
 use anchor_lang::prelude::*;
 
 use crate::constants::{CONFIG_SEED, DAILY_SCORES_ROOTS_SEED, MARKET_SEED, MILLIS_PER_DAY};
 use crate::error::AmmError;
-use crate::state::{GlobalConfig, Market, MarketConfig, MarketResolved, MarketState, Outcome, Side};
+use crate::instructions::resolve::predicate::{
+    derive_predicate_for_outcome, Outcome as HintOutcome, StoredPredicate,
+};
+use crate::state::{
+    GlobalConfig, Market, MarketResolved, MarketConfig, MarketState, Outcome,
+};
 use crate::txline;
 use crate::txline_types::{
-    self as tt, comparison_from_u8, COMPARISON_EQUAL_TO, COMPARISON_GREATER_THAN,
-    COMPARISON_LESS_THAN, STAT_OP_ADD, STAT_OP_NONE, STAT_OP_SUBTRACT,
+    self as tt, comparison_from_u8, STAT_OP_ADD, STAT_OP_NONE, STAT_OP_SUBTRACT,
 };
 
 #[derive(Accounts)]
@@ -60,7 +62,7 @@ pub struct Resolve<'info> {
     pub market_config: Box<Account<'info, MarketConfig>>,
 
     /// CHECK: arbitrary-CPI guard — pinned to the trusted TxLINE program id
-    /// stored on `GlobalConfig` (plan §6). Only used as the CPI callee.
+    /// stored on `GlobalConfig`. Only used as the CPI callee.
     #[account(address = global.txline_program @ AmmError::Unauthorized)]
     pub txline_program: UncheckedAccount<'info>,
 
@@ -73,7 +75,7 @@ pub struct Resolve<'info> {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn handler(
     ctx: Context<Resolve>,
-    outcome_hint: Side,
+    hint: u8,
     ts: i64,
     fixture_summary: tt::ScoresBatchSummary,
     fixture_proof: Vec<tt::ProofNode>,
@@ -92,14 +94,22 @@ pub(crate) fn handler(
         AmmError::FixtureMismatch
     );
 
-    // ---- 2. daily_scores_merkle_roots: owner + PDA re-derivation ----
+    // ---- 2. defensive 1X2 config shape re-check ----
+    let mc = &ctx.accounts.market_config;
+    let stored = StoredPredicate {
+        resolution_threshold: mc.resolution_threshold,
+        stat_key_a: mc.stat_key_a,
+        stat_key_b: mc.stat_key_b,
+        stat_op: mc.stat_op,
+    };
+
+    // ---- 3. daily_scores_merkle_roots: owner + PDA re-derivation ----
     let txline_id = ctx.accounts.global.txline_program;
     require!(
         *ctx.accounts.daily_scores_merkle_roots.owner == txline_id,
         AmmError::InvalidMerkleRootsAccount
     );
-    // TxLINE `ts` is in MILLISECONDS (verified vs the real devnet binary):
-    // epoch_day = ts / 86_400_000, matching its own seeds constraint exactly.
+    // TxLINE `ts` is in MILLISECONDS: epoch_day = ts / 86_400_000.
     let epoch_day = u16::try_from(ts.div_euclid(MILLIS_PER_DAY))
         .map_err(|_| AmmError::InvalidEpochDay)?;
     let (expected_roots, _) = Pubkey::find_program_address(
@@ -111,17 +121,16 @@ pub(crate) fn handler(
         AmmError::InvalidMerkleRootsAccount
     );
 
-    // ---- 3. pin stat keys + operator to the stored predicate (D-8) ----
-    let mc = &ctx.accounts.market_config;
-    // market-kind gate (resolve-1x2.md §5): a 3-way config must never be
-    // resolved through this 2-outcome handler. Every pre-existing config
-    // decodes as Binary (zero-carved field) — no behavior change for v0.
-    require!(
-        mc.market_kind == crate::constants::MARKET_KIND_BINARY,
-        AmmError::MarketKindMismatch
-    );
+    // ---- 4. pin stat keys + operator to the stored predicate (D-8) ----
+    // validate_config (inside the derivation below) guarantees the stored
+    // shape is two distinct keys + Subtract; here we pin the PASSED terms.
     require!(
         stat_a.stat_to_prove.key == mc.stat_key_a,
+        AmmError::PredicateMismatch
+    );
+    let b_term = stat_b.as_ref().ok_or(AmmError::PredicateMismatch)?;
+    require!(
+        b_term.stat_to_prove.key == mc.stat_key_b,
         AmmError::PredicateMismatch
     );
     let op_byte = match op {
@@ -129,31 +138,32 @@ pub(crate) fn handler(
         Some(tt::BinaryExpression::Add) => STAT_OP_ADD,
         Some(tt::BinaryExpression::Subtract) => STAT_OP_SUBTRACT,
     };
-    if mc.stat_key_b != 0 {
-        let b = stat_b.as_ref().ok_or(AmmError::PredicateMismatch)?;
-        require!(
-            b.stat_to_prove.key == mc.stat_key_b,
-            AmmError::PredicateMismatch
-        );
-        require!(op_byte == mc.stat_op && op_byte != STAT_OP_NONE, AmmError::PredicateMismatch);
-    } else {
-        require!(
-            stat_b.is_none() && op_byte == STAT_OP_NONE,
-            AmmError::PredicateMismatch
-        );
-    }
+    require!(
+        op_byte == mc.stat_op && op_byte == STAT_OP_SUBTRACT,
+        AmmError::PredicateMismatch
+    );
 
-    // ---- 4. predicate direction from the STORED predicate + hint ----
-    let (threshold, comparison) = match outcome_hint {
-        Side::Yes => (mc.resolution_threshold, mc.resolution_comparison),
-        Side::No => negate_predicate(mc.resolution_threshold, mc.resolution_comparison)?,
+    // ---- 5. pin the stat PERIOD (stale-batch replay guard, O-1x2-1) ----
+    require!(
+        stat_a.stat_to_prove.period == mc.resolution_period
+            && b_term.stat_to_prove.period == mc.resolution_period,
+        AmmError::ResolutionPeriodMismatch
+    );
+
+    // ---- 6. derive THIS hint's positive predicate on-chain ----
+    let hint_outcome = match hint {
+        0 => HintOutcome::Team1,
+        1 => HintOutcome::Draw,
+        2 => HintOutcome::Team2,
+        _ => return err!(AmmError::LmsrInvalidOutcomeIndex),
     };
+    let derived = derive_predicate_for_outcome(&stored, hint_outcome)?;
     let predicate = txline::types::TraderPredicate {
-        threshold,
-        comparison: comparison_from_u8(comparison)?,
+        threshold: derived.threshold,
+        comparison: comparison_from_u8(derived.comparison)?,
     };
 
-    // ---- 5. CPI into TxLINE validate_stat, read the returned bool ----
+    // ---- 7. exactly ONE CPI into validate_stat; read the returned bool ----
     let cpi_ctx = CpiContext::new(
         ctx.accounts.txline_program.key(),
         txline::cpi::accounts::ValidateStat {
@@ -179,10 +189,11 @@ pub(crate) fn handler(
     .get();
     require!(is_valid, AmmError::ProofRejected);
 
-    // ---- 6. outcome derived from what the proof proved ----
-    let outcome = match outcome_hint {
-        Side::Yes => Outcome::Yes,
-        Side::No => Outcome::No,
+    // ---- 8. outcome = the hint the proof just PROVED ----
+    let outcome = match hint_outcome {
+        HintOutcome::Team1 => Outcome::Team1,
+        HintOutcome::Draw => Outcome::Draw,
+        HintOutcome::Team2 => Outcome::Team2,
     };
     let market = &mut ctx.accounts.market;
     market.outcome = outcome;
@@ -191,33 +202,3 @@ pub(crate) fn handler(
     emit!(MarketResolved { fixture_id: market.fixture_id, outcome });
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Pure predicate negation (unit-tested, no Anchor account types)
-// ---------------------------------------------------------------------------
-
-/// Sound integer negation of a stored `(threshold, comparison)` predicate:
-/// - `¬(x > t)` ≡ `x <= t` ≡ `x < t + 1`
-/// - `¬(x < t)` ≡ `x >= t` ≡ `x > t - 1`
-/// - `¬(x == t)` is a disjunction — NOT expressible as one TxLINE comparison →
-///   `PredicateNotNegatable`. Author markets with GT/LT predicates if the NO
-///   side must be provable by negation.
-///
-/// Threshold shifts are checked: `t == i32::MAX/MIN` cannot shift.
-pub fn negate_predicate(threshold: i32, comparison: u8) -> std::result::Result<(i32, u8), AmmError> {
-    match comparison {
-        COMPARISON_GREATER_THAN => {
-            let t = threshold.checked_add(1).ok_or(AmmError::MathOverflow)?;
-            Ok((t, COMPARISON_LESS_THAN))
-        }
-        COMPARISON_LESS_THAN => {
-            let t = threshold.checked_sub(1).ok_or(AmmError::MathOverflow)?;
-            Ok((t, COMPARISON_GREATER_THAN))
-        }
-        COMPARISON_EQUAL_TO => Err(AmmError::PredicateNotNegatable),
-        _ => Err(AmmError::PredicateMismatch),
-    }
-}
-
-#[cfg(test)]
-mod tests;

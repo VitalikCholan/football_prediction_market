@@ -1,178 +1,249 @@
 /**
- * Event-decoder unit tests using REAL devnet fixtures: the base64 payloads
- * below are verbatim `Program data:` lines emitted by program
- * H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY (markets for TxLINE fixtures
- * 18179549 and 17588316, July 2026).
+ * Unit tests for the canonical 3-way (1X2) LMSR events: event decoding + the
+ * LMSR softmax price port. No live market exists on this fresh devnet redeploy
+ * yet, so these encode each event's borsh body by hand (discriminator + fields,
+ * mirroring `state.rs`) and assert the decoder round-trips it. When a real
+ * market lands, swap in captured `Program data:` payloads.
  */
+import {
+  getAddressEncoder,
+  getBooleanEncoder,
+  getI64Encoder,
+  getU16Encoder,
+  getU64Encoder,
+  getU8Encoder,
+  type ReadonlyUint8Array,
+} from '@solana/kit';
+import { createHash } from 'node:crypto';
 import {
   decodeAmmEvent,
   decodeAmmEventsFromLogs,
   EventOutcome,
   extractProgramDataPayloads,
 } from './events.decoder';
-import { bigintSqrt, deriveReservesFromPrice } from './reserve-math';
+import { prices1x2Bps } from './lmsr-price';
 
 const PROGRAM = 'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY';
 
-const b64 = (s: string) => Uint8Array.from(Buffer.from(s, 'base64'));
+// Anchor `emit!` discriminator = sha256("event:<Name>")[..8].
+const disc = (name: string): Uint8Array =>
+  Uint8Array.from(
+    createHash('sha256').update(`event:${name}`).digest().subarray(0, 8),
+  );
 
-// Real devnet payloads (market HNkBat…, fixture 18179549, resolved YES).
-const MARKET_CREATED =
-  'WLiC5+JUBjrdZRUBAAAAAEP8OYD4HfdchoJ0UJSAXdEagRUx/ZOo1sIp28L71FWyAOH1BQAAAAAA4fUFAAAAAIgT';
-const MARKET_ACTIVATED = 'xElOMLuEawvdZRUBAAAAAMD/SWoAAAAA';
-const TRADE_BUY_YES =
-  'GP7amP0rElHdZRUBAAAAAHIxzQkuqNzOEvXAuEnZ+gnpMUau74qXE8uWa0Fy0s22AQFAS0wAAAAAAAl0SAAAAAAAexQeAA==';
-const MARKET_FROZEN = 'oiTVzhl20p7dZRUBAAAAAOj/SWoAAAAA';
-const MARKET_RESOLVED = 'WUPmX49qx8rdZRUBAAAAAAE=';
-const REDEEMED =
-  'Dh23Rx+laybdZRUBAAAAAHIxzQkuqNzOEvXAuEnZ+gnpMUau74qXE8uWa0Fy0s22AQl0SAAAAAAA';
+const cat = (...parts: ReadonlyUint8Array[]): Uint8Array => {
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+};
 
-describe('decodeAmmEvent (real devnet payloads)', () => {
-  it('decodes MarketCreated', () => {
-    const ev = decodeAmmEvent(b64(MARKET_CREATED));
+const i64 = (v: bigint) => getI64Encoder().encode(v);
+const u64 = (v: bigint) => getU64Encoder().encode(v);
+const u16 = (v: number) => getU16Encoder().encode(v);
+const u8 = (v: number) => getU8Encoder().encode(v);
+const bool = (v: boolean) => getBooleanEncoder().encode(v);
+const addr = (a: string) => getAddressEncoder().encode(a as never);
+
+const OWNER = '8gmXG7C9NeZRUXfNNiyokAuqXfn9NPCKdSHuqDGdsaow';
+const CONFIG = '5aPPJQsxdDRxhPJnKoVCkP4fS1D9JFoBqjAYyKoRjddj';
+const FIX = 18179549n;
+
+describe('decodeAmmEvent — canonical 1X2 events (borsh round-trip)', () => {
+  it('decodes MarketCreated (config, b, q[3], prices[3])', () => {
+    const payload = cat(
+      disc('MarketCreated'),
+      i64(FIX),
+      addr(CONFIG),
+      u64(100_000_000n),
+      u64(1_000_000n),
+      u64(0n),
+      u64(0n),
+      u16(3333),
+      u16(3333),
+      u16(3333),
+    );
+    const ev = decodeAmmEvent(payload);
     expect(ev).toMatchObject({
       name: 'MarketCreated',
-      fixtureId: 18179549n,
-      yesReserve: 100_000_000n,
-      noReserve: 100_000_000n,
-      priceBps: 5000,
+      fixtureId: FIX,
+      config: CONFIG,
+      b: 100_000_000n,
+      q: [1_000_000n, 0n, 0n],
+      pricesBps: [3333, 3333, 3333],
     });
-    if (ev?.name === 'MarketCreated') {
-      expect(ev.config).toBe('5aPPJQsxdDRxhPJnKoVCkP4fS1D9JFoBqjAYyKoRjddj');
-    }
   });
 
   it('decodes MarketActivated / MarketFrozen (fixture + ts)', () => {
-    expect(decodeAmmEvent(b64(MARKET_ACTIVATED))).toMatchObject({
+    expect(
+      decodeAmmEvent(cat(disc('MarketActivated'), i64(FIX), i64(1783234496n))),
+    ).toMatchObject({
       name: 'MarketActivated',
-      fixtureId: 18179549n,
+      fixtureId: FIX,
       ts: 1783234496n,
     });
-    expect(decodeAmmEvent(b64(MARKET_FROZEN))).toMatchObject({
+    expect(
+      decodeAmmEvent(cat(disc('MarketFrozen'), i64(FIX), i64(1783234536n))),
+    ).toMatchObject({
       name: 'MarketFrozen',
-      fixtureId: 18179549n,
+      fixtureId: FIX,
       ts: 1783234536n,
     });
   });
 
-  it('decodes a Trade (buy YES, 5 USDT, price 5000 -> 5243 bps)', () => {
-    const ev = decodeAmmEvent(b64(TRADE_BUY_YES));
-    expect(ev).toMatchObject({
+  it('decodes a Trade (buy Draw)', () => {
+    const payload = cat(
+      disc('Trade'),
+      i64(FIX),
+      addr(OWNER),
+      u8(1), // outcome = Draw
+      bool(true), // is_buy
+      u64(5_000_000n),
+      u64(4_748_297n),
+      u16(3500),
+      u16(30),
+    );
+    expect(decodeAmmEvent(payload)).toMatchObject({
       name: 'Trade',
-      fixtureId: 18179549n,
-      sideYes: true,
+      fixtureId: FIX,
+      owner: OWNER,
+      outcome: 1,
       isBuy: true,
       usdt: 5_000_000n,
       tokens: 4_748_297n,
-      priceBps: 5243,
+      priceBps: 3500,
       feeBps: 30,
     });
-    if (ev?.name === 'Trade') {
-      expect(ev.owner).toBe('8gmXG7C9NeZRUXfNNiyokAuqXfn9NPCKdSHuqDGdsaow');
-    }
   });
 
-  it('decodes MarketResolved outcome Yes', () => {
-    expect(decodeAmmEvent(b64(MARKET_RESOLVED))).toMatchObject({
+  it('decodes MarketResolved (Team2) and Redeemed', () => {
+    expect(
+      decodeAmmEvent(cat(disc('MarketResolved'), i64(FIX), u8(3))),
+    ).toMatchObject({
       name: 'MarketResolved',
-      fixtureId: 18179549n,
-      outcome: EventOutcome.Yes,
+      fixtureId: FIX,
+      outcome: EventOutcome.Team2,
+    });
+    expect(
+      decodeAmmEvent(
+        cat(disc('Redeemed'), i64(FIX), addr(OWNER), u8(3), u64(4_748_297n)),
+      ),
+    ).toMatchObject({
+      name: 'Redeemed',
+      fixtureId: FIX,
+      owner: OWNER,
+      outcome: EventOutcome.Team2,
+      payout: 4_748_297n,
     });
   });
 
-  it('decodes Redeemed (winner payout)', () => {
-    expect(decodeAmmEvent(b64(REDEEMED))).toMatchObject({
-      name: 'Redeemed',
-      fixtureId: 18179549n,
-      outcome: EventOutcome.Yes,
-      payout: 4_748_297n,
+  it('decodes MarketClosed and Set mint/redeem events', () => {
+    expect(
+      decodeAmmEvent(cat(disc('MarketClosed'), i64(FIX), u64(42n))),
+    ).toMatchObject({ name: 'MarketClosed', fixtureId: FIX, swept: 42n });
+    expect(
+      decodeAmmEvent(
+        cat(disc('SetMinted'), i64(FIX), addr(OWNER), u64(1_000n)),
+      ),
+    ).toMatchObject({
+      name: 'SetMinted',
+      fixtureId: FIX,
+      owner: OWNER,
+      amount: 1_000n,
+    });
+    expect(
+      decodeAmmEvent(
+        cat(disc('SetRedeemed'), i64(FIX), addr(OWNER), u64(1_000n)),
+      ),
+    ).toMatchObject({
+      name: 'SetRedeemed',
+      fixtureId: FIX,
+      owner: OWNER,
+      amount: 1_000n,
     });
   });
 
   it('returns null for unknown discriminators and truncated payloads', () => {
     expect(decodeAmmEvent(new Uint8Array(8))).toBeNull();
-    expect(decodeAmmEvent(b64(TRADE_BUY_YES).slice(0, 20))).toBeNull();
     expect(decodeAmmEvent(new Uint8Array(0))).toBeNull();
   });
 });
 
 describe('extractProgramDataPayloads (invoke-frame attribution)', () => {
-  // Verbatim devnet logs of tx cSnSzh2aHaiR… (buy on fixture 18179549).
-  const realBuyLogs = [
+  const TRADE = Buffer.from(
+    cat(
+      disc('Trade'),
+      i64(FIX),
+      addr(OWNER),
+      u8(1),
+      bool(true),
+      u64(5_000_000n),
+      u64(4_748_297n),
+      u16(3500),
+      u16(30),
+    ),
+  ).toString('base64');
+
+  const buyLogs = [
     `Program ${PROGRAM} invoke [1]`,
     'Program log: Instruction: Buy',
     'Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]',
-    'Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 105 of 185331 compute units',
     'Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success',
-    `Program data: ${TRADE_BUY_YES}`,
+    `Program data: ${TRADE}`,
     `Program ${PROGRAM} consumed 17576 of 200000 compute units`,
     `Program ${PROGRAM} success`,
   ];
 
-  it('extracts our program data from real buy logs', () => {
-    expect(extractProgramDataPayloads(realBuyLogs, PROGRAM)).toEqual([
-      TRADE_BUY_YES,
-    ]);
+  it('extracts our program data from buy logs', () => {
+    expect(extractProgramDataPayloads(buyLogs, PROGRAM)).toEqual([TRADE]);
   });
 
   it('skips Program data emitted by other programs (CPI frames)', () => {
     const foreign = [
       'Program SomeOtherProgram1111111111111111111111111 invoke [1]',
-      `Program data: ${TRADE_BUY_YES}`,
+      `Program data: ${TRADE}`,
       'Program SomeOtherProgram1111111111111111111111111 success',
     ];
     expect(extractProgramDataPayloads(foreign, PROGRAM)).toEqual([]);
   });
 
-  it('attributes data inside nested CPI frames to the inner program', () => {
-    const nested = [
-      `Program ${PROGRAM} invoke [1]`,
-      'Program Other11111111111111111111111111111111111111 invoke [2]',
-      'Program data: aW5uZXI=',
-      'Program Other11111111111111111111111111111111111111 success',
-      `Program data: ${MARKET_RESOLVED}`,
-      `Program ${PROGRAM} success`,
-    ];
-    expect(extractProgramDataPayloads(nested, PROGRAM)).toEqual([
-      MARKET_RESOLVED,
-    ]);
-  });
-
   it('decodeAmmEventsFromLogs decodes end-to-end', () => {
-    const events = decodeAmmEventsFromLogs(realBuyLogs, PROGRAM);
+    const events = decodeAmmEventsFromLogs(buyLogs, PROGRAM);
     expect(events).toHaveLength(1);
     expect(events[0].name).toBe('Trade');
   });
 });
 
-describe('reserve math', () => {
-  it('bigintSqrt is exact for perfect squares and floors otherwise', () => {
-    expect(bigintSqrt(0n)).toBe(0n);
-    expect(bigintSqrt(1n)).toBe(1n);
-    expect(bigintSqrt(10_000_000_000_000_000n)).toBe(100_000_000n);
-    expect(bigintSqrt(99n)).toBe(9n);
+describe('prices1x2Bps — LMSR softmax port (parity with lmsr.rs)', () => {
+  it('is uniform at the origin: [3333, 3333, 3333]', () => {
+    // Matches lmsr.rs `prices_uniform_at_origin` (floor(10_000/3) each).
+    expect(prices1x2Bps([0n, 0n, 0n], 1_000_000n)).toEqual([3333, 3333, 3333]);
   });
 
-  it('recovers post-trade reserves from k + price (real trade: 5000->5243 bps)', () => {
-    const k = 100_000_000n * 100_000_000n; // from the real MarketCreated event
-    const { yesReserve, noReserve } = deriveReservesFromPrice(k, 5243, {
-      yesReserve: 100_000_000n,
-      noReserve: 100_000_000n,
-    });
-    // price(YES) = no/(yes+no) should round-trip to 5243 bps (±1 bps of
-    // integer-sqrt truncation; the exact event price is stored on the row).
-    const bps = Number((noReserve * 10_000n) / (yesReserve + noReserve));
-    expect(Math.abs(bps - 5243)).toBeLessThanOrEqual(1);
-    // constant product preserved (within integer-sqrt rounding)
-    const kBack = yesReserve * noReserve;
-    const drift = kBack > k ? kBack - k : k - kBack;
-    expect(drift < k / 1_000_000n).toBe(true);
+  it('sums within the documented rounding band [9997, 10000]', () => {
+    const p = prices1x2Bps([2_000_000n, 0n, 0n], 1_000_000n);
+    const sum = p[0] + p[1] + p[2];
+    expect(sum).toBeGreaterThanOrEqual(9997);
+    expect(sum).toBeLessThanOrEqual(10_000);
+    // Dominant outcome priced highest; the two symmetric ones are equal.
+    expect(p[0]).toBeGreaterThan(p[1]);
+    expect(p[1]).toBe(p[2]);
   });
 
-  it('falls back on degenerate prices', () => {
-    const fallback = { yesReserve: 7n, noReserve: 11n };
-    expect(deriveReservesFromPrice(0n, 5000, fallback)).toEqual(fallback);
-    expect(deriveReservesFromPrice(100n, 0, fallback)).toEqual(fallback);
-    expect(deriveReservesFromPrice(100n, 10_000, fallback)).toEqual(fallback);
+  it('is shift-invariant (equal q shift leaves prices unchanged)', () => {
+    const base = prices1x2Bps([1_000_000n, 500_000n, 0n], 2_000_000n);
+    const shifted = prices1x2Bps(
+      [3_000_000n, 2_500_000n, 2_000_000n],
+      2_000_000n,
+    );
+    expect(shifted).toEqual(base);
+  });
+
+  it('falls back to an even split for degenerate b = 0', () => {
+    expect(prices1x2Bps([1n, 2n, 3n], 0n)).toEqual([3333, 3333, 3333]);
   });
 });

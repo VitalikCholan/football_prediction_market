@@ -56,7 +56,6 @@ import {
 } from "@solana/kit";
 import {
   MarketState,
-  Side,
   fetchMaybeGlobalConfig,
   fetchMaybeMarket,
   fetchMaybeMarketConfig,
@@ -104,9 +103,12 @@ const FIXTURE_ID = 17_588_316n;
 const KICKOFF_DELAY_SECS = 120n; // must be > now at init, <= now at activate
 const FREEZE_DELAY_SECS = 6n * 3_600n; // freeze a few hours out
 const GRACE_SECS = 3_600n;
-const SEED_YES = 100_000_000n; // 100 USDT virtual — 50/50 odds
-const SEED_NO = 100_000_000n;
-const SEED_LIQUIDITY = 80_000_000n; // 80 USDT real collateral
+const RESOLUTION_PERIOD = 100; // TxLINE full-time final stats carry period 100
+// 1X2 LMSR seed: liquidity depth `b` + symmetric per-outcome offsets [0,0,0].
+const SEED_B = 100_000_000n; // 100 USDT LMSR depth
+const SEED_Q: [bigint, bigint, bigint] = [0n, 0n, 0n]; // symmetric (1/3 each)
+const SEED_LIQUIDITY = 200_000_000n; // 200 USDT real collateral (>= ceil(b·ln3))
+const BUY_OUTCOME = 0; // Team1 (home win)
 const BUY_USDT_IN = 5_000_000n; // 5 USDT
 const MIN_USDT_FOR_MARKET = SEED_LIQUIDITY + BUY_USDT_IN;
 
@@ -365,27 +367,26 @@ async function main() {
       authority: admin,
       marketConfig: marketConfigPda,
       configId: CONFIG_ID,
-      // params became a nested struct once FeeParamsArgs stopped being
-      // single-use (create_market_config_1x2 reuses it) — same wire bytes.
-      params: {
-        baseFeeBps: 30,
-        maxFeeBps: 500,
-        vfcNum: 5_000,
-        filterPeriod: 30,
-        decayPeriod: 600,
-        reductionBps: 5_000,
-        maxVAcc: 1_000_000n,
-        resolutionGraceSecs: GRACE_SECS,
-        // home win: (goals P1 [key 1] - goals P2 [key 2]) > 0 — GT=0, Subtract=2
-        resolutionThreshold: 0,
-        resolutionComparison: 0,
-        statKeyA: 1,
-        statKeyB: 2,
-        statOp: 2,
-      },
+      // Fee params are flattened onto the ix args. 1X2 predicate base
+      // (stat1 - stat2); resolve derives the per-hint comparator, so the stored
+      // threshold/comparison are ignored.
+      baseFeeBps: 30,
+      maxFeeBps: 500,
+      vfcNum: 5_000,
+      filterPeriod: 30,
+      decayPeriod: 600,
+      reductionBps: 5_000,
+      maxVAcc: 1_000_000n,
+      resolutionGraceSecs: GRACE_SECS,
+      resolutionThreshold: 0,
+      resolutionComparison: 0,
+      statKeyA: 1, // P1 (home) goals
+      statKeyB: 2, // P2 (away) goals
+      statOp: 2, // Subtract
+      resolutionPeriod: RESOLUTION_PERIOD,
     });
     await sendTx(admin, [ix], "create_market_config");
-    return `created ${marketConfigPda}: predicate (stat1 - stat2) > 0`;
+    return `created ${marketConfigPda}: predicate (stat1 - stat2), period ${RESOLUTION_PERIOD}`;
   });
 
   // ---- 3. TxLINE devnet USDT faucet (100 USDT per call) ----
@@ -437,13 +438,13 @@ async function main() {
       fixtureId: FIXTURE_ID,
       kickoffTs,
       freezeTs,
-      seedYes: SEED_YES,
-      seedNo: SEED_NO,
+      b: SEED_B,
+      seedQ: SEED_Q,
       seedLiquidity: SEED_LIQUIDITY,
     });
     await sendTx(admin, [ix], "init_market");
     marketExists = true;
-    return `market ${marketPda}, vault ${vaultPda}, kickoff ${kickoffTs}, freeze ${freezeTs}, 50/50 @ ${SEED_LIQUIDITY} raw seed`;
+    return `market ${marketPda}, vault ${vaultPda}, kickoff ${kickoffTs}, freeze ${freezeTs}, symmetric seed_q @ ${SEED_LIQUIDITY} raw`;
   });
 
   // ---- 5a. open_position ----
@@ -490,7 +491,7 @@ async function main() {
   });
 
   // ---- 5c. buy (one real trade) ----
-  await step("buy 5 USDT of YES", async () => {
+  await step("buy 5 USDT of Team1", async () => {
     if (!marketExists) return "SKIP — no market";
     const market = await withRpc("fetchMaybeMarket", (rpc) =>
       fetchMaybeMarket(rpc, marketPda),
@@ -501,8 +502,8 @@ async function main() {
     const pos = await withRpc("fetchMaybePosition", (rpc) =>
       fetchMaybePosition(rpc, positionPda),
     );
-    if (pos.exists && pos.data.yesTokens > 0n) {
-      return `SKIP — position already holds ${pos.data.yesTokens} YES tokens`;
+    if (pos.exists && pos.data.tokens[0] > 0n) {
+      return `SKIP — position already holds ${pos.data.tokens[0]} Team1 tokens`;
     }
     const ix = await getBuyInstructionAsync({
       trader: admin,
@@ -513,16 +514,16 @@ async function main() {
       vault: vaultPda,
       usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
-      side: Side.Yes,
+      outcome: 0, // 0 = Team1
       usdtIn: BUY_USDT_IN,
-      minOut: 1n,
+      minTokensOut: 1n,
     });
     await sendTx(admin, [ix], "buy");
     const after = await withRpc("fetchMaybePosition", (rpc) =>
       fetchMaybePosition(rpc, positionPda),
     );
-    const yes = after.exists ? after.data.yesTokens : 0n;
-    return `bought ${BUY_USDT_IN} raw USDT of YES → ${yes} YES tokens`;
+    const team1 = after.exists ? after.data.tokens[0] : 0n;
+    return `bought ${BUY_USDT_IN} raw USDT of Team1 → ${team1} Team1 tokens`;
   });
 
   // ---- 6. verify + report ----

@@ -6,14 +6,17 @@ import {
 } from "@solana/kit";
 import {
   AMM_ERROR__INVALID_MARKET_STATE,
-  AMM_ERROR__PREDICATE_NOT_NEGATABLE,
   AMM_ERROR__PROOF_REJECTED,
   BinaryExpression,
   MarketState,
-  Side,
+  fetchMaybeMarket,
   getResolveInstructionAsync,
 } from "@fpm/idl";
-import { DAILY_SCORES_ROOTS_SEED, TXLINE, findMarketPda } from "@fpm/shared";
+import {
+  DAILY_SCORES_ROOTS_SEED,
+  TXLINE,
+  findMarketPda,
+} from "@fpm/shared";
 import { log } from "../log.ts";
 import {
   discriminateTxError,
@@ -23,41 +26,111 @@ import {
   type DiscriminatedTxError,
 } from "../solana/errors.ts";
 import type { ProofFetcher, StatValidationQuery } from "../txline/proof.ts";
-import type { ResolveProofArgs } from "../txline/types.ts";
-import { marketStateName, readMarket, type ActionContext } from "./context.ts";
+import { Period, StatBase } from "../txline/scoreStream.ts";
+import { readStat, type ResolveProofArgs, type ScoreEvent } from "../txline/types.ts";
+import { marketStateName, type ActionContext } from "./context.ts";
 
 export { TXLINE_ERR } from "../solana/errors.ts";
 
+/**
+ * 1X2 outcome hint the keeper passes to `resolve`.
+ *
+ * NB: this is the on-chain HINT-BYTE space (`0=Team1, 1=Draw, 2=Team2`, per
+ * `resolve.rs`), NOT the `Outcome` account enum (`Unset=0, Team1=1, …`).
+ * Declared as a const object (NOT a TS `enum`) because the keeper runs on Node
+ * native type-stripping (`erasableSyntaxOnly` — enums are non-erasable).
+ */
+export const OutcomeHint = {
+  Team1: 0,
+  Draw: 1,
+  Team2: 2,
+} as const;
+export type OutcomeHint =
+  (typeof OutcomeHint)[keyof typeof OutcomeHint];
+
+/** Human-readable name for a hint byte (logging). */
+function hintName(hint: OutcomeHint): string {
+  return (
+    (Object.keys(OutcomeHint) as (keyof typeof OutcomeHint)[]).find(
+      (k) => OutcomeHint[k] === hint,
+    ) ?? `Hint(${hint})`
+  );
+}
+
+/**
+ * Compute the correct outcome hint from the FINAL score the keeper already
+ * knows (from the SSE finalising frame or the historical replay):
+ *   home > away -> Team1, home == away -> Draw, home < away -> Team2.
+ *
+ * The on-chain `derive_predicate_for_outcome` turns this hint into the positive
+ * comparator (Team1→GreaterThan, Draw→EqualTo, Team2→LessThan) on the SAME
+ * stored `stat_a − stat_b` vs `threshold`, so a correct hint proves positively
+ * in ONE `validate_stat` CPI (Draw included — the EqualTo wall is dissolved on
+ * this path, D-8/resolve.md).
+ */
+export function outcomeHintFromScore(
+  homeGoals: number,
+  awayGoals: number,
+): OutcomeHint {
+  if (homeGoals > awayGoals) return OutcomeHint.Team1;
+  if (homeGoals < awayGoals) return OutcomeHint.Team2;
+  return OutcomeHint.Draw;
+}
+
+/**
+ * Extract the final (home, away) goals from a finalising score event's `stats`
+ * map — the input a scheduler/SSE hook feeds to `resolveMarket` so it can
+ * pick the outcome hint. Full-time goals live at StatBase P1_GOALS/P2_GOALS;
+ * final stats are reported under period 100 with a bare-base-key fallback (see
+ * `readStat`). Returns null if either goal count is missing.
+ */
+export function scoreFromEvent(
+  e: Pick<ScoreEvent, "stats">,
+): { homeGoals: number; awayGoals: number } | null {
+  const home =
+    readStat(e.stats, StatBase.P1_GOALS, 100) ??
+    readStat(e.stats, StatBase.P1_GOALS, Period.FULL);
+  const away =
+    readStat(e.stats, StatBase.P2_GOALS, 100) ??
+    readStat(e.stats, StatBase.P2_GOALS, Period.FULL);
+  if (home === undefined || away === undefined) return null;
+  return { homeGoals: home, awayGoals: away };
+}
+
 export interface ResolveOptions {
-  /** Stat-validation query identifying which stat(s) prove this market. */
+  /** The FINAL score (keeper knows it) — used to pick the hint deterministically. */
+  score: { homeGoals: number; awayGoals: number };
+  /** Stat-validation query identifying the P1/P2 goals stats to prove. */
   statQuery: StatValidationQuery;
   /** Max attempts before giving up on RootNotAvailable. */
   maxAttempts?: number;
   /** Base backoff (ms) for the RootNotAvailable retry loop. */
   backoffMs?: number;
-  /** Max proof refetches after both hints (or a terminal code) reject one. */
+  /** Max proof refetches after a terminal/rejected proof snapshot. */
   maxProofRefetches?: number;
 }
 
 /**
- * resolve: Locked -> Resolved.
+ * resolve: Locked -> Resolved for a 3-way (1X2) market.
  *
- * Fetches the stat-validation proof from TxLINE, builds `resolve` (our program
- * CPIs validate_stat), simulates, then sends via TxSender.
+ * The keeper KNOWS the final score, so it computes the correct outcome hint
+ * (`Team1`/`Draw`/`Team2`) and passes it — the program derives the predicate
+ * and does ONE `validate_stat` CPI. A correct hint proves positively.
  *
- * Outcome-hint ladder (D-8 semantics — hint Yes validates the STORED
- * predicate, hint No validates its sound negation):
- *   1. try outcomeHint = Yes;
- *   2. on OUR ProofRejected (6017: oracle returned false) retry hint = No;
- *   3. if BOTH hints are rejected the proof snapshot is stale/inconsistent ->
- *      refetch the proof (bounded by maxProofRefetches) and restart the ladder;
- *   4. TxLINE 6007 RootNotAvailable (root posts every 5-min batch) at any rung
- *      -> linear backoff and retry the whole attempt;
- *   5. terminal TxLINE proof errors (6004/6021/6023/6062) -> refetch once
- *      within budget, else alert-level log + throw.
+ * Ladder:
+ *   1. try the score-derived hint (the expected happy path);
+ *   2. TxLINE 6007 RootNotAvailable at any rung -> linear backoff, retry;
+ *   3. terminal TxLINE proof errors (6004/6021/6023/6062) -> refetch the proof
+ *      within budget, else alert + throw;
+ *   4. our ProofRejected (6017) — the CPI said the derived predicate is false.
+ *      This should NOT happen (the keeper has the score), but defensively we
+ *      try the OTHER two hints in trichotomy order before giving up: a mismatch
+ *      between our score view and the on-chain proof is worth surviving rather
+ *      than stranding the market. If all three reject, refetch (batch maybe not
+ *      final) within budget, else alert + throw.
  *
- * Idempotent: no-ops if the market is already Resolved/Closed, and treats
- * InvalidMarketState after a concurrent resolve as success.
+ * Idempotent: no-ops if already Resolved/Closed; treats InvalidMarketState
+ * after a concurrent resolve as success.
  */
 export async function resolveMarket(
   ctx: ActionContext,
@@ -68,7 +141,7 @@ export async function resolveMarket(
   const [market] = await findMarketPda(fixtureId);
   const fixture = fixtureId.toString();
 
-  const onChain = await readMarket(ctx, market);
+  const onChain = await readMarketState(ctx, market);
   if (!onChain) {
     log.warn({ fixtureId: fixture, market }, "resolve: market account not found, skipping");
     return null;
@@ -86,6 +159,21 @@ export async function resolveMarket(
   const baseBackoff = opts.backoffMs ?? 15_000;
   const maxProofRefetches = opts.maxProofRefetches ?? 3;
 
+  // Preferred hint from the score, then the other two (defensive fallback).
+  const preferred = outcomeHintFromScore(
+    opts.score.homeGoals,
+    opts.score.awayGoals,
+  );
+  const hintLadder = orderedHints(preferred);
+  log.info(
+    {
+      fixtureId: fixture,
+      score: `${opts.score.homeGoals}-${opts.score.awayGoals}`,
+      hint: hintName(preferred),
+    },
+    "resolve: score-derived hint",
+  );
+
   let proof: ResolveProofArgs | undefined;
   let proofRefetches = 0;
 
@@ -94,38 +182,34 @@ export async function resolveMarket(
       proof = await proofFetcher.fetch(opts.statQuery);
     }
 
-    // ---- rung 1: hint = Yes (validate the stored predicate) ----
-    const yes = await tryHint(ctx, fixtureId, market, marketConfig, proof, Side.Yes);
-    if (yes.sig !== undefined) return yes.sig;
-    const dYes = yes.error;
+    let allRejected = true;
+    let lastRejection: DiscriminatedTxError | undefined;
 
-    if (dYes.txlineCode === TXLINE_ERR.RootNotAvailable) {
-      await backoff(fixture, attempt, baseBackoff, "RootNotAvailable (6007) — root not posted yet");
-      continue;
-    }
+    for (const hint of hintLadder) {
+      const res = await tryHint(ctx, fixtureId, market, marketConfig, proof, hint);
+      if (res.sig !== undefined) return res.sig;
+      const d = res.error;
 
-    if (dYes.ourError?.code === AMM_ERROR__PROOF_REJECTED) {
-      // ---- rung 2: oracle said "predicate false" -> try the negation ----
-      const no = await tryHint(ctx, fixtureId, market, marketConfig, proof, Side.No);
-      if (no.sig !== undefined) return no.sig;
-      const dNo = no.error;
-
-      if (dNo.txlineCode === TXLINE_ERR.RootNotAvailable) {
-        await backoff(fixture, attempt, baseBackoff, "RootNotAvailable (6007) on hint=No");
-        continue;
+      // Transient root-not-posted-yet: back off and retry the whole attempt.
+      if (d.txlineCode === TXLINE_ERR.RootNotAvailable) {
+        await backoff(fixture, attempt, baseBackoff, "RootNotAvailable (6007) — root not posted yet");
+        allRejected = false;
+        break;
       }
-      if (dNo.ourError?.code === AMM_ERROR__PREDICATE_NOT_NEGATABLE) {
-        // EqualTo predicates cannot prove the NO side by negation — no amount
-        // of retrying fixes this. Alert: needs a market-authoring fix.
-        alertTerminal(fixture, dNo, "predicate not negatable (EqualTo) — NO side unprovable");
-        throw asError(dNo.raw);
+
+      // Concurrent resolve — re-read and treat as success if already resolved.
+      if (d.ourError?.code === AMM_ERROR__INVALID_MARKET_STATE) {
+        const now = await readMarketState(ctx, market);
+        if (now && (now.state === MarketState.Resolved || now.state === MarketState.Closed)) {
+          log.info({ fixtureId: fixture }, "resolve: resolved concurrently, treating as success");
+          return null;
+        }
+        alertTerminal(fixture, d, "InvalidMarketState but market not resolved (not Locked yet?)");
+        throw asError(d.raw);
       }
-      if (
-        dNo.ourError?.code === AMM_ERROR__PROOF_REJECTED ||
-        isTerminalTxlineCode(dNo.txlineCode)
-      ) {
-        // Both hints rejected with this proof snapshot -> the batch was likely
-        // not final (or the proof is inconsistent). Refetch within budget.
+
+      // Terminal Merkle-proof rejection (bad proof payload) — refetch within budget.
+      if (isTerminalTxlineCode(d.txlineCode)) {
         if (proofRefetches < maxProofRefetches) {
           proofRefetches += 1;
           proof = undefined;
@@ -133,57 +217,56 @@ export async function resolveMarket(
             fixture,
             attempt,
             baseBackoff,
-            `both hints rejected — refetching proof (${proofRefetches}/${maxProofRefetches})`,
+            `terminal TxLINE ${txlineErrorName(d.txlineCode ?? -1)} — refetching proof (${proofRefetches}/${maxProofRefetches})`,
           );
-          continue;
+          allRejected = false;
+          break;
         }
-        alertTerminal(fixture, dNo, "proof rejected under BOTH hints after refetch budget");
-        throw asError(dNo.raw);
+        alertTerminal(fixture, d, "terminal TxLINE proof error after refetch budget");
+        throw asError(d.raw);
       }
-      if (dNo.retryable) {
-        await backoff(fixture, attempt, baseBackoff, describeError(dNo));
+
+      // Our ProofRejected (6017): this hint's derived predicate is false on the
+      // oracle. Keep this rejection and try the next hint in the ladder.
+      if (d.ourError?.code === AMM_ERROR__PROOF_REJECTED) {
+        lastRejection = d;
         continue;
       }
-      alertTerminal(fixture, dNo, "unexpected terminal error on hint=No");
-      throw asError(dNo.raw);
-    }
 
-    if (isTerminalTxlineCode(dYes.txlineCode)) {
-      // Merkle-proof-level rejection (not a predicate outcome): the proof
-      // payload itself is bad -> refetch within budget, else alert.
-      if (proofRefetches < maxProofRefetches) {
-        proofRefetches += 1;
-        proof = undefined;
-        await backoff(
-          fixture,
-          attempt,
-          baseBackoff,
-          `terminal TxLINE ${txlineErrorName(dYes.txlineCode ?? -1)} — refetching proof (${proofRefetches}/${maxProofRefetches})`,
-        );
-        continue;
+      // Other retryable transport/too-early error — back off, retry attempt.
+      if (d.retryable) {
+        await backoff(fixture, attempt, baseBackoff, describeError(d));
+        allRejected = false;
+        break;
       }
-      alertTerminal(fixture, dYes, "terminal TxLINE proof error after refetch budget");
-      throw asError(dYes.raw);
+
+      // Anything else is a genuine terminal error.
+      alertTerminal(fixture, d, `unexpected terminal error on hint=${hintName(hint)}`);
+      throw asError(d.raw);
     }
 
-    if (dYes.ourError?.code === AMM_ERROR__INVALID_MARKET_STATE) {
-      // Someone else may have resolved concurrently — re-read and no-op.
-      const now = await readMarket(ctx, market);
-      if (now && (now.state === MarketState.Resolved || now.state === MarketState.Closed)) {
-        log.info({ fixtureId: fixture }, "resolve: resolved concurrently, treating as success");
-        return null;
-      }
-      alertTerminal(fixture, dYes, "InvalidMarketState but market not resolved (not Locked yet?)");
-      throw asError(dYes.raw);
-    }
+    // If we broke out (root/refetch/retry), loop to the next attempt.
+    if (!allRejected) continue;
 
-    if (dYes.retryable) {
-      await backoff(fixture, attempt, baseBackoff, describeError(dYes));
+    // All three hints rejected under this proof snapshot -> the batch was
+    // likely not final (or the proof is inconsistent). Refetch within budget.
+    if (proofRefetches < maxProofRefetches) {
+      proofRefetches += 1;
+      proof = undefined;
+      await backoff(
+        fixture,
+        attempt,
+        baseBackoff,
+        `all 3 hints rejected — refetching proof (${proofRefetches}/${maxProofRefetches})`,
+      );
       continue;
     }
-
-    alertTerminal(fixture, dYes, "unexpected terminal error on hint=Yes");
-    throw asError(dYes.raw);
+    alertTerminal(
+      fixture,
+      lastRejection ?? { retryable: false, raw: undefined },
+      "all 3 outcome hints rejected after refetch budget (score vs proof mismatch?)",
+    );
+    throw asError(lastRejection?.raw);
   }
 
   log.error(
@@ -193,14 +276,20 @@ export async function resolveMarket(
   return null;
 }
 
-/** One rung of the ladder: build + simulate + send with a given outcome hint. */
+/** Order the three hints so the score-derived one is tried FIRST. */
+function orderedHints(preferred: OutcomeHint): OutcomeHint[] {
+  const all = [OutcomeHint.Team1, OutcomeHint.Draw, OutcomeHint.Team2];
+  return [preferred, ...all.filter((h) => h !== preferred)];
+}
+
+/** One rung of the ladder: build + simulate + send with a given hint. */
 async function tryHint(
   ctx: ActionContext,
   fixtureId: bigint,
   market: Address,
   marketConfig: Address,
   proof: ResolveProofArgs,
-  hint: Side,
+  hint: OutcomeHint,
 ): Promise<{ sig?: string; error: DiscriminatedTxError }> {
   const fixture = fixtureId.toString();
   try {
@@ -209,14 +298,14 @@ async function tryHint(
       instructions: [ix],
       writableAccounts: [market],
     });
-    log.info({ fixtureId: fixture, sig, hint: Side[hint] }, "resolve landed");
+    log.info({ fixtureId: fixture, sig, hint: hintName(hint) }, "resolve landed");
     return { sig, error: { retryable: false, raw: undefined } };
   } catch (err) {
     const d = discriminateTxError(err);
     log.warn(
       {
         fixtureId: fixture,
-        hint: Side[hint],
+        hint: hintName(hint),
         ourError: d.ourError,
         txlineCode: d.txlineCode,
         unknownCode: d.unknownCode,
@@ -229,14 +318,12 @@ async function tryHint(
 }
 
 /**
- * Build `resolve` via the generated getResolveInstructionAsync:
- *  - accounts: keeper signer, global (auto-derived), market PDA, marketConfig
- *    (from the decoded Market.config), txlineProgram (CPI callee, per-cluster
- *    constant), daily_scores_merkle_roots PDA derived under the TXLINE program
- *    for epoch_day = ts / 86_400_000 (TxLINE `ts` is MILLISECONDS);
- *  - args: outcomeHint + the validate_stat forwarding set from the TxLINE
- *    stat-validation proof. The predicate itself lives on-chain in
- *    MarketConfig and is NOT passed here (D-8).
+ * Build `resolve` via the generated getResolveInstructionAsync.
+ * Accounts: keeper signer, global (auto-derived), market PDA, marketConfig
+ * (from the decoded Market.config), txlineProgram (CPI callee),
+ * daily_scores_merkle_roots PDA for epoch_day = ts / 86_400_000.
+ * Args: hint byte + the validate_stat forwarding set. The per-hint predicate is
+ * derived ON-CHAIN (D-8) — the keeper passes only the hint.
  */
 async function buildResolveInstruction(
   ctx: ActionContext,
@@ -244,7 +331,7 @@ async function buildResolveInstruction(
   market: Address,
   marketConfig: Address,
   proof: ResolveProofArgs,
-  outcomeHint: Side,
+  hint: OutcomeHint,
 ): Promise<Instruction> {
   const txlineProgram = TXLINE[ctx.config.cluster].txlineProgram;
   const epochDay = proof.epochDay || Number(proof.ts / 86_400_000n);
@@ -259,21 +346,28 @@ async function buildResolveInstruction(
     marketConfig,
     txlineProgram,
     dailyScoresMerkleRoots,
-    outcomeHint,
+    hint,
     ts: proof.ts, // MILLISECONDS (epoch_day = ts / 86_400_000 on-chain)
-    // fixtureSummary became a nested struct once ScoresBatchSummary stopped
-    // being single-use (resolve_1x2 reuses it) — same wire bytes.
-    fixtureSummary: {
-      fixtureId,
-      updateStats: proof.fixtureSummary.updateStats,
-      eventsSubTreeRoot: proof.fixtureSummary.eventsSubTreeRoot,
-    },
+    // The validate_stat forwarding set is flattened onto the ix args.
+    fixtureId,
+    updateStats: proof.fixtureSummary.updateStats,
+    eventsSubTreeRoot: proof.fixtureSummary.eventsSubTreeRoot,
     fixtureProof: proof.fixtureProof,
     mainTreeProof: proof.mainTreeProof,
     statA: proof.statA,
     statB: proof.statB ?? null,
     op: proof.op !== undefined ? BinaryExpression[proof.op] : null,
   });
+}
+
+/** Fetch + decode the on-chain Market account (or null if absent). */
+async function readMarketState(
+  ctx: ActionContext,
+  market: Address,
+): Promise<{ state: MarketState; config: Address } | null> {
+  const maybe = await fetchMaybeMarket(ctx.clients.rpc, market);
+  if (!maybe.exists) return null;
+  return { state: maybe.data.state, config: maybe.data.config };
 }
 
 function describeError(d: DiscriminatedTxError): string {

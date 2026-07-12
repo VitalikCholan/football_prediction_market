@@ -1,33 +1,31 @@
 /**
- * Seed on-chain devnet markets from REAL upcoming TxLINE World Cup fixtures.
+ * Seed on-chain devnet 3-way (1X2) markets from REAL upcoming TxLINE World Cup
+ * fixtures (SPEC §3.1 phase C2). The 1X2 LMSR market is the sole market type.
  *
- * The web app renders one card per on-chain Market; only a couple exist so far.
- * This script pulls the live TxLINE fixtures snapshot, keeps ONLY fixtures whose
- * StartTime is strictly in the future, and calls `init_market` for each one that
- * doesn't already have a Market PDA. The indexer's tail poll ingests + enriches
- * (team names / score / odds) the new markets automatically within ~15s.
+ *   1. ensure a `create_market_config` (config_id 2, resolution_period = 100)
+ *      exists;
+ *   2. pull the live TxLINE fixtures snapshot, keep ONLY strictly-future
+ *      fixtures with no `Market` PDA yet;
+ *   3. `init_market` for each — seeding LMSR liquidity `b` + per-outcome
+ *      seed offsets `seed_q = [q1, qx, q2]` from the TxLINE 1X2 StablePrice odds
+ *      when available, else SYMMETRIC `[0,0,0]` (1/3 each per SPEC init).
  *
- * HARD RULE: no synthetic kickoff times, no mock fixtures. If the snapshot has
- * zero future fixtures we create NOTHING and say so.
+ * HARD RULE (inherited): no synthetic kickoff times, no mock fixtures. If the
+ * snapshot has zero future fixtures we create NOTHING and say so.
  *
- * Idempotent: re-runnable. Each fixture whose Market PDA already exists is
- * skipped. Simulate-before-send is inherited from `sendTx` preflight.
+ * Idempotent: re-runnable. Simulate-before-send is inherited from `sendTx`
+ * preflight.
  *
  * Run (repo root):  pnpm --filter @fpm/devnet-scripts seed-markets
  *
  * Env:
- *   HELIUS_RPC_URL     — optional; else public devnet (+ public fallback).
- *   SOLANA_KEYPAIR     — optional; else ~/.config/solana/id.json (admin/keeper).
- *   TXLINE_BASE_URL    — optional; else read from apps/keeper/.env.
- *   TXLINE_API_TOKEN   — read from apps/keeper/.env (gitignored) if unset.
- *   SEED_CAP           — optional; max markets to seed this run (default 8).
+ *   HELIUS_RPC_URL, SOLANA_KEYPAIR, TXLINE_BASE_URL, TXLINE_API_TOKEN, SEED_CAP.
  */
 import { readFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
 import {
   AccountRole,
   address,
@@ -54,13 +52,15 @@ import {
 import {
   MarketState,
   fetchMaybeMarket,
+  fetchMaybeMarketConfig,
+  getCreateMarketConfigInstructionAsync,
   getInitMarketInstructionAsync,
 } from "@fpm/idl";
 import {
   AMM_PROGRAM_ID,
   TXLINE,
-  findMarketConfigPda,
   findMarketPda,
+  findMarketConfigPda,
   findVaultPda,
 } from "@fpm/shared";
 
@@ -78,33 +78,51 @@ const ATA_PROGRAM = address("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const SYSTEM_PROGRAM = address("11111111111111111111111111111111");
 const CLOCK_SYSVAR = address("SysvarC1ock11111111111111111111111111111111");
 
-const CONFIG_ID = 1; // MarketConfig#1 — home-win predicate (stat1 - stat2) > 0
-// Virtual-reserve total (yes+no). Split per real StablePrice odds when available,
-// else 50/50. price_yes = no/(yes+no), and YES = home-win, so no = T·P(home).
-const SEED_TOTAL = 200_000_000n; // 200 USDT virtual
-const SEED_LIQUIDITY = 10_000_000n; // 10 USDT real collateral per market
-// Clamp implied prob so neither virtual reserve degenerates near 0/100¢.
-const MIN_PROB = 0.05;
-const MAX_PROB = 0.95;
-const KICKOFF_BUFFER_SECS = 120n; // require StartTime > now + 2 min at tx time
-const FREEZE_AFTER_KICKOFF_SECS = 2n * 3_600n; // freeze 2h after kickoff
+// MarketConfig#2 — 1X2 predicate. Base predicate (stat1 - stat2) with threshold
+// 0; resolve DERIVES the comparator per hint (Team1>Draw=Team2<), so the stored
+// `resolution_comparison` is ignored. resolution_period = 100 (TxLINE full-time
+// final stats carry period 100).
+const CONFIG_ID = 2;
+const RESOLUTION_PERIOD = 100;
+
+const ONE_USDT = 1_000_000n; // 6 decimals
+// LMSR liquidity depth `b` (raw USDT units). Symmetric subsidy = ceil(b·ln3).
+const SEED_B = 100n * ONE_USDT; // 100 USDT depth (mirrors LiteSVM tests)
+// Real collateral seeded into the vault. Must be >= C(seed_q,b) - min(seed_q).
+// For symmetric [0,0,0]: ceil(b·ln3) ≈ 109.86 USDT. We seed 200 USDT (headroom).
+const SEED_LIQUIDITY = 200n * ONE_USDT;
+// Clamp implied probs so no outcome degenerates to a ~0/100¢ seed offset.
+const MIN_PROB = 0.02;
+const KICKOFF_BUFFER_SECS = 120n;
+const FREEZE_AFTER_KICKOFF_SECS = 2n * 3_600n;
 const SEED_CAP = Number(process.env.SEED_CAP ?? 8);
 
-// TxLINE request_devnet_faucet (100 USDT/call) — same recovered wiring as
-// scripts/devnet-init.ts (discriminator from programs/amm/idls/txline.json,
-// seeds recovered empirically from live devnet faucet txs).
+// TxLINE request_devnet_faucet (100 USDT/call).
 const FAUCET_DISCRIMINATOR = new Uint8Array([49, 178, 104, 8, 23, 120, 186, 21]);
 const FAUCET_TRACKER_SEED = "faucet_tracker";
 const USDT_TREASURY_SEED = "usdt_treasury";
+
+// 1X2 fee params. create_market_config takes these FLATTENED as ix args.
+const FEE_PARAMS = {
+  baseFeeBps: 30,
+  maxFeeBps: 500,
+  vfcNum: 5_000,
+  filterPeriod: 30,
+  decayPeriod: 600,
+  reductionBps: 5_000,
+  maxVAcc: 1_000_000n,
+  resolutionGraceSecs: 300n,
+  resolutionThreshold: 0,
+  resolutionComparison: 0, // ignored by resolve (derived per hint)
+  statKeyA: 1, // P1 (home) goals
+  statKeyB: 2, // P2 (away) goals
+  statOp: 2, // Subtract
+} as const;
 
 const EXPLORER = (kind: "address" | "tx", id: string) =>
   `https://explorer.solana.com/${kind}/${id}?cluster=devnet`;
 
 /* --------------------------------------------------- TxLINE env (from .env) */
-/**
- * Read TXLINE_BASE_URL / TXLINE_API_TOKEN from process.env, falling back to the
- * gitignored apps/keeper/.env. The token is never logged.
- */
 function loadTxlineEnv(): { baseUrl: string; token: string | undefined } {
   let baseUrl = process.env.TXLINE_BASE_URL;
   let token = process.env.TXLINE_API_TOKEN;
@@ -162,7 +180,6 @@ async function withRpc<T>(
   );
 }
 
-/** Read the on-chain Clock sysvar's unix_timestamp (i64 LE at offset 32). */
 async function chainNow(): Promise<bigint> {
   return withRpc("chainNow", async (rpc) => {
     const info = await rpc
@@ -181,7 +198,6 @@ async function chainNow(): Promise<bigint> {
 const jsonify = (v: unknown) =>
   JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? x.toString() : x));
 
-/** Sign + send + confirm with blockhash-rebuild retry across both RPCs. */
 async function sendTx(
   signer: KeyPairSigner,
   ixs: Instruction[],
@@ -211,7 +227,6 @@ async function sendTx(
           .send(),
       );
     } catch (e) {
-      // Preflight simulation errors are deterministic — do not retry those.
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("custom program error") || msg.includes("Custom")) throw e;
       if (attempt === 3) throw e;
@@ -302,11 +317,9 @@ interface SnapshotFixture {
   home: string;
   away: string;
   competition?: string;
-  startTimeMs: number; // TxLINE StartTime is epoch MILLISECONDS
-  p1IsHome: boolean;
+  startTimeMs: number;
 }
 
-/** Guest JWT + X-Api-Token (mirrors keeper/indexer never-throw pattern). */
 async function txlineHeaders(
   baseUrl: string,
   token: string,
@@ -330,11 +343,6 @@ async function txlineHeaders(
   };
 }
 
-/**
- * GET /api/fixtures/snapshot with retry/backoff on the flaky devnet API.
- * Node 24 global fetch auto-decodes gzip. PascalCase fields per the keeper's
- * verified shape: FixtureId, Participant1/2, StartTime (ms), Participant1IsHome.
- */
 async function fetchSnapshot(
   baseUrl: string,
   token: string,
@@ -356,15 +364,12 @@ async function fetchSnapshot(
       return arr.map((f) => {
         const o = f as Record<string, unknown>;
         return {
-          fixtureId: BigInt(
-            (o.FixtureId ?? o.fixture_id ?? 0) as string | number,
-          ),
+          fixtureId: BigInt((o.FixtureId ?? o.fixture_id ?? 0) as string | number),
           home: String(o.Participant1 ?? "").trim(),
           away: String(o.Participant2 ?? "").trim(),
           competition:
             typeof o.Competition === "string" ? o.Competition : undefined,
           startTimeMs: Number(o.StartTime ?? 0),
-          p1IsHome: o.Participant1IsHome !== false,
         };
       });
     } catch (e) {
@@ -385,32 +390,19 @@ async function fetchSnapshot(
   );
 }
 
-/* --------------------------------------------------------- TxLINE odds */
+/* --------------------------------------------------------- TxLINE 1X2 odds */
 /**
- * Split SEED_TOTAL into {seedYes, seedNo} so the opening YES price equals the
- * implied P(home win). YES = home-win predicate, and price_yes = no/(yes+no),
- * so `no = T·p`, `yes = T·(1−p)`. `p` clamped to [MIN_PROB, MAX_PROB].
+ * Fetch demargined implied probabilities for the three 1X2 outcomes
+ * [P(Team1/home), P(Draw), P(Team2/away)] from the TxLINE StablePrice odds
+ * snapshot. Uses the `Pct` field (already vig-free). Returns null when no
+ * full-time 1X2 quote is available (the devnet WC feed is frequently empty —
+ * caller falls back to symmetric seeding). Never throws.
  */
-function reservesForProb(pHome: number): { seedYes: bigint; seedNo: bigint } {
-  const p = Math.min(MAX_PROB, Math.max(MIN_PROB, pHome));
-  const seedNo = BigInt(Math.round(Number(SEED_TOTAL) * p));
-  const seedYes = SEED_TOTAL - seedNo;
-  return { seedYes, seedNo };
-}
-
-/**
- * Fetch the demargined implied P(home win) for a fixture from TxLINE
- * StablePrice odds (`GET /api/odds/snapshot/{fixtureId}`). Uses the `Pct` field
- * (already vig-free implied probability, e.g. "52.632"). Returns the Home-side
- * probability in [0,1], or null when no full-time 1X2 quote is available (the
- * devnet WC odds feed is frequently empty — caller falls back to 50/50).
- * Never throws.
- */
-async function fetchOddsImplied(
+async function fetchImplied1x2(
   baseUrl: string,
   token: string,
   fixtureId: bigint,
-): Promise<number | null> {
+): Promise<[number, number, number] | null> {
   try {
     const headers = await txlineHeaders(baseUrl, token);
     const res = await fetch(
@@ -421,33 +413,64 @@ async function fetchOddsImplied(
     const arr = (await res.json()) as unknown;
     if (!Array.isArray(arr) || arr.length === 0) return null;
 
-    // Prefer the freshest full-time match-winner (1X2) quote.
-    const isHomeName = (n: string) => /^(home|1|p1|participant\s*1)$/i.test(n.trim());
-    let best: { ts: number; pct: number } | null = null;
+    const isHome = (n: string) => /^(home|1|p1|participant\s*1)$/i.test(n.trim());
+    const isDraw = (n: string) => /^(draw|x|tie)$/i.test(n.trim());
+    const isAway = (n: string) => /^(away|2|p2|participant\s*2)$/i.test(n.trim());
+
+    let best: { ts: number; probs: [number, number, number] } | null = null;
     for (const row of arr) {
       const o = row as Record<string, unknown>;
       const names = (o.PriceNames ?? o.priceNames) as unknown;
       const pcts = (o.Pct ?? o.pct) as unknown;
       if (!Array.isArray(names) || !Array.isArray(pcts)) continue;
-      const idx = names.findIndex(
-        (n) => typeof n === "string" && isHomeName(n),
-      );
-      if (idx < 0) continue;
-      const raw = pcts[idx];
-      const pct =
-        typeof raw === "number"
-          ? raw
-          : typeof raw === "string" && raw.toUpperCase() !== "NA"
-            ? Number.parseFloat(raw)
-            : NaN;
-      if (!Number.isFinite(pct) || pct <= 0 || pct >= 100) continue;
+
+      const pick = (test: (n: string) => boolean): number | null => {
+        const idx = names.findIndex((n) => typeof n === "string" && test(n));
+        if (idx < 0) return null;
+        const raw = pcts[idx];
+        const pct =
+          typeof raw === "number"
+            ? raw
+            : typeof raw === "string" && raw.toUpperCase() !== "NA"
+              ? Number.parseFloat(raw)
+              : NaN;
+        return Number.isFinite(pct) && pct > 0 && pct < 100 ? pct / 100 : null;
+      };
+      const h = pick(isHome);
+      const d = pick(isDraw);
+      const a = pick(isAway);
+      // Need a full 3-way quote to open a 1X2 book.
+      if (h == null || d == null || a == null) continue;
       const ts = Number(o.Ts ?? o.ts ?? 0);
-      if (!best || ts > best.ts) best = { ts, pct };
+      if (!best || ts > best.ts) best = { ts, probs: [h, d, a] };
     }
-    return best ? best.pct / 100 : null;
+    return best ? best.probs : null;
   } catch {
-    return null; // resilient — odds are a nice-to-have, never block seeding
+    return null;
   }
+}
+
+/**
+ * Map three implied probabilities to LMSR seed offsets `seed_q = [q1, qx, q2]`.
+ *
+ * Softmax is shift-invariant, so opening price_i = softmax(q_i / b). Setting
+ * `q_i = b · ln(p_i)` reproduces the probabilities exactly; we then shift so
+ * `min(seed_q) = 0` (seed offsets are pool-owned; the shift preserves prices).
+ * With min = 0 the solvency-at-init bound is simply `seed_liquidity >= C(q,b)`.
+ * Probs are normalized + clamped to [MIN_PROB, ·] so no offset degenerates.
+ */
+function seedQFromProbs(
+  probs: [number, number, number],
+  b: bigint,
+): [bigint, bigint, bigint] {
+  const clamped = probs.map((p) => Math.max(MIN_PROB, p));
+  const sum = clamped.reduce((a, c) => a + c, 0);
+  const norm = clamped.map((p) => p / sum);
+  const bNum = Number(b);
+  const rawQ = norm.map((p) => bNum * Math.log(p)); // <= 0
+  const minRaw = Math.min(...rawQ);
+  const shifted = rawQ.map((q) => Math.round(q - minRaw)); // >= 0, min = 0
+  return [BigInt(shifted[0]), BigInt(shifted[1]), BigInt(shifted[2])];
 }
 
 /* ------------------------------------------------------------------ main */
@@ -461,7 +484,7 @@ async function main() {
 
   console.log(`admin/keeper wallet: ${admin.address}`);
   console.log(`amm program:         ${AMM_PROGRAM_ID}`);
-  console.log(`market config #${CONFIG_ID}: ${marketConfigPda}`);
+  console.log(`1X2 market config #${CONFIG_ID}: ${marketConfigPda}`);
 
   const { baseUrl, token } = loadTxlineEnv();
   console.log(`txline base:         ${baseUrl}`);
@@ -472,13 +495,36 @@ async function main() {
     );
   }
 
-  // ---- 1. fetch REAL fixtures from the live TxLINE snapshot ----
+  // ---- 0. ensure the 1X2 MarketConfig exists (idempotent) ----
+  console.log(`\n==> ensuring 1X2 market config #${CONFIG_ID}`);
+  const existingCfg = await withRpc("fetchMaybeMarketConfig", (rpc) =>
+    fetchMaybeMarketConfig(rpc, marketConfigPda),
+  );
+  if (existingCfg.exists) {
+    console.log(
+      `    SKIP — config #${CONFIG_ID} exists (resolution_period=${existingCfg.data.resolutionPeriod})`,
+    );
+  } else {
+    const ix = await getCreateMarketConfigInstructionAsync({
+      authority: admin,
+      marketConfig: marketConfigPda,
+      configId: CONFIG_ID,
+      ...FEE_PARAMS,
+      resolutionPeriod: RESOLUTION_PERIOD,
+    });
+    await sendTx(admin, [ix], `create_market_config (#${CONFIG_ID})`);
+    console.log(
+      `    created 1X2 config #${CONFIG_ID}: predicate (stat1 - stat2), period ${RESOLUTION_PERIOD}`,
+    );
+  }
+
+  // ---- 1. fetch REAL fixtures ----
   console.log("\n==> fetching live TxLINE fixtures snapshot");
   const snapshot = await fetchSnapshot(baseUrl, token);
   console.log(`    snapshot returned ${snapshot.length} fixture(s)`);
 
-  // ---- 2. filter to REAL FUTURE only (no synthetic kickoff) ----
-  const now = await chainNow(); // on-chain clock (init_market checks kickoff > now)
+  // ---- 2. filter to REAL FUTURE only ----
+  const now = await chainNow();
   const nowMs = Number(now) * 1_000;
   const minStartMs = nowMs + Number(KICKOFF_BUFFER_SECS) * 1_000;
 
@@ -514,12 +560,7 @@ async function main() {
   }
 
   const report: {
-    seeded: {
-      fixtureId: string;
-      teams: string;
-      kickoff: string;
-      sig: string;
-    }[];
+    seeded: { fixtureId: string; teams: string; kickoff: string; sig: string }[];
     skippedExisting: { fixtureId: string; teams: string; state: string }[];
     skippedPast: { fixtureId: string; teams: string; why: string }[];
     cappedOut: { fixtureId: string; teams: string }[];
@@ -543,7 +584,7 @@ async function main() {
     return;
   }
 
-  // ---- 3. partition: which fixtures already have a Market PDA on-chain ----
+  // ---- 3. partition: which fixtures already have a Market PDA ----
   const toSeed: { fx: SnapshotFixture; marketPda: Address; vaultPda: Address }[] =
     [];
   for (const fx of future) {
@@ -559,14 +600,14 @@ async function main() {
         state: MarketState[existing.data.state],
       });
       console.log(
-        `    already on-chain: ${fx.fixtureId} (${MarketState[existing.data.state]}) — skip`,
+        `    already on-chain (1X2): ${fx.fixtureId} (${MarketState[existing.data.state]}) — skip`,
       );
       continue;
     }
     toSeed.push({ fx, marketPda, vaultPda });
   }
 
-  // ---- 4. cap (no silent truncation) ----
+  // ---- 4. cap ----
   let capped = toSeed;
   if (toSeed.length > SEED_CAP) {
     capped = toSeed.slice(0, SEED_CAP);
@@ -577,22 +618,20 @@ async function main() {
       });
     }
     console.warn(
-      `    CAP: ${toSeed.length} new fixtures > cap ${SEED_CAP}; seeding first ${SEED_CAP}, ` +
-        `deferring ${toSeed.length - SEED_CAP} (see report)`,
+      `    CAP: ${toSeed.length} new fixtures > cap ${SEED_CAP}; seeding first ${SEED_CAP}`,
     );
   }
 
   if (capped.length === 0) {
-    console.log("\nAll real future fixtures already have on-chain markets — nothing new to seed.");
+    console.log("\nAll real future fixtures already have on-chain 1X2 markets — nothing new to seed.");
     printReport(report);
     return;
   }
 
-  // ---- 5. funding: ensure admin USDT covers N × seed (+ small headroom) ----
+  // ---- 5. funding ----
   const needed = BigInt(capped.length) * SEED_LIQUIDITY + 1_000_000n;
   console.log(`\n==> funding: need ${needed} raw USDT for ${capped.length} market(s)`);
 
-  // SOL for gas (Helius airdrop only works on some endpoints; best-effort).
   const solBal = await withRpc("getBalance", (rpc) =>
     rpc.getBalance(admin.address).send(),
   );
@@ -615,7 +654,6 @@ async function main() {
 
   let bal = await usdtBalance(adminUsdtAta);
   console.log(`    admin USDT: ${bal} raw (${Number(bal) / 1e6})`);
-  // Faucet gives 100 USDT/call; loop a few times if we're short (cooldown-tolerant).
   for (let i = 0; i < 5 && bal < needed; i++) {
     try {
       await sendTx(admin, [await buildFaucetIx(admin.address, adminUsdtAta)], "request_devnet_faucet");
@@ -631,8 +669,6 @@ async function main() {
     console.log(`    admin USDT after faucet: ${bal} raw (${Number(bal) / 1e6})`);
   }
 
-  // If still short, seed only as many as we can afford (no synthetic shrink of
-  // real fixtures — just fewer markets, honestly reported).
   const affordable = Number((bal - 1_000_000n) / SEED_LIQUIDITY);
   if (affordable < capped.length) {
     if (affordable <= 0) {
@@ -652,20 +688,16 @@ async function main() {
     capped = capped.slice(0, affordable);
   }
 
-  // ---- 6. seed each new market (one init_market per fixture) ----
-  console.log(`\n==> seeding ${capped.length} market(s)`);
+  // ---- 6. seed each new 1X2 market ----
+  console.log(`\n==> seeding ${capped.length} 1X2 market(s)`);
   for (const { fx, marketPda, vaultPda } of capped) {
     const label = `init_market ${fx.fixtureId} (${fx.home} vs ${fx.away})`;
     console.log(`\n  ${label}`);
-    // Re-derive kickoff/freeze from the REAL StartTime (seconds). Re-check the
-    // future guard against a fresh clock in case funding took a while.
     const clock = await chainNow();
     const kickoffTs = BigInt(Math.floor(fx.startTimeMs / 1_000));
     const freezeTs = kickoffTs + FREEZE_AFTER_KICKOFF_SECS;
     if (kickoffTs <= clock) {
-      console.warn(
-        `    SKIP — real StartTime ${kickoffTs} is no longer > clock ${clock}`,
-      );
+      console.warn(`    SKIP — real StartTime ${kickoffTs} is no longer > clock ${clock}`);
       report.skippedPast.push({
         fixtureId: fx.fixtureId.toString(),
         teams: `${fx.home} vs ${fx.away}`,
@@ -673,16 +705,18 @@ async function main() {
       });
       continue;
     }
-    // Open at the real StablePrice implied odds when the feed has them,
-    // else fall back to 50/50. price_yes = P(home win) either way.
-    const pHome = await fetchOddsImplied(baseUrl, token, fx.fixtureId);
-    const { seedYes, seedNo } =
-      pHome != null ? reservesForProb(pHome) : { seedYes: SEED_TOTAL / 2n, seedNo: SEED_TOTAL / 2n };
+
+    // Open at real 1X2 StablePrice odds when the feed has them, else symmetric.
+    const probs = await fetchImplied1x2(baseUrl, token, fx.fixtureId);
+    const seedQ = probs
+      ? seedQFromProbs(probs, SEED_B)
+      : ([0n, 0n, 0n] as [bigint, bigint, bigint]);
     console.log(
-      pHome != null
-        ? `    odds: P(home)=${(pHome * 100).toFixed(1)}% -> open ${Math.round((Number(seedNo) / Number(SEED_TOTAL)) * 100)}¢ (StablePrice)`
-        : `    odds: none on feed -> open 50¢ (50/50 fallback)`,
+      probs
+        ? `    odds: [H ${(probs[0] * 100).toFixed(1)}%, X ${(probs[1] * 100).toFixed(1)}%, A ${(probs[2] * 100).toFixed(1)}%] -> seed_q ${seedQ.map(String).join(",")}`
+        : `    odds: none on feed -> symmetric seed_q [0,0,0] (1/3 each)`,
     );
+
     try {
       const ix = await getInitMarketInstructionAsync({
         authority: admin,
@@ -695,8 +729,8 @@ async function main() {
         fixtureId: fx.fixtureId,
         kickoffTs,
         freezeTs,
-        seedYes,
-        seedNo,
+        b: SEED_B,
+        seedQ,
         seedLiquidity: SEED_LIQUIDITY,
       });
       const sig = await sendTx(admin, [ix], label);
@@ -708,10 +742,7 @@ async function main() {
       });
       console.log(`    OK — market ${marketPda}, kickoff ${kickoffTs}, freeze ${freezeTs}`);
     } catch (e) {
-      console.error(
-        `    FAIL ${fx.fixtureId} — ${e instanceof Error ? e.message : e}`,
-      );
-      // continue to next fixture; partial success is acceptable + idempotent
+      console.error(`    FAIL ${fx.fixtureId} — ${e instanceof Error ? e.message : e}`);
     }
   }
 

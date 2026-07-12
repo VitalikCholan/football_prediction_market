@@ -6,11 +6,10 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { combineCodec, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU64Decoder, getU64Encoder, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlyUint8Array, type TransactionSigner, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
+import { combineCodec, fixDecoderSize, fixEncoderSize, getBytesDecoder, getBytesEncoder, getStructDecoder, getStructEncoder, getU64Decoder, getU64Encoder, getU8Decoder, getU8Encoder, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type ReadonlyAccount, type ReadonlyUint8Array, type TransactionSigner, type WritableAccount, type WritableSignerAccount } from '@solana/kit';
 import { findPositionPda } from '../pdas';
 import { AMM_PROGRAM_ADDRESS } from '../programs';
 import { expectAddress, getAccountMetaFactory, type ResolvedAccount } from '../shared';
-import { getSideDecoder, getSideEncoder, type Side, type SideArgs } from '../types';
 
 export const BUY_DISCRIMINATOR = new Uint8Array([102, 6, 61, 18, 1, 218, 235, 234]);
 
@@ -19,16 +18,16 @@ export function getBuyDiscriminatorBytes() { return fixEncoderSize(getBytesEncod
 export type BuyInstruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountTrader extends string | AccountMeta<string> = string, TAccountMarket extends string | AccountMeta<string> = string, TAccountMarketConfig extends string | AccountMeta<string> = string, TAccountPosition extends string | AccountMeta<string> = string, TAccountTraderUsdt extends string | AccountMeta<string> = string, TAccountVault extends string | AccountMeta<string> = string, TAccountUsdtMint extends string | AccountMeta<string> = string, TAccountTokenProgram extends string | AccountMeta<string> = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
 Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountTrader extends string ? WritableSignerAccount<TAccountTrader> & AccountSignerMeta<TAccountTrader> : TAccountTrader, TAccountMarket extends string ? WritableAccount<TAccountMarket> : TAccountMarket, TAccountMarketConfig extends string ? ReadonlyAccount<TAccountMarketConfig> : TAccountMarketConfig, TAccountPosition extends string ? WritableAccount<TAccountPosition> : TAccountPosition, TAccountTraderUsdt extends string ? WritableAccount<TAccountTraderUsdt> : TAccountTraderUsdt, TAccountVault extends string ? WritableAccount<TAccountVault> : TAccountVault, TAccountUsdtMint extends string ? ReadonlyAccount<TAccountUsdtMint> : TAccountUsdtMint, TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram, ...TRemainingAccounts]>;
 
-export type BuyInstructionData = { discriminator: ReadonlyUint8Array; side: Side; usdtIn: bigint; minOut: bigint;  };
+export type BuyInstructionData = { discriminator: ReadonlyUint8Array; outcome: number; usdtIn: bigint; minTokensOut: bigint;  };
 
-export type BuyInstructionDataArgs = { side: SideArgs; usdtIn: number | bigint; minOut: number | bigint;  };
+export type BuyInstructionDataArgs = { outcome: number; usdtIn: number | bigint; minTokensOut: number | bigint;  };
 
 export function getBuyInstructionDataEncoder(): FixedSizeEncoder<BuyInstructionDataArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['side', getSideEncoder()], ['usdtIn', getU64Encoder()], ['minOut', getU64Encoder()]]), (value) => ({ ...value, discriminator: BUY_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['outcome', getU8Encoder()], ['usdtIn', getU64Encoder()], ['minTokensOut', getU64Encoder()]]), (value) => ({ ...value, discriminator: BUY_DISCRIMINATOR }));
 }
 
 export function getBuyInstructionDataDecoder(): FixedSizeDecoder<BuyInstructionData> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['side', getSideDecoder()], ['usdtIn', getU64Decoder()], ['minOut', getU64Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['outcome', getU8Decoder()], ['usdtIn', getU64Decoder()], ['minTokensOut', getU64Decoder()]]);
 }
 
 export function getBuyInstructionDataCodec(): FixedSizeCodec<BuyInstructionDataArgs, BuyInstructionData> {
@@ -44,9 +43,9 @@ traderUsdt: Address<TAccountTraderUsdt>;
 vault: Address<TAccountVault>;
 usdtMint: Address<TAccountUsdtMint>;
 tokenProgram?: Address<TAccountTokenProgram>;
-side: BuyInstructionDataArgs["side"];
+outcome: BuyInstructionDataArgs["outcome"];
 usdtIn: BuyInstructionDataArgs["usdtIn"];
-minOut: BuyInstructionDataArgs["minOut"];
+minTokensOut: BuyInstructionDataArgs["minTokensOut"];
 }
 
 export async function getBuyInstructionAsync<TAccountTrader extends string, TAccountMarket extends string, TAccountMarketConfig extends string, TAccountPosition extends string, TAccountTraderUsdt extends string, TAccountVault extends string, TAccountUsdtMint extends string, TAccountTokenProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: BuyAsyncInput<TAccountTrader, TAccountMarket, TAccountMarketConfig, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): Promise<BuyInstruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountMarketConfig, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram>> {
@@ -83,9 +82,9 @@ traderUsdt: Address<TAccountTraderUsdt>;
 vault: Address<TAccountVault>;
 usdtMint: Address<TAccountUsdtMint>;
 tokenProgram?: Address<TAccountTokenProgram>;
-side: BuyInstructionDataArgs["side"];
+outcome: BuyInstructionDataArgs["outcome"];
 usdtIn: BuyInstructionDataArgs["usdtIn"];
-minOut: BuyInstructionDataArgs["minOut"];
+minTokensOut: BuyInstructionDataArgs["minTokensOut"];
 }
 
 export function getBuyInstruction<TAccountTrader extends string, TAccountMarket extends string, TAccountMarketConfig extends string, TAccountPosition extends string, TAccountTraderUsdt extends string, TAccountVault extends string, TAccountUsdtMint extends string, TAccountTokenProgram extends string, TProgramAddress extends Address = typeof AMM_PROGRAM_ADDRESS>(input: BuyInput<TAccountTrader, TAccountMarket, TAccountMarketConfig, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram>, config?: { programAddress?: TProgramAddress } ): BuyInstruction<TProgramAddress, TAccountTrader, TAccountMarket, TAccountMarketConfig, TAccountPosition, TAccountTraderUsdt, TAccountVault, TAccountUsdtMint, TAccountTokenProgram> {

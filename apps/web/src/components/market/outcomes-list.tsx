@@ -1,14 +1,16 @@
 "use client";
 
-import type { MarketDto, Side } from "@fpm/shared";
+import type { MarketDto, Outcome } from "@fpm/shared";
 import { centsLabel, percentLabel, volumeLabel, bpsToCents } from "@/lib/format";
 import type { TradeIntent } from "@/components/trade/trade-panel";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 /**
- * Outcomes list (1c). One row per side: name + implied % · volume, with
- * Buy Yes / No buttons that open the trade ticket pre-filled.
+ * Outcomes list (1c). One row per outcome — Team1 (home), Draw, Team2 (away) —
+ * each carrying its true on-chain softmax price. A single Buy button per row
+ * opens the ticket pre-filled with that outcome; each outcome is a distinct
+ * buyable token.
  */
 export function OutcomesList({
   market,
@@ -17,21 +19,34 @@ export function OutcomesList({
   market: MarketDto;
   onTrade: (intent: TradeIntent) => void;
 }) {
-  const yesBps = market.yesPriceBps;
-  const noBps = 10000 - yesBps;
-
-  // Reference "Market (StablePrice)" cents per outcome, ONLY when the demargined
-  // odds feed carries data (null on devnet today — the whole readout stays
-  // absent, no empty box). Home → YES, Away → NO.
-  const odds = market.marketOdds;
-  const marketCents: { YES: number; NO: number } | null = odds
-    ? { YES: bpsToCents(odds.homeBps), NO: bpsToCents(odds.awayBps) }
-    : null;
-
-  const outcomes: { label: string; side: Side; bps: number }[] = [
-    { label: market.homeTeam ?? "Home", side: "YES", bps: yesBps },
-    { label: market.awayTeam ?? "Away", side: "NO", bps: noBps },
+  const outcomes: {
+    label: string;
+    outcome: Exclude<Outcome, "Void">;
+    bps: number;
+  }[] = [
+    {
+      label: market.homeTeam ?? "Home",
+      outcome: "Team1",
+      bps: market.team1PriceBps,
+    },
+    { label: "Draw", outcome: "Draw", bps: market.drawPriceBps },
+    {
+      label: market.awayTeam ?? "Away",
+      outcome: "Team2",
+      bps: market.team2PriceBps,
+    },
   ];
+
+  // Reference "Market" cents per outcome, ONLY when the demargined odds feed
+  // carries data (null on devnet today). Home → team1, Draw → draw, Away → team2.
+  const odds = market.marketOdds;
+  const marketCents: Record<string, number> | null = odds
+    ? {
+        Team1: bpsToCents(odds.homeBps),
+        Draw: bpsToCents(odds.drawBps),
+        Team2: bpsToCents(odds.awayBps),
+      }
+    : null;
 
   return (
     <Card className="divide-y divide-box-border">
@@ -41,7 +56,7 @@ export function OutcomesList({
       </div>
       {outcomes.map((o) => (
         <div
-          key={o.side}
+          key={o.outcome}
           className="flex items-center justify-between gap-3 px-4 py-3"
         >
           <div className="min-w-0">
@@ -52,7 +67,7 @@ export function OutcomesList({
             </div>
             {marketCents ? (
               <div className="mt-0.5 text-[11px] text-muted">
-                Pool {bpsToCents(o.bps)}¢ · Market {marketCents[o.side]}¢
+                Pool {bpsToCents(o.bps)}¢ · Market {marketCents[o.outcome]}¢
               </div>
             ) : null}
           </div>
@@ -60,21 +75,9 @@ export function OutcomesList({
             <Button
               variant="yes"
               className="px-3 py-2 text-[13px]"
-              onClick={() => onTrade({ side: o.side, action: "buy" })}
+              onClick={() => onTrade({ outcome: o.outcome, action: "buy" })}
             >
-              Yes {centsLabel(o.bps)}
-            </Button>
-            <Button
-              variant="no"
-              className="px-3 py-2 text-[13px]"
-              onClick={() =>
-                onTrade({
-                  side: o.side === "YES" ? "NO" : "YES",
-                  action: "buy",
-                })
-              }
-            >
-              No {centsLabel(10000 - o.bps)}
+              Buy {centsLabel(o.bps)}
             </Button>
           </div>
         </div>

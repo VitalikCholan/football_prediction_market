@@ -1,6 +1,5 @@
 import Link from "next/link";
-import type { AnyMarketDto } from "@fpm/shared";
-import { isMarket1x2 } from "@/lib/data";
+import type { MarketDto } from "@fpm/shared";
 import { StateBadge } from "@/components/market/state-badge";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,42 +12,19 @@ import {
 } from "@/lib/format";
 
 /**
- * Match card (DESIGN_SPEC 1b). Renders a 3-chip Home/Draw/Away read.
- *
- * For a real 1X2 market (`marketKind === "OneXTwo"`) the three chips carry the
- * TRUE on-chain softmax prices (team1/draw/team2 PriceBps → cents). For a v0
- * BINARY YES/NO market we derive the three outcome cents from the YES price
- * (BUG-4: honest labels — Home = YES, the remainder split into Draw/Away) so
- * the card still matches the reference look; whole-market trading routes to the
- * per-team YES/NO market on detail.
+ * Match card (DESIGN_SPEC 1b). Renders a 3-chip Home/Draw/Away read carrying the
+ * TRUE on-chain softmax prices (team1/draw/team2 PriceBps → cents).
  */
-function binaryThreeWayCents(yesBps: number): {
-  home: number;
-  draw: number;
-  away: number;
-} {
-  const home = bpsToCents(yesBps);
-  const rest = 100 - home;
-  const draw = Math.round(rest * 0.42);
-  const away = rest - draw;
-  return { home, draw, away };
-}
-
 export function MatchCard({
   market,
   index = 0,
 }: {
-  market: AnyMarketDto;
+  market: MarketDto;
   index?: number;
 }) {
-  // Three-way cents: real prices for a 1X2 market, derived split for binary.
-  const { home, draw, away } = isMarket1x2(market)
-    ? {
-        home: bpsToCents(market.team1PriceBps),
-        draw: bpsToCents(market.drawPriceBps),
-        away: bpsToCents(market.team2PriceBps),
-      }
-    : binaryThreeWayCents(market.yesPriceBps);
+  const home = bpsToCents(market.team1PriceBps);
+  const draw = bpsToCents(market.drawPriceBps);
+  const away = bpsToCents(market.team2PriceBps);
   const leader = home >= away ? "home" : "away";
 
   const score = scoreLabel(market.homeScore, market.awayScore);

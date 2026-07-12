@@ -1,17 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
-  AnyMarketDto as AnyMarketSchema,
-  AnyMarketListDto as AnyMarketListSchema,
-  type AnyMarketDto,
-  type AnyMarketListDto,
+  MarketDto as MarketSchema,
+  MarketListDto as MarketListSchema,
   type HistoryQuery,
   type HistoryResponseDto,
+  type MarketDto,
+  type MarketListDto,
   type MarketListQuery,
 } from '@fpm/shared';
 import type { Market } from '@prisma/client';
 import { PrismaService } from '../db/prisma.service';
 import { RESOLUTION_SECONDS } from './markets.constants';
-import { bucketPoints, toAnyMarketDto } from './markets.helpers';
+import { bucketPoints, toMarketDto } from './markets.helpers';
 
 @Injectable()
 export class MarketsService {
@@ -19,11 +19,9 @@ export class MarketsService {
 
   /**
    * GET /markets — filtered, paginated list of market snapshots. Returns the
-   * mixed `AnyMarketListDto` envelope (binary + 1X2). Binary entries are
-   * byte-compatible with the legacy `MarketListDto` (they omit `marketKind`), so
-   * existing binary-only web consumers keep parsing them unchanged.
+   * `MarketListDto` envelope (3-way 1X2 markets + total).
    */
-  async list(query: MarketListQuery): Promise<AnyMarketListDto> {
+  async list(query: MarketListQuery): Promise<MarketListDto> {
     const where = query.state ? { state: query.state } : {};
     const [rows, total] = await Promise.all([
       this.prisma.market.findMany({
@@ -34,23 +32,21 @@ export class MarketsService {
       }),
       this.prisma.market.count({ where }),
     ]);
-    // Validate the mixed envelope against the shared zod union before returning
-    // (the REST contract; catches any mapper drift for binary or 1X2 rows).
-    return AnyMarketListSchema.parse({
-      markets: rows.map((r) => toAnyMarketDto(r)),
+    // Validate against the shared zod schema before returning (the REST
+    // contract; catches any mapper drift).
+    return MarketListSchema.parse({
+      markets: rows.map((r) => toMarketDto(r)),
       total,
     });
   }
 
   /**
-   * GET /markets/:id — single market, by PDA or (fallback) fixture id. Returns
-   * `MarketDto` for binary rows and `Market1x2Dto` for 1X2 rows (keyed on the
-   * stored `marketKind`).
+   * GET /markets/:id — single market, by PDA or (fallback) fixture id.
    */
-  async findOne(id: string): Promise<AnyMarketDto> {
+  async findOne(id: string): Promise<MarketDto> {
     const market = await this.resolveMarket(id);
     if (!market) throw new NotFoundException(`market ${id} not found`);
-    return AnyMarketSchema.parse(toAnyMarketDto(market));
+    return MarketSchema.parse(toMarketDto(market));
   }
 
   /** GET /markets/:id/history — price/volume series for lightweight-charts. */

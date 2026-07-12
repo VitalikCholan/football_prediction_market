@@ -1,6 +1,6 @@
 import { activateMarket } from "../actions/activate.ts";
 import { freezeMarket } from "../actions/freeze.ts";
-import { resolveMarket } from "../actions/resolve.ts";
+import { resolveMarket, scoreFromEvent } from "../actions/resolve.ts";
 import type { ActionContext } from "../actions/context.ts";
 import { log } from "../log.ts";
 import type { ProofFetcher, StatValidationQuery } from "../txline/proof.ts";
@@ -79,19 +79,31 @@ export class Scheduler {
   /**
    * Trigger the resolve pipeline for a fixture (safe to call repeatedly).
    * `seq` (the Seq of the finalising score event) is REQUIRED by
-   * stat-validation; when the end came from the end-time fallback (no SSE
-   * frame seen) it is recovered from the historical replay.
+   * stat-validation, and the FINAL score picks the 1X2 outcome hint; when the
+   * end came from the end-time fallback (no SSE frame seen) both are recovered
+   * from the historical replay's finalising event.
    */
-  async tryResolve(fixtureId: bigint, seq?: number): Promise<void> {
+  async tryResolve(
+    fixtureId: bigint,
+    seq?: number,
+    score?: { homeGoals: number; awayGoals: number },
+  ): Promise<void> {
     const tracker = this.fsm.get(fixtureId);
     if (tracker.phase === "Resolved") return;
     this.fsm.incrementResolveAttempts(fixtureId);
     try {
-      const endSeq = seq ?? tracker.endedSeq ?? (await this.recoverEndSeq(fixtureId));
-      if (endSeq === undefined) {
+      // Recover the finalising event (seq + score) when the caller lacks either.
+      let endSeq = seq ?? tracker.endedSeq;
+      let endScore = score;
+      if (endSeq === undefined || endScore === undefined) {
+        const recovered = await this.recoverEnd(fixtureId);
+        endSeq ??= recovered?.seq;
+        endScore ??= recovered?.score;
+      }
+      if (endSeq === undefined || endScore === undefined) {
         log.warn(
-          { fixtureId: fixtureId.toString() },
-          "resolve deferred: no finalising Seq yet (match not finalised in historical)",
+          { fixtureId: fixtureId.toString(), haveSeq: endSeq !== undefined, haveScore: endScore !== undefined },
+          "resolve deferred: no finalising Seq/score yet (match not finalised in historical)",
         );
         return; // next tick / SSE frame retries
       }
@@ -99,7 +111,7 @@ export class Scheduler {
       const sig = await resolveMarket(
         this.ctx,
         fixtureId,
-        { statQuery: defaultStatQuery(fixtureId, endSeq) },
+        { score: endScore, statQuery: defaultStatQuery(fixtureId, endSeq) },
         this.proofFetcher,
       );
       if (sig !== null) this.fsm.markResolved(fixtureId);
@@ -128,15 +140,23 @@ export class Scheduler {
   /** Give up on a fixture after this many failed resolve attempts. */
   private static readonly MAX_RESOLVE_ATTEMPTS = 10;
 
-  /** End-time-fallback path: recover the finalising Seq from the replay. */
-  private async recoverEndSeq(fixtureId: bigint): Promise<number | undefined> {
+  /**
+   * End-time-fallback path: recover the finalising Seq AND final score from the
+   * historical replay. The score picks the 1X2 outcome hint; a missing goal
+   * count (score not carried on the finalising frame) yields undefined so the
+   * next tick retries rather than resolving on a guessed outcome.
+   */
+  private async recoverEnd(
+    fixtureId: bigint,
+  ): Promise<{ seq: number; score?: { homeGoals: number; awayGoals: number } } | undefined> {
     const end = await this.history.findMatchEnd(fixtureId);
     if (!end) return undefined;
+    const score = scoreFromEvent(end) ?? undefined;
     log.info(
-      { fixtureId: fixtureId.toString(), seq: end.seq, action: end.action },
-      "recovered finalising Seq from historical replay",
+      { fixtureId: fixtureId.toString(), seq: end.seq, action: end.action, score },
+      "recovered finalising Seq/score from historical replay",
     );
-    return end.seq;
+    return { seq: end.seq, score };
   }
 }
 

@@ -14,7 +14,7 @@ import {
   type UserPosition,
 } from "@/lib/positions";
 import { friendlyTxError } from "@fpm/shared";
-import { prepareClaim, prepareClaim1x2 } from "@/lib/tx";
+import { prepareClaim } from "@/lib/tx";
 import { explorerTx } from "@/lib/solana";
 import { useAccountAddress, useTxAuthority } from "@/components/wallet/use-account";
 import { useFaucet } from "@/components/wallet/use-faucet";
@@ -36,18 +36,12 @@ export function PositionsView() {
 
 const SCALE = 1_000_000;
 
-/** Mark value of a position at current odds, whole USDT (both market kinds). */
+/** Mark value of a position at current odds, whole USDT. */
 function markValue(p: UserPosition): number {
   if (p.market.state === "Resolved") {
     return p.redeemed ? 0 : Number(winningTokens(p)) / SCALE;
   }
-  if (p.kind === "binary") {
-    const yes = Number(p.yesTokens) / SCALE;
-    const no = Number(p.noTokens) / SCALE;
-    const yesPrice = p.market.yesPriceBps / 10_000;
-    return yes * yesPrice + no * (1 - yesPrice);
-  }
-  // 1X2: each outcome token marked at its own softmax price.
+  // Each outcome token marked at its own softmax price.
   const [t1, td, t2] = p.tokens;
   return (
     (Number(t1) / SCALE) * (p.market.team1PriceBps / 10_000) +
@@ -137,7 +131,7 @@ function LivePositions() {
           </Card>
         ) : open.length === 0 ? (
           <Card className="p-10 text-center text-[14px] text-muted">
-            No open positions. Buy YES or NO on a market to get started.
+            No open positions. Buy an outcome on a market to get started.
           </Card>
         ) : (
           <LiveTable positions={open} />
@@ -166,26 +160,10 @@ function marketLabel(p: UserPosition): string {
     : `Fixture ${p.market.fixtureId}`;
 }
 
-/** Per-outcome legs of a position (binary YES/NO or 1X2 Team1/Draw/Team2). */
+/** Per-outcome legs of a position (Team1 / Draw / Team2). */
 function positionLegs(
   p: UserPosition,
 ): { label: string; tint: "yc" | "nc"; tokensBase: bigint; priceBps: number }[] {
-  if (p.kind === "binary") {
-    return [
-      {
-        label: "YES",
-        tint: "yc" as const,
-        tokensBase: p.yesTokens,
-        priceBps: p.market.yesPriceBps,
-      },
-      {
-        label: "NO",
-        tint: "nc" as const,
-        tokensBase: p.noTokens,
-        priceBps: 10_000 - p.market.yesPriceBps,
-      },
-    ];
-  }
   return [
     {
       label: p.market.homeTeam ?? "Team 1",
@@ -327,10 +305,7 @@ function ClaimsList({
     try {
       const authority = await getAuthority();
       if (!authority) throw new Error("Wallet cannot sign — reconnect");
-      const prepared =
-        p.kind === "1x2"
-          ? await prepareClaim1x2(authority, { marketId: p.market.id })
-          : await prepareClaim(authority, { marketId: p.market.id });
+      const prepared = await prepareClaim(authority, { marketId: p.market.id });
       if (!prepared.sim.ok) {
         throw new Error(prepared.sim.error ?? "Simulation failed");
       }
@@ -371,9 +346,8 @@ function ClaimsList({
                 {marketLabel(p)}
               </Link>
               <div className="text-[12px] text-muted">
-                Resolved{" "}
-                {p.kind === "1x2" ? p.market.outcome1x2 : p.market.outcome} ·{" "}
-                {fmtShares(payout)} winning shares · $1.00 / share
+                Resolved {p.market.outcome} · {fmtShares(payout)} winning shares
+                · $1.00 / share
               </div>
             </div>
             <Button

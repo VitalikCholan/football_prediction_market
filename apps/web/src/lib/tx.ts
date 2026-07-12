@@ -44,27 +44,18 @@ import {
 } from "@solana/kit";
 import {
   fetchMaybePosition,
-  fetchMaybePosition1x2,
   getBuyInstructionAsync,
-  getBuy1x2InstructionAsync,
   getOpenPositionInstructionAsync,
-  getOpenPosition1x2InstructionAsync,
   getPositionDecoder,
-  getPosition1x2Decoder,
   getRedeemInstructionAsync,
-  getRedeem1x2InstructionAsync,
   getSellInstructionAsync,
-  getSell1x2InstructionAsync,
-  Side as IdlSide,
 } from "@fpm/idl";
 import {
   TXLINE,
-  findPosition1x2Pda,
   findPositionPda,
   findVaultPda,
   friendlyTxError as decodeProgramError,
-  type Outcome1x2,
-  type Side,
+  type Outcome,
 } from "@fpm/shared";
 import { getRpc } from "@/lib/solana";
 
@@ -80,12 +71,11 @@ const COMPUTE_BUDGET_PROGRAM = address(
 );
 
 /**
- * Compute-unit budget for a 1X2 buy/sell. The LMSR softmax (exp/ln fixed-point
- * math over three outcomes) blows past the 200k default; SPEC §3.1 measures
- * `buy_1x2` at ~660k CU, so request 700k with headroom. Binary trades stay on
- * the default budget (no ComputeBudget ix — keeps binary txs byte-identical).
+ * Compute-unit budget for a buy/sell. The LMSR softmax (exp/ln fixed-point math
+ * over three outcomes) blows past the 200k default; SPEC §3.1 measures `buy` at
+ * ~660k CU, so request 700k with headroom.
  */
-const CU_LIMIT_1X2 = 700_000;
+const CU_LIMIT = 700_000;
 
 /**
  * Hand-built `ComputeBudget::SetComputeUnitLimit(units)` instruction — there is
@@ -158,19 +148,6 @@ function authoritySigner(auth: TxAuthority): TransactionSigner {
 
 /* ------------------------------------------------------------ public API */
 
-export interface TradeTxParams {
-  /** Market PDA (base58) — the DTO `id`. */
-  marketId: string;
-  /** MarketConfig PDA (base58) — the DTO `configId`. */
-  configId: string;
-  side: Side;
-  action: "buy" | "sell";
-  /** Base units (u64 as string): USDT in for buy, position tokens in for sell. */
-  amountBase: string;
-  /** Slippage guard, base units (shares min for buy, USDT min for sell). */
-  minOutBase: string;
-}
-
 export interface ClaimTxParams {
   /** Market PDA (base58). */
   marketId: string;
@@ -231,10 +208,6 @@ export async function getSolBalanceLamports(owner: string): Promise<bigint> {
   return BigInt(value);
 }
 
-function sideToIdl(side: Side): IdlSide {
-  return side === "YES" ? IdlSide.Yes : IdlSide.No;
-}
-
 /**
  * Decode `{"InstructionError":[i,{"Custom":6006}]}`-style sim/tx errors to a
  * user-facing sentence. Rent/log specifics stay here; the curated per-code
@@ -266,9 +239,8 @@ function tokenAmountFromAccountData(bytes: Uint8Array): bigint {
 /* ------------------------------------------------- simulate + send core */
 
 type OutProbe =
-  | { kind: "position"; address: Address; side: Side; preTokens: bigint }
   | {
-      kind: "position1x2";
+      kind: "position";
       address: Address;
       /** Outcome index into the on-chain `tokens[3]` array (Team1|Draw|Team2). */
       outcomeIdx: number;
@@ -323,10 +295,6 @@ async function buildPrepared(
         const bytes = base64.encode(acc.data[0]) as Uint8Array;
         if (probe.kind === "position") {
           const pos = getPositionDecoder().decode(bytes);
-          const post = probe.side === "YES" ? pos.yesTokens : pos.noTokens;
-          outBase = post - probe.preTokens;
-        } else if (probe.kind === "position1x2") {
-          const pos = getPosition1x2Decoder().decode(bytes);
           const post = pos.tokens[probe.outcomeIdx] ?? 0n;
           outBase = post - probe.preTokens;
         } else {
@@ -408,7 +376,36 @@ async function confirmSignature(sig: string, label: string): Promise<void> {
 
 /* ----------------------------------------------------------- trade + claim */
 
-/** Buy: (openPosition if missing) + buy. Sell: sell. Simulated, not signed. */
+/**
+ * On-chain outcome index into the `Position.tokens[3]` array and the
+ * `buy`/`sell` `outcome` u8 arg: [0]=Team1, [1]=Draw, [2]=Team2. Mirrors the
+ * shared `Outcome` string enum (minus the payout-only `Void`).
+ */
+export const OUTCOME_IDX: Record<Exclude<Outcome, "Void">, number> = {
+  Team1: 0,
+  Draw: 1,
+  Team2: 2,
+};
+
+export interface TradeTxParams {
+  /** Market PDA (base58) — the DTO `id`. */
+  marketId: string;
+  /** MarketConfig PDA (base58) — the DTO `configId`. */
+  configId: string;
+  /** Which of the three outcomes to trade. */
+  outcome: Exclude<Outcome, "Void">;
+  action: "buy" | "sell";
+  /** Base units (u64 as string): USDT in for buy, outcome tokens in for sell. */
+  amountBase: string;
+  /** Slippage guard, base units (tokens min for buy, USDT min for sell). */
+  minOutBase: string;
+}
+
+/**
+ * Buy/sell one outcome of a 3-way LMSR market. Buy: (open_position if missing) +
+ * buy; Sell: sell. A raised compute-unit budget is prepended (the LMSR math
+ * exceeds the 200k default — SPEC §3.1). Simulated, not signed.
+ */
 export async function prepareTrade(
   auth: TxAuthority,
   params: TradeTxParams,
@@ -421,8 +418,10 @@ export async function prepareTrade(
   const [vault] = await findVaultPda(market);
   const [position] = await findPositionPda(market, owner);
   const traderUsdt = await findUsdtAta(owner);
+  const outcomeIdx = OUTCOME_IDX[params.outcome];
 
-  const ixs: Instruction[] = [];
+  // Raised CU budget first — the LMSR softmax overruns the default limit.
+  const ixs: Instruction[] = [setComputeUnitLimitIx(CU_LIMIT)];
   let probe: OutProbe;
 
   if (params.action === "buy") {
@@ -446,19 +445,17 @@ export async function prepareTrade(
         vault,
         usdtMint: USDT_MINT,
         tokenProgram: TOKEN_PROGRAM,
-        side: sideToIdl(params.side),
+        outcome: outcomeIdx,
         usdtIn: BigInt(params.amountBase),
-        minOut: BigInt(params.minOutBase),
+        minTokensOut: BigInt(params.minOutBase),
       }),
     );
     probe = {
       kind: "position",
       address: position,
-      side: params.side,
+      outcomeIdx,
       preTokens: existing.exists
-        ? params.side === "YES"
-          ? existing.data.yesTokens
-          : existing.data.noTokens
+        ? existing.data.tokens[outcomeIdx] ?? 0n
         : 0n,
     };
   } else {
@@ -472,7 +469,7 @@ export async function prepareTrade(
         vault,
         usdtMint: USDT_MINT,
         tokenProgram: TOKEN_PROGRAM,
-        side: sideToIdl(params.side),
+        outcome: outcomeIdx,
         tokensIn: BigInt(params.amountBase),
         minUsdtOut: BigInt(params.minOutBase),
       }),
@@ -487,7 +484,7 @@ export async function prepareTrade(
   return buildPrepared(auth, ixs, probe, params.action);
 }
 
-/** Redeem the winning side of a resolved market (1 token = 1 USDT). */
+/** Redeem the winning (or Void-refunded) outcome of a resolved market. */
 export async function prepareClaim(
   auth: TxAuthority,
   params: ClaimTxParams,
@@ -500,154 +497,6 @@ export async function prepareClaim(
   const ownerUsdt = await findUsdtAta(owner);
 
   const ix = await getRedeemInstructionAsync({
-    owner: signer,
-    market,
-    position,
-    vault,
-    ownerUsdt,
-    usdtMint: USDT_MINT,
-    tokenProgram: TOKEN_PROGRAM,
-  });
-
-  return buildPrepared(
-    auth,
-    [ix],
-    {
-      kind: "tokenAccount",
-      address: ownerUsdt,
-      preAmount: await getUsdtBalanceBase(owner),
-    },
-    "redeem",
-  );
-}
-
-/* --------------------------------------------------------- 1X2 trade + claim */
-
-/**
- * On-chain outcome index into the `Position1x2.tokens[3]` array and the
- * `buy_1x2`/`sell_1x2` `outcome` u8 arg: [0]=Team1, [1]=Draw, [2]=Team2.
- * Mirrors the shared `Outcome1x2` string enum (minus the payout-only `Void`).
- */
-export const OUTCOME_1X2_IDX: Record<
-  Exclude<Outcome1x2, "Void">,
-  number
-> = {
-  Team1: 0,
-  Draw: 1,
-  Team2: 2,
-};
-
-export interface Trade1x2TxParams {
-  /** Market1x2 PDA (base58) — the DTO `id`. */
-  marketId: string;
-  /** MarketConfig PDA (base58) — the DTO `configId`. */
-  configId: string;
-  /** Which of the three outcomes to trade. */
-  outcome: Exclude<Outcome1x2, "Void">;
-  action: "buy" | "sell";
-  /** Base units (u64 as string): USDT in for buy, outcome tokens in for sell. */
-  amountBase: string;
-  /** Slippage guard, base units (tokens min for buy, USDT min for sell). */
-  minOutBase: string;
-}
-
-/**
- * Buy/sell one outcome of a 3-way 1X2 LMSR market. Buy: (open_position_1x2 if
- * missing) + buy_1x2; Sell: sell_1x2. A raised compute-unit budget is prepended
- * (the LMSR math exceeds the 200k default — SPEC §3.1). Same simulate-before-
- * sign flow and 1g out-probe as the binary path.
- */
-export async function prepareTrade1x2(
-  auth: TxAuthority,
-  params: Trade1x2TxParams,
-): Promise<PreparedTx> {
-  const rpc = getRpc();
-  const owner = authorityAddress(auth);
-  const signer = authoritySigner(auth);
-  const market = address(params.marketId);
-  const marketConfig = address(params.configId);
-  const [vault] = await findVaultPda(market);
-  const [position] = await findPosition1x2Pda(market, owner);
-  const traderUsdt = await findUsdtAta(owner);
-  const outcomeIdx = OUTCOME_1X2_IDX[params.outcome];
-
-  // Raised CU budget first — the LMSR softmax overruns the default limit.
-  const ixs: Instruction[] = [setComputeUnitLimitIx(CU_LIMIT_1X2)];
-  let probe: OutProbe;
-
-  if (params.action === "buy") {
-    const existing = await fetchMaybePosition1x2(rpc, position);
-    if (!existing.exists) {
-      ixs.push(
-        await getOpenPosition1x2InstructionAsync({
-          owner: signer,
-          market,
-          position,
-        }),
-      );
-    }
-    ixs.push(
-      await getBuy1x2InstructionAsync({
-        trader: signer,
-        market,
-        marketConfig,
-        position,
-        traderUsdt,
-        vault,
-        usdtMint: USDT_MINT,
-        tokenProgram: TOKEN_PROGRAM,
-        outcome: outcomeIdx,
-        usdtIn: BigInt(params.amountBase),
-        minTokensOut: BigInt(params.minOutBase),
-      }),
-    );
-    probe = {
-      kind: "position1x2",
-      address: position,
-      outcomeIdx,
-      preTokens: existing.exists
-        ? existing.data.tokens[outcomeIdx] ?? 0n
-        : 0n,
-    };
-  } else {
-    ixs.push(
-      await getSell1x2InstructionAsync({
-        trader: signer,
-        market,
-        marketConfig,
-        position,
-        traderUsdt,
-        vault,
-        usdtMint: USDT_MINT,
-        tokenProgram: TOKEN_PROGRAM,
-        outcome: outcomeIdx,
-        tokensIn: BigInt(params.amountBase),
-        minUsdtOut: BigInt(params.minOutBase),
-      }),
-    );
-    probe = {
-      kind: "tokenAccount",
-      address: traderUsdt,
-      preAmount: await getUsdtBalanceBase(owner),
-    };
-  }
-
-  return buildPrepared(auth, ixs, probe, params.action);
-}
-
-/** Redeem the winning (or Void-refunded) outcome of a resolved 1X2 market. */
-export async function prepareClaim1x2(
-  auth: TxAuthority,
-  params: ClaimTxParams,
-): Promise<PreparedTx> {
-  const owner = authorityAddress(auth);
-  const signer = authoritySigner(auth);
-  const market = address(params.marketId);
-  const [vault] = await findVaultPda(market);
-  const [position] = await findPosition1x2Pda(market, owner);
-  const ownerUsdt = await findUsdtAta(owner);
-
-  const ix = await getRedeem1x2InstructionAsync({
     owner: signer,
     market,
     position,

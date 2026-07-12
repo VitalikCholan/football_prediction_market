@@ -58,7 +58,6 @@ import {
 import {
   MarketState,
   Outcome,
-  Side,
   fetchMaybeMarket,
   fetchMaybePosition,
   getBuyInstructionAsync,
@@ -94,10 +93,10 @@ const CONFIG_ID = 1; // MarketConfig#1 — home-win predicate (stat1 - stat2) > 
 const FIXTURE_ID = BigInt(process.env.FIXTURE_ID ?? 18_179_549);
 const KICKOFF_DELAY_SECS = BigInt(process.env.KICKOFF_DELAY_SECS ?? 90);
 const TRADING_WINDOW_SECS = BigInt(process.env.TRADING_WINDOW_SECS ?? 90);
-const SEED_YES = 100_000_000n; // 100 USDT virtual — 50/50 odds
-const SEED_NO = 100_000_000n;
-const SEED_LIQUIDITY = 50_000_000n; // 50 USDT real collateral
-const BUY_USDT_IN = 5_000_000n; // 5 USDT of YES so redeem pays out
+const SEED_B = 100_000_000n; // LMSR depth `b` = 100 USDT (mirrors LiteSVM tests)
+// Symmetric seed_q = [0,0,0] → uniform 1/3 odds; subsidy = ceil(b·ln3) ≈ 110 USDT.
+const SEED_LIQUIDITY = 200_000_000n; // 200 USDT real collateral (subsidy + headroom)
+const BUY_USDT_IN = 5_000_000n; // 5 USDT of Team1 so redeem pays out
 const MIN_USDT = SEED_LIQUIDITY + BUY_USDT_IN + 1_000_000n; // +1 USDT headroom
 const STATE_FILE = process.env.STATE_FILE;
 
@@ -349,8 +348,8 @@ async function main() {
       fixtureId: FIXTURE_ID,
       kickoffTs,
       freezeTs,
-      seedYes: SEED_YES,
-      seedNo: SEED_NO,
+      b: SEED_B,
+      seedQ: [0n, 0n, 0n],
       seedLiquidity,
     });
     txSigs.init_market = await sendTx(owner, [ix], "init_market");
@@ -391,12 +390,12 @@ async function main() {
   });
 
   // ---- 4. wait for the KEEPER to activate (Open -> Trading), then buy ----
-  await step("wait for keeper activate -> buy 5 USDT of YES", async () => {
+  await step("wait for keeper activate -> buy 5 USDT of Team1", async () => {
     const pos = await withRpc("fetchMaybePosition", (rpc) =>
       fetchMaybePosition(rpc, positionPda),
     );
-    if (pos.exists && pos.data.yesTokens > 0n) {
-      return `SKIP — position already holds ${pos.data.yesTokens} YES tokens`;
+    if (pos.exists && pos.data.tokens[0] > 0n) {
+      return `SKIP — position already holds ${pos.data.tokens[0]} Team1 tokens`;
     }
     // Bounded wait: kickoff + 120s of slack for keeper ticks / clock skew.
     const deadline = Number(kickoffTs) + 120;
@@ -428,16 +427,16 @@ async function main() {
       vault: vaultPda,
       usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
-      side: Side.Yes,
+      outcome: 0, // 0 = Team1
       usdtIn: BUY_USDT_IN,
-      minOut: 1n,
+      minTokensOut: 1n,
     });
     txSigs.buy = await sendTx(owner, [ix], "buy");
     const after = await withRpc("fetchMaybePosition", (rpc) =>
       fetchMaybePosition(rpc, positionPda),
     );
-    const yes = after.exists ? after.data.yesTokens : 0n;
-    return `bought ${BUY_USDT_IN} raw USDT of YES → ${yes} YES tokens`;
+    const team1 = after.exists ? after.data.tokens[0] : 0n;
+    return `bought ${BUY_USDT_IN} raw USDT of Team1 → ${team1} Team1 tokens`;
   });
 
   // ---- 5. wait for the KEEPER to freeze + RESOLVE (real TxLINE proof) ----
@@ -452,12 +451,12 @@ async function main() {
       const state = market.data.state;
       if (state === MarketState.Resolved) {
         const outcome = market.data.outcome;
-        if (outcome !== Outcome.Yes) {
+        if (outcome !== Outcome.Team1) {
           throw new Error(
-            `resolved with UNEXPECTED outcome ${Outcome[outcome]} (expected Yes: 1-0 home win)`,
+            `resolved with UNEXPECTED outcome ${Outcome[outcome]} (expected Team1: 1-0 home win)`,
           );
         }
-        return `market Resolved, outcome Yes — proof-valid resolve landed`;
+        return `market Resolved, outcome Team1 — proof-valid resolve landed`;
       }
       const now = Math.floor(Date.now() / 1000);
       if (now > deadline) {
@@ -473,14 +472,14 @@ async function main() {
   });
 
   // ---- 6. redeem: winner payout 1 USDT per YES token ----
-  await step("redeem: 1 USDT per YES token", async () => {
+  await step("redeem: 1 USDT per Team1 token", async () => {
     const posBefore = await withRpc("fetchMaybePosition", (rpc) =>
       fetchMaybePosition(rpc, positionPda),
     );
     if (!posBefore.exists) throw new Error("position missing");
     if (posBefore.data.redeemed) return "SKIP — already redeemed";
-    const expected = posBefore.data.yesTokens;
-    if (expected === 0n) throw new Error("nothing to redeem (0 YES tokens)");
+    const expected = posBefore.data.tokens[0];
+    if (expected === 0n) throw new Error("nothing to redeem (0 Team1 tokens)");
     const balBefore = await usdtBalance(ownerUsdtAta);
     const ix = await getRedeemInstructionAsync({
       owner,
@@ -495,7 +494,7 @@ async function main() {
     const balAfter = await usdtBalance(ownerUsdtAta);
     const delta = balAfter - balBefore;
     if (delta !== expected) {
-      throw new Error(`payout ${delta} != yes_tokens ${expected}`);
+      throw new Error(`payout ${delta} != team1_tokens ${expected}`);
     }
     const posAfter = await withRpc("fetchMaybePosition", (rpc) =>
       fetchMaybePosition(rpc, positionPda),

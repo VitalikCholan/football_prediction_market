@@ -1,5 +1,6 @@
-//! `sell(side, tokens_in, min_usdt_out)` — inverse of buy. Vault pays out signed
-//! by the `market` PDA (the vault's authority). (plan §4.6)
+//! `sell(outcome, tokens_in, min_usdt_out)` — inverse of `buy`:
+//! LMSR refund (`sell_refund`, floor-rounded) → fee on the refund → vault
+//! pays out signed by the `market` PDA → re-validate solvency (SPEC §3.1).
 
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
@@ -9,8 +10,8 @@ use anchor_spl::token_interface::{
 use crate::constants::{BPS_DENOM, MARKET_SEED, POSITION_SEED};
 use crate::error::AmmError;
 use crate::fee::{self, FeeParams, FeeState};
-use crate::math;
-use crate::state::{Market, MarketConfig, MarketState, Position, Side, Trade};
+use crate::lmsr;
+use crate::state::{Market, MarketConfig, MarketState, Position, Trade};
 
 #[derive(Accounts)]
 pub struct Sell<'info> {
@@ -56,11 +57,13 @@ pub struct Sell<'info> {
 
 pub(crate) fn handler(
     ctx: Context<Sell>,
-    side: Side,
+    outcome: u8,
     tokens_in: u64,
     min_usdt_out: u64,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
+    let idx = usize::from(outcome);
+    require!(idx < lmsr::N_OUTCOMES, AmmError::LmsrInvalidOutcomeIndex);
 
     // ---- pre-flight validation (borrow immutably first) ----
     {
@@ -69,12 +72,10 @@ pub(crate) fn handler(
         require!(tokens_in > 0, AmmError::ZeroAmount);
         require!(now >= market.last_ts, AmmError::MonotonicClock);
     }
-    let side_yes = matches!(side, Side::Yes);
-    {
-        let position = &ctx.accounts.position;
-        let bal = if side_yes { position.yes_tokens } else { position.no_tokens };
-        require!(bal >= tokens_in, AmmError::InsufficientPositionBalance);
-    }
+    require!(
+        ctx.accounts.position.tokens[idx] >= tokens_in,
+        AmmError::InsufficientPositionBalance
+    );
 
     // ---- dynamic fee from pre-trade state ----
     let mc = &ctx.accounts.market_config;
@@ -94,16 +95,16 @@ pub(crate) fn handler(
     };
     let (fee_bps, v_ref) = fee::compute_fee_bps(&params, &state, now)?;
 
-    // ---- CPMM inverse ----
-    let res = math::sell(
-        side_yes,
-        ctx.accounts.market.yes_reserve,
-        ctx.accounts.market.no_reserve,
+    // ---- LMSR refund (floor-rounded, pool-favorable) ----
+    let gross = lmsr::sell_refund(
+        &ctx.accounts.market.q,
+        ctx.accounts.market.b,
+        idx,
         tokens_in,
     )?;
 
-    // usdt_out = usdt_gross * (10_000 - fee_bps) / 10_000
-    let out = (res.usdt_gross as u128)
+    // usdt_out = gross * (10_000 - fee_bps) / 10_000
+    let out = (gross as u128)
         .checked_mul((BPS_DENOM - fee_bps as u64) as u128)
         .ok_or(AmmError::MathOverflow)?
         .checked_div(BPS_DENOM as u128)
@@ -111,32 +112,25 @@ pub(crate) fn handler(
     let usdt_out = u64::try_from(out).map_err(|_| AmmError::NumericConversion)?;
     require!(usdt_out >= min_usdt_out, AmmError::SlippageExceeded);
 
-    // capture fixture_id + bump for signing before taking the mutable borrow chain
+    // capture fixture_id + bump for signing before the mutable borrow chain
     let fixture_id = ctx.accounts.market.fixture_id;
     let market_bump = ctx.accounts.market.bump;
 
-    // ---- update reserves, fee state, position/supply/collateral (before payout) ----
+    // ---- update curve, supply, fee state, position (before payout) ----
     let old_price_bps = ctx.accounts.market.last_price_bps;
+    let new_price_bps;
     {
         let market = &mut ctx.accounts.market;
-        market.yes_reserve = res.new_yes_reserve;
-        market.no_reserve = res.new_no_reserve;
-        let new_price_bps = math::price_yes_bps(market.yes_reserve, market.no_reserve)?;
+        market.q[idx] = market.q[idx]
+            .checked_sub(tokens_in)
+            .ok_or(AmmError::MathOverflow)?;
+        market.supply[idx] = market.supply[idx]
+            .checked_sub(tokens_in)
+            .ok_or(AmmError::MathOverflow)?;
+        new_price_bps = lmsr::price_bps(&market.q, market.b, idx)?;
         market.v_acc = fee::next_v_acc(&params, v_ref, old_price_bps, new_price_bps)?;
         market.last_price_bps = new_price_bps;
         market.last_ts = now;
-
-        if side_yes {
-            market.yes_supply = market
-                .yes_supply
-                .checked_sub(tokens_in)
-                .ok_or(AmmError::MathOverflow)?;
-        } else {
-            market.no_supply = market
-                .no_supply
-                .checked_sub(tokens_in)
-                .ok_or(AmmError::MathOverflow)?;
-        }
         market.usdt_collateral = market
             .usdt_collateral
             .checked_sub(usdt_out)
@@ -144,18 +138,10 @@ pub(crate) fn handler(
     }
     {
         let position = &mut ctx.accounts.position;
-        if side_yes {
-            position.yes_tokens = position
-                .yes_tokens
-                .checked_sub(tokens_in)
-                .ok_or(AmmError::MathOverflow)?;
-        } else {
-            position.no_tokens = position
-                .no_tokens
-                .checked_sub(tokens_in)
-                .ok_or(AmmError::MathOverflow)?;
-        }
-        // reduce the trader's basis by the proceeds (saturating; can't go below 0).
+        position.tokens[idx] = position.tokens[idx]
+            .checked_sub(tokens_in)
+            .ok_or(AmmError::MathOverflow)?;
+        // reduce the trader's basis by the proceeds (saturating; ≥ 0).
         position.collateral = position.collateral.saturating_sub(usdt_out);
     }
 
@@ -177,20 +163,19 @@ pub(crate) fn handler(
     );
     token_interface::transfer_checked(cpi_ctx, usdt_out, decimals)?;
 
-    // ---- re-validate reserves + solvency ----
+    // ---- re-validate solvency ----
     ctx.accounts.vault.reload()?;
     let market = &ctx.accounts.market;
-    require!(market.yes_reserve > 0 && market.no_reserve > 0, AmmError::ZeroReserve);
-    math::assert_solvent(ctx.accounts.vault.amount, market.yes_supply, market.no_supply)?;
+    lmsr::assert_solvent_multi(ctx.accounts.vault.amount, &market.supply)?;
 
     emit!(Trade {
         fixture_id,
         owner: ctx.accounts.trader.key(),
-        side_yes,
+        outcome,
         is_buy: false,
         usdt: usdt_out,
         tokens: tokens_in,
-        price_bps: market.last_price_bps,
+        price_bps: new_price_bps,
         fee_bps,
     });
     Ok(())

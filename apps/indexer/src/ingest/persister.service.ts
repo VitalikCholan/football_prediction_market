@@ -1,25 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { findMarket1x2Pda, findMarketPda } from '@fpm/shared';
+import { findMarketPda } from '@fpm/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../db/prisma.service';
-import { deriveReservesFromPrice } from '../chain/reserve-math';
 import { FixturesService } from './fixtures.service';
 import type {
   IndexedEvent,
   LifecycleIndexedEvent,
-  Lifecycle1x2IndexedEvent,
   MarketCreatedIndexedEvent,
-  Market1x2CreatedIndexedEvent,
-  Outcome1x2Index,
-  Redeem1x2IndexedEvent,
+  OutcomeIndex,
   RedeemIndexedEvent,
-  Set1x2IndexedEvent,
-  Trade1x2IndexedEvent,
+  SetIndexedEvent,
   TradeIndexedEvent,
 } from '../chain/indexed-events.types';
 
-/** Map the indexer's 1X2 outcome index onto the DB `outcome_1x2` string. */
-function outcome1x2Label(o: Outcome1x2Index): string | null {
+/** Map the indexer's outcome index onto the DB `outcome` string. */
+function outcomeLabel(o: OutcomeIndex): string | null {
   if (o === 0) return 'Team1';
   if (o === 1) return 'Draw';
   if (o === 2) return 'Team2';
@@ -182,40 +177,23 @@ export class EventPersister {
         case 'created':
           await this.persistCreated(ev);
           break;
-        case 'buy':
-        case 'sell':
+        case 'trade':
           await this.persistTrade(ev);
           break;
         case 'redeem':
           await this.persistRedeem(ev);
           break;
-        case 'activate':
-        case 'freeze':
-        case 'resolve':
-        case 'close':
-          await this.persistLifecycle(ev);
-          break;
-        // ---- 1X2 (phase C) --------------------------------------------------
-        case 'created1x2':
-          await this.persistCreated1x2(ev);
-          break;
-        case 'trade1x2':
-          await this.persistTrade1x2(ev);
-          break;
-        case 'redeem1x2':
-          await this.persistRedeem1x2(ev);
-          break;
-        case 'setMint1x2':
-        case 'setRedeem1x2':
-          await this.persistSet1x2(ev);
+        case 'setMint':
+        case 'setRedeem':
+          await this.persistSet(ev);
           break;
         default:
-          await this.persistLifecycle1x2(ev);
+          await this.persistLifecycle(ev);
       }
     }
   }
 
-  /** Derive (and cache) the binary market PDA for a fixture id (@fpm/shared). */
+  /** Derive (and cache) the market PDA for a fixture id (@fpm/shared). */
   async marketPda(fixtureId: bigint): Promise<string> {
     const key = fixtureId.toString();
     const hit = this.pdaCache.get(key);
@@ -225,16 +203,11 @@ export class EventPersister {
     return pda.toString();
   }
 
-  /** Derive (and cache) the Market1x2 PDA for a fixture id (@fpm/shared). */
-  async market1x2Pda(fixtureId: bigint): Promise<string> {
-    const key = `1x2:${fixtureId}`;
-    const hit = this.pdaCache.get(key);
-    if (hit) return hit;
-    const [pda] = await findMarket1x2Pda(fixtureId);
-    this.pdaCache.set(key, pda.toString());
-    return pda.toString();
-  }
-
+  /**
+   * init_market -> Market row bootstrap (LMSR q/b + opening prices). The
+   * authoritative q/b/supply/state comes from the account refresh
+   * (`refreshMarkets`); this seeds the row so trades/lifecycle can attach.
+   */
   private async persistCreated(ev: MarketCreatedIndexedEvent): Promise<void> {
     const id = await this.marketPda(ev.fixtureId);
     await this.prisma.market.upsert({
@@ -244,9 +217,10 @@ export class EventPersister {
         fixtureId: ev.fixtureId,
         configId: ev.config,
         state: 'Open',
-        yesReserve: ev.yesReserve.toString(),
-        noReserve: ev.noReserve.toString(),
-        yesPriceBps: ev.yesPriceBps,
+        team1PriceBps: ev.pricesBps[0],
+        drawPriceBps: ev.pricesBps[1],
+        team2PriceBps: ev.pricesBps[2],
+        b: ev.b.toString(),
         updatedSlot: ev.slot,
       },
       update: {}, // authoritative state comes from the account refresh
@@ -264,14 +238,21 @@ export class EventPersister {
           marketId: id,
           ts: ev.ts,
           slot: ev.slot,
-          yesPriceBps: ev.yesPriceBps,
-          yesReserve: ev.yesReserve.toString(),
-          noReserve: ev.noReserve.toString(),
+          team1PriceBps: ev.pricesBps[0],
+          drawPriceBps: ev.pricesBps[1],
+          team2PriceBps: ev.pricesBps[2],
         },
       });
     }
   }
 
+  /**
+   * A Buy/Sell -> Trade + PricePoint + VolumePoint. The Trade event carries the
+   * traded outcome's post-trade softmax price directly; the authoritative
+   * q/supply/all-three prices arrive via the account refresh. We store the
+   * outcome index and chart the traded price. Idempotent on (signature,
+   * eventIndex).
+   */
   private async persistTrade(ev: TradeIndexedEvent): Promise<void> {
     const id = await this.marketPda(ev.fixtureId);
     const already = await this.prisma.trade.findUnique({
@@ -293,23 +274,16 @@ export class EventPersister {
       return;
     }
 
-    // The Trade event carries the post-trade price but not the reserves.
-    // Trades preserve the constant product k = yes*no (fees are taken from the
-    // collateral leg), so reserves are recoverable from k + price:
-    //   p = no/(yes+no)  =>  no = sqrt(k*p/(1-p)), yes = k/no
-    const k =
-      BigInt(market.yesReserve.toFixed(0)) *
-      BigInt(market.noReserve.toFixed(0));
-    const { yesReserve, noReserve } = deriveReservesFromPrice(
-      k,
-      ev.yesPriceBps,
-      {
-        yesReserve: BigInt(market.yesReserve.toFixed(0)),
-        noReserve: BigInt(market.noReserve.toFixed(0)),
-      },
-    );
+    // The Trade event carries only the traded outcome's post-trade price. Chart
+    // the three per-outcome prices with the traded one updated and the two
+    // untraded held at their last snapshot (the account refresh overwrites all
+    // three authoritatively on the next poll).
+    const team1PriceBps =
+      ev.outcome === 0 ? ev.priceBps : market.team1PriceBps;
+    const drawPriceBps = ev.outcome === 1 ? ev.priceBps : market.drawPriceBps;
+    const team2PriceBps =
+      ev.outcome === 2 ? ev.priceBps : market.team2PriceBps;
 
-    const usdt = ev.kind === 'buy' ? ev.usdtIn : ev.usdtOut;
     await this.prisma.$transaction([
       this.prisma.trade.create({
         data: {
@@ -317,12 +291,12 @@ export class EventPersister {
           signature: ev.signature,
           eventIndex: ev.eventIndex,
           trader: ev.trader,
-          side: ev.side,
-          action: ev.kind,
-          usdtIn: ev.usdtIn.toString(),
-          usdtOut: ev.usdtOut.toString(),
-          tokensAmount: ev.tokensAmount.toString(),
-          priceBps: ev.yesPriceBps,
+          outcome: ev.outcome, // 0 = Team1, 1 = Draw, 2 = Team2
+          action: ev.isBuy ? 'buy' : 'sell',
+          usdtIn: ev.isBuy ? ev.usdt.toString() : '0',
+          usdtOut: ev.isBuy ? '0' : ev.usdt.toString(),
+          tokensAmount: ev.tokens.toString(),
+          priceBps: ev.priceBps,
           feeBps: ev.feeBps,
           ts: ev.ts,
           slot: ev.slot,
@@ -333,9 +307,9 @@ export class EventPersister {
           marketId: id,
           ts: ev.ts,
           slot: ev.slot,
-          yesPriceBps: ev.yesPriceBps,
-          yesReserve: yesReserve.toString(),
-          noReserve: noReserve.toString(),
+          team1PriceBps,
+          drawPriceBps,
+          team2PriceBps,
           feeBps: ev.feeBps,
         },
       }),
@@ -344,18 +318,16 @@ export class EventPersister {
           marketId: id,
           ts: ev.ts,
           slot: ev.slot,
-          volume: usdt.toString(),
+          volume: ev.usdt.toString(),
         },
       }),
       this.prisma.market.update({
         where: { id },
         data: {
-          yesReserve: yesReserve.toString(),
-          noReserve: noReserve.toString(),
-          yesPriceBps: ev.yesPriceBps,
-          totalVolume: {
-            increment: new Prisma.Decimal(usdt.toString()),
-          },
+          team1PriceBps,
+          drawPriceBps,
+          team2PriceBps,
+          totalVolume: { increment: new Prisma.Decimal(ev.usdt.toString()) },
           updatedSlot: ev.slot,
         },
       }),
@@ -377,8 +349,8 @@ export class EventPersister {
         where: { id },
         data: {
           state,
-          ...(ev.kind === 'resolve' && ev.outcome != null
-            ? { outcome: ev.outcome }
+          ...(ev.kind === 'resolve'
+            ? { outcome: outcomeLabel(ev.outcome ?? null) }
             : {}),
           updatedSlot: ev.slot,
         },
@@ -392,186 +364,8 @@ export class EventPersister {
 
   private async persistRedeem(ev: RedeemIndexedEvent): Promise<void> {
     const id = await this.marketPda(ev.fixtureId);
-    await this.prisma.redemption.upsert({
-      where: {
-        signature_eventIndex: {
-          signature: ev.signature,
-          eventIndex: ev.eventIndex,
-        },
-      },
-      create: {
-        marketId: id,
-        signature: ev.signature,
-        eventIndex: ev.eventIndex,
-        owner: ev.owner,
-        outcome: ev.outcome,
-        payout: ev.payout.toString(),
-        ts: ev.ts,
-        slot: ev.slot,
-      },
-      update: {},
-    });
-  }
-
-  // ---- 1X2 (phase C) --------------------------------------------------------
-
-  /**
-   * init_market_1x2 -> Market1x2 row bootstrap. Mirrors `persistCreated` but
-   * writes the shared row with `marketKind = 1` and the LMSR columns. The
-   * authoritative q/b/supply/state comes from the account refresh
-   * (`refreshMarkets1x2`); this seeds the row so trades/lifecycle can attach.
-   */
-  private async persistCreated1x2(
-    ev: Market1x2CreatedIndexedEvent,
-  ): Promise<void> {
-    const id = await this.market1x2Pda(ev.fixtureId);
-    await this.prisma.market.upsert({
-      where: { id },
-      create: {
-        id,
-        fixtureId: ev.fixtureId,
-        configId: ev.config,
-        marketKind: 1,
-        state: 'Open',
-        oneXTeam1PriceBps: ev.pricesBps[0],
-        oneXDrawPriceBps: ev.pricesBps[1],
-        oneXTeam2PriceBps: ev.pricesBps[2],
-        oneXB: ev.b.toString(),
-        yesPriceBps: ev.pricesBps[0], // legacy col: opening team1 price
-        updatedSlot: ev.slot,
-      },
-      update: {}, // authoritative state comes from the account refresh
-    });
-    await this.enrichTeams(id, ev.fixtureId);
-    // Opening price point (charts track the Team1 softmax price for 1X2 rows).
-    const exists = await this.prisma.pricePoint.findFirst({
-      where: { marketId: id, slot: ev.slot },
-      select: { id: true },
-    });
-    if (!exists) {
-      await this.prisma.pricePoint.create({
-        data: {
-          marketId: id,
-          ts: ev.ts,
-          slot: ev.slot,
-          yesPriceBps: ev.pricesBps[0],
-          yesReserve: '0',
-          noReserve: '0',
-        },
-      });
-    }
-  }
-
-  /**
-   * A 1X2 Buy/Sell -> Trade + PricePoint + VolumePoint. Unlike the binary path
-   * there are no reserves to reconstruct: the Trade1x2 event carries the traded
-   * outcome's post-trade softmax price directly, and the authoritative q/supply
-   * arrive via the account refresh. We store the outcome index in `side` and
-   * chart the traded price. Idempotent on (signature, eventIndex).
-   */
-  private async persistTrade1x2(ev: Trade1x2IndexedEvent): Promise<void> {
-    const id = await this.market1x2Pda(ev.fixtureId);
-    const already = await this.prisma.trade.findUnique({
-      where: {
-        signature_eventIndex: {
-          signature: ev.signature,
-          eventIndex: ev.eventIndex,
-        },
-      },
-      select: { id: true },
-    });
-    if (already) return;
-
-    const market = await this.prisma.market.findUnique({ where: { id } });
-    if (!market) {
-      this.logger.warn(
-        `1X2 trade on unknown market ${id} (fixture ${ev.fixtureId}) — Market1x2Created not indexed?`,
-      );
-      return;
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.trade.create({
-        data: {
-          marketId: id,
-          signature: ev.signature,
-          eventIndex: ev.eventIndex,
-          trader: ev.trader,
-          side: ev.outcome, // 0 = Team1, 1 = Draw, 2 = Team2
-          action: ev.isBuy ? 'buy' : 'sell',
-          usdtIn: ev.isBuy ? ev.usdt.toString() : '0',
-          usdtOut: ev.isBuy ? '0' : ev.usdt.toString(),
-          tokensAmount: ev.tokens.toString(),
-          priceBps: ev.priceBps,
-          feeBps: ev.feeBps,
-          ts: ev.ts,
-          slot: ev.slot,
-        },
-      }),
-      this.prisma.pricePoint.create({
-        data: {
-          marketId: id,
-          ts: ev.ts,
-          slot: ev.slot,
-          yesPriceBps: ev.priceBps,
-          yesReserve: '0',
-          noReserve: '0',
-          feeBps: ev.feeBps,
-        },
-      }),
-      this.prisma.volumePoint.create({
-        data: {
-          marketId: id,
-          ts: ev.ts,
-          slot: ev.slot,
-          volume: ev.usdt.toString(),
-        },
-      }),
-      this.prisma.market.update({
-        where: { id },
-        data: {
-          yesPriceBps: ev.priceBps,
-          totalVolume: { increment: new Prisma.Decimal(ev.usdt.toString()) },
-          updatedSlot: ev.slot,
-        },
-      }),
-    ]);
-  }
-
-  private async persistLifecycle1x2(
-    ev: Lifecycle1x2IndexedEvent,
-  ): Promise<void> {
-    const id = await this.market1x2Pda(ev.fixtureId);
-    const state =
-      ev.kind === 'activate1x2'
-        ? 'Trading'
-        : ev.kind === 'freeze1x2'
-          ? 'Locked'
-          : ev.kind === 'resolve1x2'
-            ? 'Resolved'
-            : 'Closed';
-    try {
-      await this.prisma.market.update({
-        where: { id },
-        data: {
-          state,
-          ...(ev.kind === 'resolve1x2'
-            ? { outcome1x2: outcome1x2Label(ev.outcome ?? null) }
-            : {}),
-          updatedSlot: ev.slot,
-        },
-      });
-    } catch {
-      this.logger.warn(
-        `${ev.kind} on unknown 1X2 market ${id} (fixture ${ev.fixtureId}) — skipped`,
-      );
-    }
-  }
-
-  private async persistRedeem1x2(ev: Redeem1x2IndexedEvent): Promise<void> {
-    const id = await this.market1x2Pda(ev.fixtureId);
-    // The shared Redemption.outcome is an Int — store the 1X2 outcome index
-    // (0/1/2), or -1 for a Void refund (no single winning outcome).
+    // The Redemption.outcome is an Int — store the outcome index (0/1/2), or
+    // -1 for a Void refund (no single winning outcome).
     const outcome =
       ev.outcome === 'void' || ev.outcome == null ? -1 : ev.outcome;
     await this.prisma.redemption.upsert({
@@ -596,13 +390,13 @@ export class EventPersister {
   }
 
   /**
-   * SetMinted1x2 / SetRedeemed1x2 -> volume bookkeeping only. A complete-set
+   * SetMinted / SetRedeemed -> volume bookkeeping only. A complete-set
    * mint/redeem is fee-free and price-neutral (SPEC §3.1 C-add), so it moves
    * collateral but not the softmax prices — record it as a VolumePoint +
    * totalVolume bump so the chart's volume series reflects the flow.
    */
-  private async persistSet1x2(ev: Set1x2IndexedEvent): Promise<void> {
-    const id = await this.market1x2Pda(ev.fixtureId);
+  private async persistSet(ev: SetIndexedEvent): Promise<void> {
+    const id = await this.marketPda(ev.fixtureId);
     const market = await this.prisma.market.findUnique({
       where: { id },
       select: { id: true },

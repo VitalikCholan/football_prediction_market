@@ -60,3 +60,65 @@ export async function fetchImpliedHomeProb(
     return null;
   }
 }
+
+/**
+ * TxLINE StablePrice odds -> demargined implied probabilities for the three
+ * 1X2 outcomes `[P(Team1/home), P(Draw), P(Team2/away)]`.
+ *
+ * Mirrors scripts/seed-markets.ts `fetch1x2Implied`, reusing the keeper's
+ * TxlineAuth. Uses the `Pct` field (already vig-free). Returns null when no
+ * full-time 1X2 quote is available (the devnet WC feed is frequently empty —
+ * the caller then falls back to symmetric seeding). Never throws.
+ */
+export async function fetchImplied1x2(
+  config: KeeperConfig,
+  auth: TxlineAuth,
+  fixtureId: bigint,
+): Promise<[number, number, number] | null> {
+  try {
+    const headers = await auth.headers();
+    const url = `${config.txlineBaseUrl}/api/odds/snapshot/${fixtureId.toString()}`;
+    const res = await request(url, { method: "GET", headers });
+    if (res.statusCode >= 300) {
+      await res.body.dump();
+      return null;
+    }
+    const arr = (await res.body.json()) as unknown;
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+
+    const isHome = (n: string) => /^(home|1|p1|participant\s*1)$/i.test(n.trim());
+    const isDraw = (n: string) => /^(draw|x|tie)$/i.test(n.trim());
+    const isAway = (n: string) => /^(away|2|p2|participant\s*2)$/i.test(n.trim());
+
+    let best: { ts: number; probs: [number, number, number] } | null = null;
+    for (const row of arr) {
+      const o = row as Record<string, unknown>;
+      const names = (o.PriceNames ?? o.priceNames) as unknown;
+      const pcts = (o.Pct ?? o.pct) as unknown;
+      if (!Array.isArray(names) || !Array.isArray(pcts)) continue;
+
+      const pick = (test: (n: string) => boolean): number | null => {
+        const idx = names.findIndex((n) => typeof n === "string" && test(n));
+        if (idx < 0) return null;
+        const raw = pcts[idx];
+        const pct =
+          typeof raw === "number"
+            ? raw
+            : typeof raw === "string" && raw.toUpperCase() !== "NA"
+              ? Number.parseFloat(raw)
+              : NaN;
+        return Number.isFinite(pct) && pct > 0 && pct < 100 ? pct / 100 : null;
+      };
+      const h = pick(isHome);
+      const d = pick(isDraw);
+      const a = pick(isAway);
+      if (h == null || d == null || a == null) continue; // need a full 3-way quote
+      const ts = Number(o.Ts ?? o.ts ?? 0);
+      if (!best || ts > best.ts) best = { ts, probs: [h, d, a] };
+    }
+    return best ? best.probs : null;
+  } catch (err) {
+    log.debug({ fixtureId: fixtureId.toString(), err }, "auto-seed: 1X2 odds fetch failed — symmetric seed");
+    return null;
+  }
+}

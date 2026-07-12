@@ -1,5 +1,5 @@
 //! `freeze_market` — keeper-gated (D-1), clock-guarded `Trading → Locked`
-//! transition; trading halts (plan §4.4).
+//! transition; trading halts.
 
 use anchor_lang::prelude::*;
 

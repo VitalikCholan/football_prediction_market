@@ -1,7 +1,7 @@
 /**
  * Pure fixed-point LMSR softmax pricing for the 3-way (1X2) market — a faithful
  * TypeScript port of `programs/amm/src/lmsr.rs` `prices_bps` (SPEC §3.1). The
- * on-chain `Market1x2` account stores only `q` (net tokens per outcome,
+ * on-chain `Market` account stores only `q` (net tokens per outcome,
  * INCLUDING the admin seed offsets) and `b` (liquidity), so the indexer derives
  * the three display prices exactly the way the program does rather than trusting
  * a single cached `last_price_bps` (which only tracks the last-traded outcome).
@@ -88,7 +88,7 @@ function shiftedExpSum(
 /**
  * Softmax prices of all three outcomes in bps, FLOOR-rounded per outcome —
  * exact port of `prices_bps` in lmsr.rs. `q` and `b` are read straight off the
- * decoded `Market1x2` account (`q` includes seed offsets — that is what sets the
+ * decoded `Market` account (`q` includes seed offsets — that is what sets the
  * odds). Degenerate `b`/`sum` falls back to an even 1/3 split.
  */
 export function prices1x2Bps(

@@ -1,14 +1,11 @@
-//! `redeem` — pay out a resolved market position (plan §4.8).
+//! `redeem` — pay out a resolved position (SPEC §3.1).
 //!
-//! - Winner: 1 winning token = 1 USDT (both 6 dp).
-//! - Loser: payout 0 (position still closed + flagged).
-//! - `Outcome::Void`: pro-rata stake refund per D-4 — refund the position's
-//!   net USDT basis (`Position.collateral`), clamped to the market's remaining
-//!   collateral (pool-favorable; guards the extreme case where realized sell
-//!   profits exceeded the seed liquidity).
+//! - Winning outcome: 1 token = 1 USDT (both 6 dp). Losers pay 0.
+//! - `Outcome::Void`: pro-rata net-basis refund per D-4
+//!   (`Position.collateral`, clamped to the market's remaining collateral).
 //!
-//! Double-redeem defense: balances are ZEROED and the `redeemed` flag set
-//! BEFORE the payout CPI (checks-effects-interactions), plus the state gate.
+//! Double-redeem defense: all three balances are ZEROED and the `redeemed`
+//! flag set BEFORE the payout CPI (checks-effects-interactions) + state gate.
 
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
@@ -67,8 +64,9 @@ pub(crate) fn handler(ctx: Context<Redeem>) -> Result<()> {
 
     let outcome = ctx.accounts.market.outcome;
     let payout = match outcome {
-        Outcome::Yes => ctx.accounts.position.yes_tokens,
-        Outcome::No => ctx.accounts.position.no_tokens,
+        Outcome::Team1 => ctx.accounts.position.tokens[0],
+        Outcome::Draw => ctx.accounts.position.tokens[1],
+        Outcome::Team2 => ctx.accounts.position.tokens[2],
         // D-4: refund net stake, clamped pool-favorably to what's tracked.
         Outcome::Void => ctx
             .accounts
@@ -83,26 +81,19 @@ pub(crate) fn handler(ctx: Context<Redeem>) -> Result<()> {
     let market_bump = ctx.accounts.market.bump;
 
     // ---- effects FIRST: zero balances, flag, decrement supplies ----
-    let (yes_bal, no_bal) = {
+    let balances = {
         let position = &mut ctx.accounts.position;
-        let yes_bal = position.yes_tokens;
-        let no_bal = position.no_tokens;
-        position.yes_tokens = 0;
-        position.no_tokens = 0;
+        let balances = position.tokens;
+        position.tokens = [0u64; 3];
         position.collateral = 0;
         position.redeemed = true;
-        (yes_bal, no_bal)
+        balances
     };
     {
         let market = &mut ctx.accounts.market;
-        market.yes_supply = market
-            .yes_supply
-            .checked_sub(yes_bal)
-            .ok_or(AmmError::MathOverflow)?;
-        market.no_supply = market
-            .no_supply
-            .checked_sub(no_bal)
-            .ok_or(AmmError::MathOverflow)?;
+        for (supply, bal) in market.supply.iter_mut().zip(balances.iter()) {
+            *supply = supply.checked_sub(*bal).ok_or(AmmError::MathOverflow)?;
+        }
         market.usdt_collateral = market
             .usdt_collateral
             .checked_sub(payout)

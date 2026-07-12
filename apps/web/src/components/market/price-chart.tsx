@@ -54,13 +54,13 @@ export default function PriceChart({
     });
     chartRef.current = chart;
 
-    const toLine = (fn: (bps: number) => number): LineData[] =>
+    const toLine = (pick: (p: HistoryPointDto) => number): LineData[] =>
       points.map((p) => ({
         time: p.time as UTCTimestamp,
-        value: fn(p.yesPriceBps),
+        value: pick(p) / 100,
       }));
 
-    // Draw = residual after home/away allocation (matches the card read).
+    // Three real softmax series: home (Team1), away (Team2), draw (dashed).
     const homeSeries = chart.addSeries(LineSeries, {
       color: "#2f9e5f",
       lineWidth: 2,
@@ -78,15 +78,9 @@ export default function PriceChart({
       priceFormat: { type: "custom", formatter: (v: number) => `${v.toFixed(0)}¢` },
     });
 
-    homeSeries.setData(toLine((bps) => bps / 100));
-    drawSeries.setData(toLine((bps) => Math.round(((10000 - bps) / 100) * 0.42)));
-    awaySeries.setData(
-      toLine((bps) => {
-        const home = bps / 100;
-        const draw = Math.round(((10000 - bps) / 100) * 0.42);
-        return 100 - home - draw;
-      }),
-    );
+    homeSeries.setData(toLine((p) => p.team1PriceBps));
+    drawSeries.setData(toLine((p) => p.drawPriceBps));
+    awaySeries.setData(toLine((p) => p.team2PriceBps));
 
     chart.timeScale().fitContent();
 

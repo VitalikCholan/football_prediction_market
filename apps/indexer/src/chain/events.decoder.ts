@@ -37,12 +37,15 @@ const u16 = getU16Decoder();
 const u8 = getU8Decoder();
 const bool = getBooleanDecoder();
 
+const u64x3 = getArrayDecoder(u64, { size: 3 });
+const u16x3 = getArrayDecoder(u16, { size: 3 });
+
 const marketCreatedDecoder = getStructDecoder([
   ['fixtureId', i64],
   ['config', addr],
-  ['yesReserve', u64],
-  ['noReserve', u64],
-  ['priceBps', u16],
+  ['b', u64],
+  ['q', u64x3],
+  ['pricesBps', u16x3],
 ]);
 
 const tsLifecycleDecoder = getStructDecoder([
@@ -70,47 +73,6 @@ const redeemedDecoder = getStructDecoder([
 const tradeDecoder = getStructDecoder([
   ['fixtureId', i64],
   ['owner', addr],
-  ['sideYes', bool],
-  ['isBuy', bool],
-  ['usdt', u64],
-  ['tokens', u64],
-  ['priceBps', u16],
-  ['feeBps', u16],
-]);
-
-// ---- 1X2 borsh payload decoders (state.rs `#[event]` structs) --------------
-
-const u64x3 = getArrayDecoder(u64, { size: 3 });
-const u16x3 = getArrayDecoder(u16, { size: 3 });
-
-const market1x2CreatedDecoder = getStructDecoder([
-  ['fixtureId', i64],
-  ['config', addr],
-  ['b', u64],
-  ['q', u64x3],
-  ['pricesBps', u16x3],
-]);
-
-const market1x2ResolvedDecoder = getStructDecoder([
-  ['fixtureId', i64],
-  ['outcome', u8],
-]);
-
-const market1x2ClosedDecoder = getStructDecoder([
-  ['fixtureId', i64],
-  ['swept', u64],
-]);
-
-const redeemed1x2Decoder = getStructDecoder([
-  ['fixtureId', i64],
-  ['owner', addr],
-  ['outcome', u8],
-  ['payout', u64],
-]);
-
-const trade1x2Decoder = getStructDecoder([
-  ['fixtureId', i64],
-  ['owner', addr],
   ['outcome', u8],
   ['isBuy', bool],
   ['usdt', u64],
@@ -119,7 +81,7 @@ const trade1x2Decoder = getStructDecoder([
   ['feeBps', u16],
 ]);
 
-const setEvent1x2Decoder = getStructDecoder([
+const setEventDecoder = getStructDecoder([
   ['fixtureId', i64],
   ['owner', addr],
   ['amount', u64],
@@ -136,8 +98,17 @@ export function decodeAmmEvent(bytes: Uint8Array): AmmEvent | null {
   const body = bytes.slice(8);
   try {
     switch (name) {
-      case 'MarketCreated':
-        return { name, ...decode(marketCreatedDecoder, body) };
+      case 'MarketCreated': {
+        const d = decode(marketCreatedDecoder, body);
+        return {
+          name,
+          fixtureId: d.fixtureId,
+          config: d.config,
+          b: d.b,
+          q: [d.q[0], d.q[1], d.q[2]],
+          pricesBps: [d.pricesBps[0], d.pricesBps[1], d.pricesBps[2]],
+        };
+      }
       case 'MarketActivated':
         return { name, ...decode(tsLifecycleDecoder, body) };
       case 'MarketFrozen':
@@ -160,43 +131,10 @@ export function decodeAmmEvent(bytes: Uint8Array): AmmEvent | null {
       }
       case 'Trade':
         return { name, ...decode(tradeDecoder, body) };
-      case 'Market1x2Created': {
-        const d = decode(market1x2CreatedDecoder, body);
-        return {
-          name,
-          fixtureId: d.fixtureId,
-          config: d.config,
-          b: d.b,
-          q: [d.q[0], d.q[1], d.q[2]],
-          pricesBps: [d.pricesBps[0], d.pricesBps[1], d.pricesBps[2]],
-        };
-      }
-      case 'Market1x2Activated':
-        return { name, ...decode(tsLifecycleDecoder, body) };
-      case 'Market1x2Frozen':
-        return { name, ...decode(tsLifecycleDecoder, body) };
-      case 'Market1x2Resolved': {
-        const d = decode(market1x2ResolvedDecoder, body);
-        return { name, fixtureId: d.fixtureId, outcome: d.outcome };
-      }
-      case 'Market1x2Closed':
-        return { name, ...decode(market1x2ClosedDecoder, body) };
-      case 'Redeemed1x2': {
-        const d = decode(redeemed1x2Decoder, body);
-        return {
-          name,
-          fixtureId: d.fixtureId,
-          owner: d.owner,
-          outcome: d.outcome,
-          payout: d.payout,
-        };
-      }
-      case 'Trade1x2':
-        return { name, ...decode(trade1x2Decoder, body) };
-      case 'SetMinted1x2':
-        return { name, ...decode(setEvent1x2Decoder, body) };
-      case 'SetRedeemed1x2':
-        return { name, ...decode(setEvent1x2Decoder, body) };
+      case 'SetMinted':
+        return { name, ...decode(setEventDecoder, body) };
+      case 'SetRedeemed':
+        return { name, ...decode(setEventDecoder, body) };
     }
   } catch {
     return null; // truncated / malformed payload

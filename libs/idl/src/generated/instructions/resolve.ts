@@ -6,11 +6,11 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { combineCodec, fixDecoderSize, fixEncoderSize, getArrayDecoder, getArrayEncoder, getBytesDecoder, getBytesEncoder, getI64Decoder, getI64Encoder, getOptionDecoder, getOptionEncoder, getStructDecoder, getStructEncoder, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type Codec, type Decoder, type Encoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type Option, type OptionOrNullable, type ReadonlyAccount, type ReadonlySignerAccount, type ReadonlyUint8Array, type TransactionSigner, type WritableAccount } from '@solana/kit';
+import { combineCodec, fixDecoderSize, fixEncoderSize, getArrayDecoder, getArrayEncoder, getBytesDecoder, getBytesEncoder, getI64Decoder, getI64Encoder, getOptionDecoder, getOptionEncoder, getStructDecoder, getStructEncoder, getU8Decoder, getU8Encoder, transformEncoder, type AccountMeta, type AccountSignerMeta, type Address, type Codec, type Decoder, type Encoder, type Instruction, type InstructionWithAccounts, type InstructionWithData, type Option, type OptionOrNullable, type ReadonlyAccount, type ReadonlySignerAccount, type ReadonlyUint8Array, type TransactionSigner, type WritableAccount } from '@solana/kit';
 import { findGlobalPda } from '../pdas';
 import { AMM_PROGRAM_ADDRESS } from '../programs';
 import { getAccountMetaFactory, type ResolvedAccount } from '../shared';
-import { getBinaryExpressionDecoder, getBinaryExpressionEncoder, getProofNodeDecoder, getProofNodeEncoder, getScoresBatchSummaryDecoder, getScoresBatchSummaryEncoder, getSideDecoder, getSideEncoder, getStatTermDecoder, getStatTermEncoder, type BinaryExpression, type BinaryExpressionArgs, type ProofNode, type ProofNodeArgs, type ScoresBatchSummary, type ScoresBatchSummaryArgs, type Side, type SideArgs, type StatTerm, type StatTermArgs } from '../types';
+import { getBinaryExpressionDecoder, getBinaryExpressionEncoder, getProofNodeDecoder, getProofNodeEncoder, getScoresUpdateStatsDecoder, getScoresUpdateStatsEncoder, getStatTermDecoder, getStatTermEncoder, type BinaryExpression, type BinaryExpressionArgs, type ProofNode, type ProofNodeArgs, type ScoresUpdateStats, type ScoresUpdateStatsArgs, type StatTerm, type StatTermArgs } from '../types';
 
 export const RESOLVE_DISCRIMINATOR = new Uint8Array([246, 150, 236, 206, 108, 63, 58, 10]);
 
@@ -19,16 +19,16 @@ export function getResolveDiscriminatorBytes() { return fixEncoderSize(getBytesE
 export type ResolveInstruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountKeeper extends string | AccountMeta<string> = string, TAccountGlobal extends string | AccountMeta<string> = string, TAccountMarket extends string | AccountMeta<string> = string, TAccountMarketConfig extends string | AccountMeta<string> = string, TAccountTxlineProgram extends string | AccountMeta<string> = string, TAccountDailyScoresMerkleRoots extends string | AccountMeta<string> = string, TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
 Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountKeeper extends string ? ReadonlySignerAccount<TAccountKeeper> & AccountSignerMeta<TAccountKeeper> : TAccountKeeper, TAccountGlobal extends string ? ReadonlyAccount<TAccountGlobal> : TAccountGlobal, TAccountMarket extends string ? WritableAccount<TAccountMarket> : TAccountMarket, TAccountMarketConfig extends string ? ReadonlyAccount<TAccountMarketConfig> : TAccountMarketConfig, TAccountTxlineProgram extends string ? ReadonlyAccount<TAccountTxlineProgram> : TAccountTxlineProgram, TAccountDailyScoresMerkleRoots extends string ? ReadonlyAccount<TAccountDailyScoresMerkleRoots> : TAccountDailyScoresMerkleRoots, ...TRemainingAccounts]>;
 
-export type ResolveInstructionData = { discriminator: ReadonlyUint8Array; outcomeHint: Side; ts: bigint; fixtureSummary: ScoresBatchSummary; fixtureProof: Array<ProofNode>; mainTreeProof: Array<ProofNode>; statA: StatTerm; statB: Option<StatTerm>; op: Option<BinaryExpression>;  };
+export type ResolveInstructionData = { discriminator: ReadonlyUint8Array; hint: number; ts: bigint; fixtureId: bigint; updateStats: ScoresUpdateStats; eventsSubTreeRoot: ReadonlyUint8Array; fixtureProof: Array<ProofNode>; mainTreeProof: Array<ProofNode>; statA: StatTerm; statB: Option<StatTerm>; op: Option<BinaryExpression>;  };
 
-export type ResolveInstructionDataArgs = { outcomeHint: SideArgs; ts: number | bigint; fixtureSummary: ScoresBatchSummaryArgs; fixtureProof: Array<ProofNodeArgs>; mainTreeProof: Array<ProofNodeArgs>; statA: StatTermArgs; statB: OptionOrNullable<StatTermArgs>; op: OptionOrNullable<BinaryExpressionArgs>;  };
+export type ResolveInstructionDataArgs = { hint: number; ts: number | bigint; fixtureId: number | bigint; updateStats: ScoresUpdateStatsArgs; eventsSubTreeRoot: ReadonlyUint8Array; fixtureProof: Array<ProofNodeArgs>; mainTreeProof: Array<ProofNodeArgs>; statA: StatTermArgs; statB: OptionOrNullable<StatTermArgs>; op: OptionOrNullable<BinaryExpressionArgs>;  };
 
 export function getResolveInstructionDataEncoder(): Encoder<ResolveInstructionDataArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['outcomeHint', getSideEncoder()], ['ts', getI64Encoder()], ['fixtureSummary', getScoresBatchSummaryEncoder()], ['fixtureProof', getArrayEncoder(getProofNodeEncoder())], ['mainTreeProof', getArrayEncoder(getProofNodeEncoder())], ['statA', getStatTermEncoder()], ['statB', getOptionEncoder(getStatTermEncoder())], ['op', getOptionEncoder(getBinaryExpressionEncoder())]]), (value) => ({ ...value, discriminator: RESOLVE_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['hint', getU8Encoder()], ['ts', getI64Encoder()], ['fixtureId', getI64Encoder()], ['updateStats', getScoresUpdateStatsEncoder()], ['eventsSubTreeRoot', fixEncoderSize(getBytesEncoder(), 32)], ['fixtureProof', getArrayEncoder(getProofNodeEncoder())], ['mainTreeProof', getArrayEncoder(getProofNodeEncoder())], ['statA', getStatTermEncoder()], ['statB', getOptionEncoder(getStatTermEncoder())], ['op', getOptionEncoder(getBinaryExpressionEncoder())]]), (value) => ({ ...value, discriminator: RESOLVE_DISCRIMINATOR }));
 }
 
 export function getResolveInstructionDataDecoder(): Decoder<ResolveInstructionData> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['outcomeHint', getSideDecoder()], ['ts', getI64Decoder()], ['fixtureSummary', getScoresBatchSummaryDecoder()], ['fixtureProof', getArrayDecoder(getProofNodeDecoder())], ['mainTreeProof', getArrayDecoder(getProofNodeDecoder())], ['statA', getStatTermDecoder()], ['statB', getOptionDecoder(getStatTermDecoder())], ['op', getOptionDecoder(getBinaryExpressionDecoder())]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['hint', getU8Decoder()], ['ts', getI64Decoder()], ['fixtureId', getI64Decoder()], ['updateStats', getScoresUpdateStatsDecoder()], ['eventsSubTreeRoot', fixDecoderSize(getBytesDecoder(), 32)], ['fixtureProof', getArrayDecoder(getProofNodeDecoder())], ['mainTreeProof', getArrayDecoder(getProofNodeDecoder())], ['statA', getStatTermDecoder()], ['statB', getOptionDecoder(getStatTermDecoder())], ['op', getOptionDecoder(getBinaryExpressionDecoder())]]);
 }
 
 export function getResolveInstructionDataCodec(): Codec<ResolveInstructionDataArgs, ResolveInstructionData> {
@@ -40,16 +40,18 @@ export type ResolveAsyncInput<TAccountKeeper extends string = string, TAccountGl
 global?: Address<TAccountGlobal>;
 market: Address<TAccountMarket>;
 marketConfig: Address<TAccountMarketConfig>;
-/** stored on `GlobalConfig` (plan §6). Only used as the CPI callee. */
+/** stored on `GlobalConfig`. Only used as the CPI callee. */
 txlineProgram: Address<TAccountTxlineProgram>;
 /**
  * be `global.txline_program` AND the address must re-derive from
  * `["daily_scores_roots", epoch_day u16 LE]` for the target day.
  */
 dailyScoresMerkleRoots: Address<TAccountDailyScoresMerkleRoots>;
-outcomeHint: ResolveInstructionDataArgs["outcomeHint"];
+hint: ResolveInstructionDataArgs["hint"];
 ts: ResolveInstructionDataArgs["ts"];
-fixtureSummary: ResolveInstructionDataArgs["fixtureSummary"];
+fixtureId: ResolveInstructionDataArgs["fixtureId"];
+updateStats: ResolveInstructionDataArgs["updateStats"];
+eventsSubTreeRoot: ResolveInstructionDataArgs["eventsSubTreeRoot"];
 fixtureProof: ResolveInstructionDataArgs["fixtureProof"];
 mainTreeProof: ResolveInstructionDataArgs["mainTreeProof"];
 statA: ResolveInstructionDataArgs["statA"];
@@ -84,16 +86,18 @@ export type ResolveInput<TAccountKeeper extends string = string, TAccountGlobal 
 global: Address<TAccountGlobal>;
 market: Address<TAccountMarket>;
 marketConfig: Address<TAccountMarketConfig>;
-/** stored on `GlobalConfig` (plan §6). Only used as the CPI callee. */
+/** stored on `GlobalConfig`. Only used as the CPI callee. */
 txlineProgram: Address<TAccountTxlineProgram>;
 /**
  * be `global.txline_program` AND the address must re-derive from
  * `["daily_scores_roots", epoch_day u16 LE]` for the target day.
  */
 dailyScoresMerkleRoots: Address<TAccountDailyScoresMerkleRoots>;
-outcomeHint: ResolveInstructionDataArgs["outcomeHint"];
+hint: ResolveInstructionDataArgs["hint"];
 ts: ResolveInstructionDataArgs["ts"];
-fixtureSummary: ResolveInstructionDataArgs["fixtureSummary"];
+fixtureId: ResolveInstructionDataArgs["fixtureId"];
+updateStats: ResolveInstructionDataArgs["updateStats"];
+eventsSubTreeRoot: ResolveInstructionDataArgs["eventsSubTreeRoot"];
 fixtureProof: ResolveInstructionDataArgs["fixtureProof"];
 mainTreeProof: ResolveInstructionDataArgs["mainTreeProof"];
 statA: ResolveInstructionDataArgs["statA"];
@@ -126,7 +130,7 @@ keeper: TAccountMetas[0];
 global: TAccountMetas[1];
 market: TAccountMetas[2];
 marketConfig: TAccountMetas[3];
-/** stored on `GlobalConfig` (plan §6). Only used as the CPI callee. */
+/** stored on `GlobalConfig`. Only used as the CPI callee. */
 txlineProgram: TAccountMetas[4];
 /**
  * be `global.txline_program` AND the address must re-derive from

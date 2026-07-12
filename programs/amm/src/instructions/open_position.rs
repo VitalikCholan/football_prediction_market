@@ -1,5 +1,6 @@
-//! `open_position` — explicit, one-time init of a trader's `Position` PDA (D-3).
-//! NO `init_if_needed`. `buy`/`sell` require an already-created position.
+//! `open_position` — explicit, one-time init of a trader's `Position`
+//! PDA (D-3). NO `init_if_needed`. `buy`/`sell` require an
+//! already-created position.
 
 use anchor_lang::prelude::*;
 
@@ -33,15 +34,10 @@ pub(crate) fn handler(ctx: Context<OpenPosition>) -> Result<()> {
     let position = &mut ctx.accounts.position;
     position.market = ctx.accounts.market.key();
     position.owner = ctx.accounts.owner.key();
-    position.yes_tokens = 0;
-    position.no_tokens = 0;
+    position.tokens = [0u64; 3];
     position.collateral = 0;
-    position.leverage = 1; // v0: pure FPMM, no leverage
-    position.notional = 0;
-    position.entry_slot = 0;
-    position.fee_rate_snapshot = 0;
     position.redeemed = false;
     position.bump = ctx.bumps.position;
-    position._reserved = [0u8; 16];
+    position._reserved = [0u8; 32];
     Ok(())
 }

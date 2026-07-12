@@ -8,8 +8,11 @@
 
 import { combineCodec, getEnumDecoder, getEnumEncoder, type FixedSizeCodec, type FixedSizeDecoder, type FixedSizeEncoder } from '@solana/kit';
 
-/** Resolved outcome. `Void` triggers pro-rata stake refund (D-4). */
-export enum Outcome { Unset, Yes, No, Void };
+/**
+ * Resolved outcome of the 3-way (1X2) market. Exactly one of Team1/Draw/Team2
+ * pays 1 USDT per token; `Void` refunds pro-rata net basis (D-4).
+ */
+export enum Outcome { Unset, Team1, Draw, Team2, Void };
 
 export type OutcomeArgs = Outcome;
 

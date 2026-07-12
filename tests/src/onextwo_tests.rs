@@ -13,8 +13,8 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 
 use amm::error::AmmError;
-use amm::state::{Market1x2, MarketState, Outcome1x2, Position1x2};
-use amm::{lmsr, math};
+use amm::lmsr;
+use amm::state::{Market, MarketState, Outcome, Position};
 
 use crate::common::*;
 
@@ -52,7 +52,7 @@ fn bootstrap_open() -> Live {
     h.send(
         &[&h.admin.insecure_clone()],
         &admin,
-        ix_create_market_config_1x2(&admin, CFG_ID, default_fee_params(), FINAL_PERIOD),
+        ix_create_market_config(&admin, CFG_ID, default_fee_params(), FINAL_PERIOD),
     )
     .unwrap();
 
@@ -62,7 +62,7 @@ fn bootstrap_open() -> Live {
     h.send(
         &[&h.admin.insecure_clone()],
         &admin,
-        ix_init_market_1x2(
+        ix_init_market(
             &admin, CFG_ID, FIXTURE, kickoff, freeze, B, SEED_Q, SEED_LIQ, &mint, &admin_ata,
         ),
     )
@@ -79,7 +79,7 @@ fn to_trading(live: &mut Live) {
     live.h.set_time(live.kickoff);
     let keeper = live.h.keeper.insecure_clone();
     live.h
-        .send(&[&keeper], &keeper.pubkey(), ix_activate_market_1x2(&keeper.pubkey(), FIXTURE))
+        .send(&[&keeper], &keeper.pubkey(), ix_activate_market(&keeper.pubkey(), FIXTURE))
         .unwrap();
 }
 
@@ -93,8 +93,8 @@ fn buy(live: &mut Live, outcome: u8, usdt: u64) -> u64 {
         &[&live.trader.insecure_clone()],
         &trader,
         &[
-            ix_set_cu_limit(CU_LIMIT_1X2_BUY),
-            ix_buy_1x2(&trader, CFG_ID, FIXTURE, outcome, usdt, 0, &live.h.usdt_mint, &live.trader_ata),
+            ix_set_cu_limit(CU_LIMIT_BUY),
+            ix_buy(&trader, CFG_ID, FIXTURE, outcome, usdt, 0, &live.h.usdt_mint, &live.trader_ata),
         ],
     )
     .unwrap();
@@ -105,7 +105,7 @@ fn to_locked(live: &mut Live, buys: &[(u8, u64)]) {
     to_trading(live);
     let trader = live.trader.pubkey();
     live.h
-        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position_1x2(&trader, FIXTURE))
+        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position(&trader, FIXTURE))
         .unwrap();
     for &(outcome, usdt) in buys {
         buy(live, outcome, usdt);
@@ -113,7 +113,7 @@ fn to_locked(live: &mut Live, buys: &[(u8, u64)]) {
     live.h.set_time(live.freeze);
     let keeper = live.h.keeper.insecure_clone();
     live.h
-        .send(&[&keeper], &keeper.pubkey(), ix_freeze_market_1x2(&keeper.pubkey(), FIXTURE))
+        .send(&[&keeper], &keeper.pubkey(), ix_freeze_market(&keeper.pubkey(), FIXTURE))
         .unwrap();
 }
 
@@ -132,12 +132,12 @@ fn do_resolve(
     live.h.send(
         &[&keeper],
         &keeper.pubkey(),
-        ix_resolve_1x2(
+        ix_resolve(
             &keeper.pubkey(),
             CFG_ID,
             FIXTURE,
             hint,
-            resolve_args_1x2(FIXTURE, ts, home, away, period),
+            resolve_args_period(FIXTURE, ts, home, away, period),
             &txline_id(),
             &roots,
         ),
@@ -147,8 +147,8 @@ fn do_resolve(
 /// Assert the on-chain LMSR invariants: Σ prices ∈ [9_997, 10_000] and
 /// solvency `vault ≥ max_i(supply_i)` (the D-2 generalization).
 fn assert_market_invariants(live: &Live) {
-    let market_key = market_1x2_pda(FIXTURE);
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    let market_key = market_pda(FIXTURE);
+    let m: Market = get_anchor(&live.h.svm, &market_key);
     let prices = lmsr::prices_bps(&m.q, m.b).unwrap();
     let sum: u32 = prices.iter().map(|&p| u32::from(p)).sum();
     assert!(
@@ -156,16 +156,16 @@ fn assert_market_invariants(live: &Live) {
         "sum of prices {sum} outside rounding band; prices={prices:?}"
     );
     let vault_bal = live.h.token_balance(&vault_pda(&market_key));
-    math::assert_solvent_multi(vault_bal, &m.supply).expect("solvency violated");
+    lmsr::assert_solvent_multi(vault_bal, &m.supply).expect("solvency violated");
     assert_eq!(m.usdt_collateral, vault_bal, "collateral mirror out of sync");
 }
 
-/// Patch the Market1x2 state/outcome directly (only for paths with no
+/// Patch the Market state/outcome directly (only for paths with no
 /// instruction, i.e. forcing Void — same pattern as the binary suite).
-fn force_market_1x2(h: &mut Harness, fixture_id: i64, state: MarketState, outcome: Outcome1x2) {
-    let market_key = market_1x2_pda(fixture_id);
+fn force_market(h: &mut Harness, fixture_id: i64, state: MarketState, outcome: Outcome) {
+    let market_key = market_pda(fixture_id);
     let mut acc = h.svm.get_account(&market_key).unwrap();
-    let mut m: Market1x2 =
+    let mut m: Market =
         anchor_lang::AccountDeserialize::try_deserialize(&mut acc.data.as_slice()).unwrap();
     m.state = state;
     m.outcome = outcome;
@@ -181,12 +181,12 @@ fn force_market_1x2(h: &mut Harness, fixture_id: i64, state: MarketState, outcom
 #[test]
 fn init_seeds_symmetric_odds_and_enforces_subsidy() {
     let live = bootstrap_open();
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_1x2_pda(FIXTURE));
+    let m: Market = get_anchor(&live.h.svm, &market_pda(FIXTURE));
     assert_eq!(m.q, SEED_Q);
     assert_eq!(m.b, B);
     assert_eq!(m.supply, [0, 0, 0]);
     assert_eq!(m.state, MarketState::Open);
-    assert_eq!(m.outcome, Outcome1x2::Unset);
+    assert_eq!(m.outcome, Outcome::Unset);
     let prices = lmsr::prices_bps(&m.q, m.b).unwrap();
     // symmetric book: 1/3 each (floor → 3333)
     assert_eq!(prices, [3_333, 3_333, 3_333]);
@@ -194,8 +194,8 @@ fn init_seeds_symmetric_odds_and_enforces_subsidy() {
 }
 
 #[test]
-fn init_rejects_insufficient_subsidy_and_binary_config() {
-    // (a) seed below C(seed_q,b) − min(seed_q) = ceil(b·ln3) → rejected
+fn init_rejects_insufficient_subsidy() {
+    // seed below C(seed_q,b) − min(seed_q) = ceil(b·ln3) → rejected
     let mut h = Harness::new_with_oracle();
     let admin = h.admin.pubkey();
     let keeper = h.keeper.pubkey();
@@ -209,13 +209,13 @@ fn init_rejects_insufficient_subsidy_and_binary_config() {
     h.send(
         &[&h.admin.insecure_clone()],
         &admin,
-        ix_create_market_config_1x2(&admin, CFG_ID, default_fee_params(), FINAL_PERIOD),
+        ix_create_market_config(&admin, CFG_ID, default_fee_params(), FINAL_PERIOD),
     )
     .unwrap();
     let admin_ata = h.fund_ata(&admin, 1_000_000 * ONE_USDT);
     let subsidy = lmsr::cost(&SEED_Q, B).unwrap(); // = ceil(b·ln3), min(seed_q)=0
     let (kickoff, freeze) = (h.now() + 100, h.now() + 1_000);
-    let ix = ix_init_market_1x2(
+    let ix = ix_init_market(
         &admin,
         CFG_ID,
         FIXTURE,
@@ -229,29 +229,6 @@ fn init_rejects_insufficient_subsidy_and_binary_config() {
     );
     let res = send_tx(&mut h.svm, &[&h.admin.insecure_clone()], &admin, ix);
     assert_amm_error(&res, AmmError::InvalidSeedLiquidity);
-
-    // (b) 1X2 market on a BINARY config → MarketKindMismatch
-    const BIN_CFG: u16 = 4;
-    h.send(
-        &[&h.admin.insecure_clone()],
-        &admin,
-        ix_create_market_config(&admin, BIN_CFG, default_fee_params()),
-    )
-    .unwrap();
-    let ix = ix_init_market_1x2(
-        &admin,
-        BIN_CFG,
-        FIXTURE,
-        kickoff,
-        freeze,
-        B,
-        SEED_Q,
-        SEED_LIQ,
-        &mint,
-        &admin_ata,
-    );
-    let res = send_tx(&mut h.svm, &[&h.admin.insecure_clone()], &admin, ix);
-    assert_amm_error(&res, AmmError::MarketKindMismatch);
 }
 
 // ===========================================================================
@@ -264,7 +241,7 @@ fn trade_sequence_holds_price_sum_and_solvency() {
     to_trading(&mut live);
     let trader = live.trader.pubkey();
     live.h
-        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position_1x2(&trader, FIXTURE))
+        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position(&trader, FIXTURE))
         .unwrap();
 
     // buy each of the three outcomes (all buyable), invariants after each
@@ -277,10 +254,10 @@ fn trade_sequence_holds_price_sum_and_solvency() {
     eprintln!("max buy_1x2 CU observed: {max_cu}");
     assert!(max_cu < 1_400_000, "buy_1x2 CU {max_cu} must fit the 1.4M cap");
     // buying an outcome raises its price
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_1x2_pda(FIXTURE));
+    let m: Market = get_anchor(&live.h.svm, &market_pda(FIXTURE));
     let p_before = lmsr::prices_bps(&m.q, m.b).unwrap()[0];
     buy(&mut live, 0, 200 * ONE_USDT);
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_1x2_pda(FIXTURE));
+    let m: Market = get_anchor(&live.h.svm, &market_pda(FIXTURE));
     let p_after = lmsr::prices_bps(&m.q, m.b).unwrap()[0];
     assert!(p_after > p_before, "buying Team1 must raise its price");
     assert_market_invariants(&live);
@@ -300,15 +277,15 @@ fn trade_sequence_holds_price_sum_and_solvency() {
             buy(&mut live, outcome, amount);
         } else {
             // sell `amount`-scaled tokens (bounded by holdings)
-            let pos: Position1x2 =
-                get_anchor(&live.h.svm, &position_1x2_pda(&market_1x2_pda(FIXTURE), &trader));
+            let pos: Position =
+                get_anchor(&live.h.svm, &position_pda(&market_pda(FIXTURE), &trader));
             let tokens = pos.tokens[usize::from(outcome)].min(amount);
             assert!(tokens > 0, "test setup: nothing to sell on outcome {outcome}");
             live.h
                 .send(
                     &[&live.trader.insecure_clone()],
                     &trader,
-                    ix_sell_1x2(
+                    ix_sell(
                         &trader,
                         CFG_ID,
                         FIXTURE,
@@ -327,14 +304,14 @@ fn trade_sequence_holds_price_sum_and_solvency() {
     // a buy-then-sell round trip never profits the trader
     let bal_before = live.h.token_balance(&live.trader_ata);
     buy(&mut live, 2, 100 * ONE_USDT);
-    let pos: Position1x2 =
-        get_anchor(&live.h.svm, &position_1x2_pda(&market_1x2_pda(FIXTURE), &trader));
+    let pos: Position =
+        get_anchor(&live.h.svm, &position_pda(&market_pda(FIXTURE), &trader));
     let bought = pos.tokens[2];
     live.h
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_sell_1x2(&trader, CFG_ID, FIXTURE, 2, bought, 0, &live.h.usdt_mint, &live.trader_ata),
+            ix_sell(&trader, CFG_ID, FIXTURE, 2, bought, 0, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
     assert!(
@@ -350,7 +327,7 @@ fn slippage_guards_and_input_validation() {
     to_trading(&mut live);
     let trader = live.trader.pubkey();
     live.h
-        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position_1x2(&trader, FIXTURE))
+        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position(&trader, FIXTURE))
         .unwrap();
 
     // buy: min_tokens_out above what 10 USDT can buy → SlippageExceeded
@@ -359,8 +336,8 @@ fn slippage_guards_and_input_validation() {
         &[&live.trader.insecure_clone()],
         &trader,
         &[
-            ix_set_cu_limit(CU_LIMIT_1X2_BUY),
-            ix_buy_1x2(
+            ix_set_cu_limit(CU_LIMIT_BUY),
+            ix_buy(
                 &trader,
                 CFG_ID,
                 FIXTURE,
@@ -379,19 +356,19 @@ fn slippage_guards_and_input_validation() {
         &mut live.h.svm,
         &[&live.trader.insecure_clone()],
         &trader,
-        ix_buy_1x2(&trader, CFG_ID, FIXTURE, 3, ONE_USDT, 0, &live.h.usdt_mint, &live.trader_ata),
+        ix_buy(&trader, CFG_ID, FIXTURE, 3, ONE_USDT, 0, &live.h.usdt_mint, &live.trader_ata),
     );
     assert_amm_error(&res, AmmError::LmsrInvalidOutcomeIndex);
 
     // sell: more than held → InsufficientPositionBalance
     buy(&mut live, 1, 10 * ONE_USDT);
-    let pos: Position1x2 =
-        get_anchor(&live.h.svm, &position_1x2_pda(&market_1x2_pda(FIXTURE), &trader));
+    let pos: Position =
+        get_anchor(&live.h.svm, &position_pda(&market_pda(FIXTURE), &trader));
     let res = send_tx(
         &mut live.h.svm,
         &[&live.trader.insecure_clone()],
         &trader,
-        ix_sell_1x2(
+        ix_sell(
             &trader,
             CFG_ID,
             FIXTURE,
@@ -409,7 +386,7 @@ fn slippage_guards_and_input_validation() {
         &mut live.h.svm,
         &[&live.trader.insecure_clone()],
         &trader,
-        ix_sell_1x2(
+        ix_sell(
             &trader,
             CFG_ID,
             FIXTURE,
@@ -436,15 +413,15 @@ fn resolve_team1_wrong_hints_rejected_first() {
     for wrong_hint in [1u8, 2u8] {
         let res = do_resolve(&mut live, wrong_hint, 2, 0, FINAL_PERIOD);
         assert_amm_error(&res, AmmError::ProofRejected);
-        let m: Market1x2 = get_anchor(&live.h.svm, &market_1x2_pda(FIXTURE));
+        let m: Market = get_anchor(&live.h.svm, &market_pda(FIXTURE));
         assert_eq!(m.state, MarketState::Locked, "wrong hint must not mutate state");
-        assert_eq!(m.outcome, Outcome1x2::Unset);
+        assert_eq!(m.outcome, Outcome::Unset);
     }
 
     do_resolve(&mut live, 0, 2, 0, FINAL_PERIOD).unwrap();
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_1x2_pda(FIXTURE));
+    let m: Market = get_anchor(&live.h.svm, &market_pda(FIXTURE));
     assert_eq!(m.state, MarketState::Resolved);
-    assert_eq!(m.outcome, Outcome1x2::Team1);
+    assert_eq!(m.outcome, Outcome::Team1);
 
     // double-resolve (any hint) → InvalidMarketState
     let res = do_resolve(&mut live, 0, 2, 0, FINAL_PERIOD);
@@ -462,8 +439,8 @@ fn resolve_draw_via_positive_equal_to() {
         assert_amm_error(&res, AmmError::ProofRejected);
     }
     do_resolve(&mut live, 1, 1, 1, FINAL_PERIOD).unwrap();
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_1x2_pda(FIXTURE));
-    assert_eq!(m.outcome, Outcome1x2::Draw);
+    let m: Market = get_anchor(&live.h.svm, &market_pda(FIXTURE));
+    assert_eq!(m.outcome, Outcome::Draw);
 }
 
 #[test]
@@ -471,8 +448,8 @@ fn resolve_team2() {
     let mut live = bootstrap_open();
     to_locked(&mut live, &[(2, 100 * ONE_USDT)]);
     do_resolve(&mut live, 2, 0, 3, FINAL_PERIOD).unwrap();
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_1x2_pda(FIXTURE));
-    assert_eq!(m.outcome, Outcome1x2::Team2);
+    let m: Market = get_anchor(&live.h.svm, &market_pda(FIXTURE));
+    assert_eq!(m.outcome, Outcome::Team2);
 }
 
 #[test]
@@ -483,7 +460,7 @@ fn resolve_rejects_wrong_period_and_bad_hint() {
     // stale-batch replay guard: mid-match period (0) ≠ pinned 100
     let res = do_resolve(&mut live, 0, 2, 0, 0);
     assert_amm_error(&res, AmmError::ResolutionPeriodMismatch);
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_1x2_pda(FIXTURE));
+    let m: Market = get_anchor(&live.h.svm, &market_pda(FIXTURE));
     assert_eq!(m.state, MarketState::Locked);
 
     // hint out of range
@@ -510,92 +487,20 @@ fn resolve_oracle_error_mode_propagates() {
     let res = live.h.send(
         &[&keeper],
         &keeper.pubkey(),
-        ix_resolve_1x2(
+        ix_resolve(
             &keeper.pubkey(),
             CFG_ID,
             FIXTURE,
             0,
-            resolve_args_1x2(FIXTURE, ts, 2, 0, FINAL_PERIOD),
+            resolve_args_period(FIXTURE, ts, 2, 0, FINAL_PERIOD),
             &txline_id(),
             &roots,
         ),
     );
     // RootNotAvailable(6007) propagates verbatim — keeper-retryable
     assert_custom_error(&res, 6007);
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_1x2_pda(FIXTURE));
+    let m: Market = get_anchor(&live.h.svm, &market_pda(FIXTURE));
     assert_eq!(m.state, MarketState::Locked);
-}
-
-// ===========================================================================
-// market-kind gate: BINARY resolve on a market bound to a 1X2 config
-// ===========================================================================
-#[test]
-fn binary_resolve_rejected_on_1x2_config() {
-    // A binary market wired (admin mistake) to a 1X2-kind config: the binary
-    // `resolve` must refuse it (MarketKindMismatch) — 2 outcomes cannot
-    // settle a 3-outcome question.
-    let mut h = Harness::new_with_oracle();
-    let admin = h.admin.pubkey();
-    let keeper_pk = h.keeper.pubkey();
-    let mint = h.usdt_mint;
-    h.send(
-        &[&h.admin.insecure_clone()],
-        &admin,
-        ix_initialize_config(&admin, &keeper_pk, &txline_id(), &mint),
-    )
-    .unwrap();
-    h.send(
-        &[&h.admin.insecure_clone()],
-        &admin,
-        ix_create_market_config_1x2(&admin, CFG_ID, default_fee_params(), FINAL_PERIOD),
-    )
-    .unwrap();
-    let admin_ata = h.fund_ata(&admin, 1_000_000 * ONE_USDT);
-    let kickoff = h.now() + 100;
-    let freeze = h.now() + 1_000;
-    h.send(
-        &[&h.admin.insecure_clone()],
-        &admin,
-        ix_init_market(
-            &admin,
-            CFG_ID,
-            FIXTURE,
-            kickoff,
-            freeze,
-            1_000_000,
-            1_000_000,
-            10_000 * ONE_USDT,
-            &mint,
-            &admin_ata,
-        ),
-    )
-    .unwrap();
-    // drive the BINARY market to Locked
-    h.set_time(kickoff);
-    let keeper = h.keeper.insecure_clone();
-    send_tx(&mut h.svm, &[&keeper], &keeper.pubkey(), ix_activate_market(&keeper.pubkey(), FIXTURE))
-        .unwrap();
-    h.set_time(freeze);
-    send_tx(&mut h.svm, &[&keeper], &keeper.pubkey(), ix_freeze_market(&keeper.pubkey(), FIXTURE))
-        .unwrap();
-
-    let ts = h.now();
-    let roots = write_roots_account(&mut h.svm, &txline_id(), epoch_day(ts), 0x00);
-    let res = send_tx(
-        &mut h.svm,
-        &[&keeper],
-        &keeper.pubkey(),
-        ix_resolve(
-            &keeper.pubkey(),
-            CFG_ID,
-            FIXTURE,
-            amm::Side::Yes,
-            resolve_args(FIXTURE, ts, 2, 1),
-            &txline_id(),
-            &roots,
-        ),
-    );
-    assert_amm_error(&res, AmmError::MarketKindMismatch);
 }
 
 // ===========================================================================
@@ -609,9 +514,9 @@ fn redeem_winner_loser_and_double() {
     do_resolve(&mut live, 0, 2, 0, FINAL_PERIOD).unwrap();
 
     let trader = live.trader.pubkey();
-    let market_key = market_1x2_pda(FIXTURE);
-    let pos_key = position_1x2_pda(&market_key, &trader);
-    let pos: Position1x2 = get_anchor(&live.h.svm, &pos_key);
+    let market_key = market_pda(FIXTURE);
+    let pos_key = position_pda(&market_key, &trader);
+    let pos: Position = get_anchor(&live.h.svm, &pos_key);
     let winning = pos.tokens[0];
     assert!(winning > 0 && pos.tokens[1] > 0);
 
@@ -621,7 +526,7 @@ fn redeem_winner_loser_and_double() {
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_redeem_1x2(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
+            ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
 
@@ -629,10 +534,10 @@ fn redeem_winner_loser_and_double() {
     assert_eq!(live.h.token_balance(&live.trader_ata), before + winning);
     assert_eq!(live.h.token_balance(&vault_pda(&market_key)), vault_before - winning);
 
-    let pos: Position1x2 = get_anchor(&live.h.svm, &pos_key);
+    let pos: Position = get_anchor(&live.h.svm, &pos_key);
     assert!(pos.redeemed);
     assert_eq!(pos.tokens, [0, 0, 0]);
-    let m: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    let m: Market = get_anchor(&live.h.svm, &market_key);
     assert_eq!(m.supply, [0, 0, 0], "all balances decremented from supply");
 
     // double-redeem → AlreadyRedeemed
@@ -640,7 +545,7 @@ fn redeem_winner_loser_and_double() {
         &mut live.h.svm,
         &[&live.trader.insecure_clone()],
         &trader,
-        ix_redeem_1x2(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
+        ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
     );
     assert_amm_error(&res, AmmError::AlreadyRedeemed);
 }
@@ -651,11 +556,11 @@ fn redeem_void_refunds_net_basis() {
     let stake = 100 * ONE_USDT;
     // stakes across two outcomes: Void refunds the SUM of net basis
     to_locked(&mut live, &[(0, stake), (2, stake)]);
-    force_market_1x2(&mut live.h, FIXTURE, MarketState::Resolved, Outcome1x2::Void);
+    force_market(&mut live.h, FIXTURE, MarketState::Resolved, Outcome::Void);
 
     let trader = live.trader.pubkey();
-    let market_key = market_1x2_pda(FIXTURE);
-    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    let market_key = market_pda(FIXTURE);
+    let pos: Position = get_anchor(&live.h.svm, &position_pda(&market_key, &trader));
     assert_eq!(pos.collateral, 2 * stake, "net basis = the two buys");
 
     let before = live.h.token_balance(&live.trader_ata);
@@ -663,7 +568,7 @@ fn redeem_void_refunds_net_basis() {
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_redeem_1x2(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
+            ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
     assert_eq!(
@@ -671,7 +576,7 @@ fn redeem_void_refunds_net_basis() {
         before + 2 * stake,
         "Void refunds the net USDT stake (D-4)"
     );
-    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    let pos: Position = get_anchor(&live.h.svm, &position_pda(&market_key, &trader));
     assert!(pos.redeemed);
     assert_eq!(pos.collateral, 0);
 }
@@ -685,7 +590,7 @@ fn to_trading_with_position(live: &mut Live) {
     to_trading(live);
     let trader = live.trader.pubkey();
     live.h
-        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position_1x2(&trader, FIXTURE))
+        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position(&trader, FIXTURE))
         .unwrap();
 }
 
@@ -695,7 +600,7 @@ fn mint_set(live: &mut Live, amount: u64) -> litesvm::types::TransactionResult {
         &mut live.h.svm,
         &[&live.trader.insecure_clone()],
         &trader,
-        ix_mint_set_1x2(&trader, FIXTURE, amount, &live.h.usdt_mint, &live.trader_ata),
+        ix_mint_set(&trader, FIXTURE, amount, &live.h.usdt_mint, &live.trader_ata),
     )
 }
 
@@ -705,7 +610,7 @@ fn redeem_set(live: &mut Live, amount: u64) -> litesvm::types::TransactionResult
         &mut live.h.svm,
         &[&live.trader.insecure_clone()],
         &trader,
-        ix_redeem_set_1x2(&trader, FIXTURE, amount, &live.h.usdt_mint, &live.trader_ata),
+        ix_redeem_set(&trader, FIXTURE, amount, &live.h.usdt_mint, &live.trader_ata),
     )
 }
 
@@ -715,18 +620,18 @@ fn set_round_trip_price_neutral_and_lossless() {
     let mut live = bootstrap_open();
     to_trading_with_position(&mut live);
     let trader = live.trader.pubkey();
-    let market_key = market_1x2_pda(FIXTURE);
+    let market_key = market_pda(FIXTURE);
     let amount = 40 * ONE_USDT;
 
     // prices + trader balance BEFORE any set op
-    let m0: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    let m0: Market = get_anchor(&live.h.svm, &market_key);
     let prices_before = lmsr::prices_bps(&m0.q, m0.b).unwrap();
     let bal_before = live.h.token_balance(&live.trader_ata);
     let vault_before = live.h.token_balance(&vault_pda(&market_key));
 
     // ---- mint_set: exactly `amount` USDT in, `amount` of each outcome ----
     mint_set(&mut live, amount).unwrap();
-    let m1: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    let m1: Market = get_anchor(&live.h.svm, &market_key);
     // (b) prices UNCHANGED (equal q shift → softmax invariant)
     assert_eq!(
         lmsr::prices_bps(&m1.q, m1.b).unwrap(),
@@ -741,14 +646,14 @@ fn set_round_trip_price_neutral_and_lossless() {
         assert_eq!(m1.supply[i], m0.supply[i] + amount);
         assert_eq!(m1.q[i], m0.q[i] + amount);
     }
-    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    let pos: Position = get_anchor(&live.h.svm, &position_pda(&market_key, &trader));
     assert_eq!(pos.tokens, [amount, amount, amount], "one of each outcome");
     assert_eq!(pos.collateral, amount, "net basis += amount");
     assert_market_invariants(&live); // (c) solvency
 
     // ---- redeem_set the same amount: back to par, prices still fixed ----
     redeem_set(&mut live, amount).unwrap();
-    let m2: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    let m2: Market = get_anchor(&live.h.svm, &market_key);
     assert_eq!(
         lmsr::prices_bps(&m2.q, m2.b).unwrap(),
         prices_before,
@@ -761,7 +666,7 @@ fn set_round_trip_price_neutral_and_lossless() {
         "round trip returns exactly the deposit (no fee, no slippage)"
     );
     assert_eq!(live.h.token_balance(&vault_pda(&market_key)), vault_before);
-    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    let pos: Position = get_anchor(&live.h.svm, &position_pda(&market_key, &trader));
     assert_eq!(pos.tokens, [0, 0, 0]);
     assert_eq!(pos.collateral, 0);
     // market fully back to its pre-set q/supply
@@ -778,14 +683,14 @@ fn set_price_neutral_on_skewed_book() {
     // skew the book: heavy Team1 + light Team2
     buy(&mut live, 0, 120 * ONE_USDT);
     buy(&mut live, 2, 30 * ONE_USDT);
-    let market_key = market_1x2_pda(FIXTURE);
-    let m0: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    let market_key = market_pda(FIXTURE);
+    let m0: Market = get_anchor(&live.h.svm, &market_key);
     let prices_before = lmsr::prices_bps(&m0.q, m0.b).unwrap();
     // (not all equal — confirm the book is genuinely skewed)
     assert!(prices_before[0] != prices_before[2], "test setup: book must be skewed");
 
     mint_set(&mut live, 55 * ONE_USDT).unwrap();
-    let m1: Market1x2 = get_anchor(&live.h.svm, &market_key);
+    let m1: Market = get_anchor(&live.h.svm, &market_key);
     assert_eq!(lmsr::prices_bps(&m1.q, m1.b).unwrap(), prices_before);
     assert_market_invariants(&live);
 }
@@ -820,7 +725,7 @@ fn set_ops_rejected_outside_trading() {
     live.h.set_time(live.freeze);
     let keeper = live.h.keeper.insecure_clone();
     live.h
-        .send(&[&keeper], &keeper.pubkey(), ix_freeze_market_1x2(&keeper.pubkey(), FIXTURE))
+        .send(&[&keeper], &keeper.pubkey(), ix_freeze_market(&keeper.pubkey(), FIXTURE))
         .unwrap();
 
     let res = mint_set(&mut live, 10 * ONE_USDT);
@@ -849,7 +754,7 @@ fn minted_set_redeems_to_amount_under_each_outcome() {
         live.h.set_time(live.freeze);
         let keeper = live.h.keeper.insecure_clone();
         live.h
-            .send(&[&keeper], &keeper.pubkey(), ix_freeze_market_1x2(&keeper.pubkey(), FIXTURE))
+            .send(&[&keeper], &keeper.pubkey(), ix_freeze_market(&keeper.pubkey(), FIXTURE))
             .unwrap();
         do_resolve(&mut live, hint, home, away, FINAL_PERIOD).unwrap();
 
@@ -860,7 +765,7 @@ fn minted_set_redeems_to_amount_under_each_outcome() {
             .send(
                 &[&live.trader.insecure_clone()],
                 &trader,
-                ix_redeem_1x2(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
+                ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
             )
             .unwrap();
         assert_eq!(
@@ -878,11 +783,11 @@ fn void_after_mint_set_refunds_basis() {
     to_trading_with_position(&mut live);
     let amount = 70 * ONE_USDT;
     mint_set(&mut live, amount).unwrap();
-    force_market_1x2(&mut live.h, FIXTURE, MarketState::Resolved, Outcome1x2::Void);
+    force_market(&mut live.h, FIXTURE, MarketState::Resolved, Outcome::Void);
 
     let trader = live.trader.pubkey();
-    let market_key = market_1x2_pda(FIXTURE);
-    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    let market_key = market_pda(FIXTURE);
+    let pos: Position = get_anchor(&live.h.svm, &position_pda(&market_key, &trader));
     assert_eq!(pos.collateral, amount, "mint_set set the net basis to `amount`");
 
     let before = live.h.token_balance(&live.trader_ata);
@@ -890,7 +795,7 @@ fn void_after_mint_set_refunds_basis() {
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_redeem_1x2(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
+            ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
     assert_eq!(
@@ -939,7 +844,7 @@ fn separate_buys_never_cheaper_than_set() {
     let mut live_buy = bootstrap_open();
     to_trading_with_position(&mut live_buy);
     let trader = live_buy.trader.pubkey();
-    let market_key = market_1x2_pda(FIXTURE);
+    let market_key = market_pda(FIXTURE);
     let spend_before = live_buy.h.token_balance(&live_buy.trader_ata);
     // Buy enough USDT per leg that each leg ends with >= `amount` tokens. At the
     // 1/3 symmetric book a leg costs ~1/3 USDT/token, so `amount` USDT buys
@@ -948,7 +853,7 @@ fn separate_buys_never_cheaper_than_set() {
         buy(&mut live_buy, outcome, amount);
     }
     let spent = spend_before - live_buy.h.token_balance(&live_buy.trader_ata);
-    let pos: Position1x2 = get_anchor(&live_buy.h.svm, &position_1x2_pda(&market_key, &trader));
+    let pos: Position = get_anchor(&live_buy.h.svm, &position_pda(&market_key, &trader));
     let min_leg = pos.tokens[0].min(pos.tokens[1]).min(pos.tokens[2]);
     assert!(
         min_leg >= amount,
@@ -970,7 +875,7 @@ fn separate_buys_never_cheaper_than_set() {
 fn full_1x2_circle() {
     let mut live = bootstrap_open();
     let trader = live.trader.pubkey();
-    let market_key = market_1x2_pda(FIXTURE);
+    let market_key = market_pda(FIXTURE);
     let vault_key = vault_pda(&market_key);
 
     // a second trader who will LOSE
@@ -979,11 +884,11 @@ fn full_1x2_circle() {
     let loser_ata = live.h.fund_ata(&loser.pubkey(), 100_000 * ONE_USDT);
 
     live.h
-        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position_1x2(&trader, FIXTURE))
+        .send(&[&live.trader.insecure_clone()], &trader, ix_open_position(&trader, FIXTURE))
         .unwrap();
     to_trading(&mut live);
     live.h
-        .send(&[&loser.insecure_clone()], &loser.pubkey(), ix_open_position_1x2(&loser.pubkey(), FIXTURE))
+        .send(&[&loser.insecure_clone()], &loser.pubkey(), ix_open_position(&loser.pubkey(), FIXTURE))
         .unwrap();
 
     // winner buys all three outcomes, then sells part of Draw
@@ -991,12 +896,12 @@ fn full_1x2_circle() {
         buy(&mut live, outcome, 60 * ONE_USDT);
         assert_market_invariants(&live);
     }
-    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    let pos: Position = get_anchor(&live.h.svm, &position_pda(&market_key, &trader));
     live.h
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_sell_1x2(
+            ix_sell(
                 &trader,
                 CFG_ID,
                 FIXTURE,
@@ -1016,8 +921,8 @@ fn full_1x2_circle() {
         &[&loser.insecure_clone()],
         &loser.pubkey(),
         &[
-            ix_set_cu_limit(CU_LIMIT_1X2_BUY),
-            ix_buy_1x2(&loser.pubkey(), CFG_ID, FIXTURE, 2, 150 * ONE_USDT, 0, &live.h.usdt_mint, &loser_ata),
+            ix_set_cu_limit(CU_LIMIT_BUY),
+            ix_buy(&loser.pubkey(), CFG_ID, FIXTURE, 2, 150 * ONE_USDT, 0, &live.h.usdt_mint, &loser_ata),
         ],
     )
     .unwrap();
@@ -1027,19 +932,19 @@ fn full_1x2_circle() {
     live.h.set_time(live.freeze);
     let keeper = live.h.keeper.insecure_clone();
     live.h
-        .send(&[&keeper], &keeper.pubkey(), ix_freeze_market_1x2(&keeper.pubkey(), FIXTURE))
+        .send(&[&keeper], &keeper.pubkey(), ix_freeze_market(&keeper.pubkey(), FIXTURE))
         .unwrap();
     do_resolve(&mut live, 0, 2, 0, FINAL_PERIOD).unwrap();
 
     // winner redeems 1:1 on Team1; loser redeems 0
-    let pos: Position1x2 = get_anchor(&live.h.svm, &position_1x2_pda(&market_key, &trader));
+    let pos: Position = get_anchor(&live.h.svm, &position_pda(&market_key, &trader));
     let winning = pos.tokens[0];
     let before = live.h.token_balance(&live.trader_ata);
     live.h
         .send(
             &[&live.trader.insecure_clone()],
             &trader,
-            ix_redeem_1x2(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
+            ix_redeem(&trader, FIXTURE, &live.h.usdt_mint, &live.trader_ata),
         )
         .unwrap();
     assert_eq!(live.h.token_balance(&live.trader_ata), before + winning);
@@ -1049,7 +954,7 @@ fn full_1x2_circle() {
         .send(
             &[&loser.insecure_clone()],
             &loser.pubkey(),
-            ix_redeem_1x2(&loser.pubkey(), FIXTURE, &live.h.usdt_mint, &loser_ata),
+            ix_redeem(&loser.pubkey(), FIXTURE, &live.h.usdt_mint, &loser_ata),
         )
         .unwrap();
     assert_eq!(live.h.token_balance(&loser_ata), loser_before, "loser gets 0");
@@ -1060,7 +965,7 @@ fn full_1x2_circle() {
         &mut live.h.svm,
         &[&admin],
         &admin.pubkey(),
-        ix_close_market_1x2(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdt_mint, &live.admin_ata),
+        ix_close_market(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdt_mint, &live.admin_ata),
     );
     assert_amm_error(&res, AmmError::GraceNotElapsed);
 
@@ -1071,7 +976,7 @@ fn full_1x2_circle() {
         .send(
             &[&admin],
             &admin.pubkey(),
-            ix_close_market_1x2(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdt_mint, &live.admin_ata),
+            ix_close_market(&admin.pubkey(), CFG_ID, FIXTURE, &live.h.usdt_mint, &live.admin_ata),
         )
         .unwrap();
     assert_eq!(

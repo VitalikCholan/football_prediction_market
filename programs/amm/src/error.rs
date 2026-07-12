@@ -23,7 +23,7 @@ pub enum AmmError {
     SlippageExceeded,
 
     // ---- solvency (D-2 virtual-reserve invariant) -------------------------
-    #[msg("Solvency invariant violated: vault < max(yes_supply, no_supply)")]
+    #[msg("Solvency invariant violated: vault < max_i(supply_i)")]
     SolvencyViolation,
 
     // ---- fee --------------------------------------------------------------
@@ -84,9 +84,7 @@ pub enum AmmError {
     #[msg("LMSR: fixed-point argument outside supported domain")]
     LmsrDomain,
 
-    // ---- 1X2 market (SPEC §3.1 phase C — appended, do not reorder) --------
-    #[msg("MarketConfig.market_kind does not match this instruction's market kind")]
-    MarketKindMismatch,
+    // ---- 1X2 market (SPEC §3.1) -------------------------------------------
     #[msg("Proof stat period does not match the config's pinned resolution period")]
     ResolutionPeriodMismatch,
 }

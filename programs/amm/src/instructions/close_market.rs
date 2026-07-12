@@ -1,11 +1,15 @@
-//! `close_market` — admin-gated teardown after the resolution grace period
-//! (plan §4.9).
+//! `close_market` — admin-gated teardown after the resolution grace
+//! period (SPEC §3.1).
 //!
 //! Order matters (a token account with a nonzero balance cannot be closed):
 //! 1. sweep remaining vault USDT → admin ATA (signed by the market PDA),
 //! 2. `close_account` CPI on the vault (rent → admin),
 //! 3. Anchor `close = authority` reclaims the `Market` data account
 //!    (secure close: data zeroed + discriminator poisoned → revival-safe).
+//!
+//! NOTE (SPEC §3.1): there is no on-chain Void path — `Outcome::Void` is redeemable by
+//! `redeem` but no instruction sets it yet (withholding-keeper recovery
+//! is a follow-up `void_market` ix).
 
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{

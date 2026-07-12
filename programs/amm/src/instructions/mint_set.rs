@@ -1,4 +1,4 @@
-//! `mint_set_1x2(amount)` — mint a COMPLETE SET of the 3-way market: deposit
+//! `mint_set(amount)` — mint a COMPLETE SET of the 3-way market: deposit
 //! EXACTLY `amount` USDT, receive `amount` base-unit tokens of every outcome
 //! {Team1, Draw, Team2} (SPEC §3.1 phase C-add).
 //!
@@ -23,9 +23,9 @@
 //!   invariant holds and the shift is equal across outcomes (prices fixed).
 //! * **Solvency preserved trivially** — vault and every `supply[i]` both rise by
 //!   `amount`, so `max(supply)` and the vault move together; we still call
-//!   `math::assert_solvent_multi` at the tail (belt, mirrors buy/sell).
+//!   `lmsr::assert_solvent_multi` at the tail (belt, mirrors buy/sell).
 //! * **`collateral` (D-4 Void basis)** — add `amount` (net USDT basis in),
-//!   mirroring how `buy_1x2` adds the gross USDT deposited.
+//!   mirroring how `buy` adds the gross USDT deposited.
 //!
 //! State gate: `Trading` only (mirror buy/sell). Position must already exist.
 
@@ -34,32 +34,31 @@ use anchor_spl::token_interface::{
     self, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
-use crate::constants::{MARKET_1X2_SEED, POSITION_1X2_SEED};
+use crate::constants::{MARKET_SEED, POSITION_SEED};
 use crate::error::AmmError;
 use crate::lmsr;
-use crate::math;
-use crate::state::{Market1x2, MarketState, Position1x2, SetMinted1x2};
+use crate::state::{Market, MarketState, Position, SetMinted};
 
 #[derive(Accounts)]
-pub struct MintSet1x2<'info> {
+pub struct MintSet<'info> {
     #[account(mut)]
     pub trader: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [MARKET_1X2_SEED, &market.fixture_id.to_le_bytes()],
+        seeds = [MARKET_SEED, &market.fixture_id.to_le_bytes()],
         bump = market.bump,
     )]
-    pub market: Box<Account<'info, Market1x2>>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(
         mut,
-        seeds = [POSITION_1X2_SEED, market.key().as_ref(), trader.key().as_ref()],
+        seeds = [POSITION_SEED, market.key().as_ref(), trader.key().as_ref()],
         bump = position.bump,
         constraint = position.owner == trader.key() @ AmmError::Unauthorized,
         constraint = position.market == market.key() @ AmmError::Unauthorized,
     )]
-    pub position: Box<Account<'info, Position1x2>>,
+    pub position: Box<Account<'info, Position>>,
 
     #[account(
         mut,
@@ -78,7 +77,7 @@ pub struct MintSet1x2<'info> {
     pub token_program: Interface<'info, TokenInterface>,
 }
 
-pub(crate) fn handler(ctx: Context<MintSet1x2>, amount: u64) -> Result<()> {
+pub(crate) fn handler(ctx: Context<MintSet>, amount: u64) -> Result<()> {
     let market = &mut ctx.accounts.market;
 
     require!(market.state == MarketState::Trading, AmmError::InvalidMarketState);
@@ -135,9 +134,9 @@ pub(crate) fn handler(ctx: Context<MintSet1x2>, amount: u64) -> Result<()> {
         .ok_or(AmmError::MathOverflow)?;
 
     // ---- re-validate solvency: vault ≥ max_i(supply_i) (belt) ----
-    math::assert_solvent_multi(ctx.accounts.vault.amount, &market.supply)?;
+    lmsr::assert_solvent_multi(ctx.accounts.vault.amount, &market.supply)?;
 
-    emit!(SetMinted1x2 {
+    emit!(SetMinted {
         fixture_id: market.fixture_id,
         owner: ctx.accounts.trader.key(),
         amount,

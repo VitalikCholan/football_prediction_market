@@ -76,7 +76,6 @@ import {
   BinaryExpression,
   MarketState,
   Outcome,
-  Side,
   fetchMarket,
   fetchMaybeGlobalConfig,
   fetchMaybeMarket,
@@ -128,9 +127,11 @@ const SECONDS_PER_DAY = 86_400n;
 const MILLIS_PER_DAY = 86_400_000n; // TxLINE ts is MILLISECONDS (see header)
 const CONFIG_ID = 1;
 const BASE_FIXTURE_ID = 17_588_316n;
-const SEED_YES = 1_000_000_000n; // 1000 USDT virtual reserve
-const SEED_NO = 1_000_000_000n;
-const SEED_LIQUIDITY = 1_000_000_000n; // 1000 USDT real collateral
+// LMSR seeding: equal offsets → even 3-way opening odds (1/3 ≈ 3333 bps each).
+const LMSR_B = 1_000_000_000n; // liquidity parameter b (max LP subsidy = b·ln 3)
+const SEED_Q: [bigint, bigint, bigint] = [0n, 0n, 0n]; // [Team1, Draw, Team2]
+const SEED_LIQUIDITY = 2_000_000_000n; // 2000 USDT real collateral (covers b·ln 3)
+const BUY_OUTCOME = 0; // Team1
 const BUY_USDT_IN = 50_000_000n; // 50 USDT
 const GRACE_SECS = 3_600n;
 
@@ -532,24 +533,21 @@ async function main() {
       authority: admin,
       marketConfig: marketConfigPda,
       configId: CONFIG_ID,
-      // params became a nested struct once FeeParamsArgs stopped being
-      // single-use (create_market_config_1x2 reuses it) — same wire bytes.
-      params: {
-        baseFeeBps: 30,
-        maxFeeBps: 500,
-        vfcNum: 5_000,
-        filterPeriod: 30,
-        decayPeriod: 600,
-        reductionBps: 5_000,
-        maxVAcc: 1_000_000n,
-        resolutionGraceSecs: GRACE_SECS,
-        // home win: (goals P1 [key 1] - goals P2 [key 2]) > 0, GT=0, Subtract=2
-        resolutionThreshold: 0,
-        resolutionComparison: 0,
-        statKeyA: 1,
-        statKeyB: 2,
-        statOp: 2,
-      },
+      baseFeeBps: 30,
+      maxFeeBps: 500,
+      vfcNum: 5_000,
+      filterPeriod: 30,
+      decayPeriod: 600,
+      reductionBps: 5_000,
+      maxVAcc: 1_000_000n,
+      resolutionGraceSecs: GRACE_SECS,
+      // Team1 win: (goals P1 [key 1] - goals P2 [key 2]) > 0, GT=0, Subtract=2
+      resolutionThreshold: 0,
+      resolutionComparison: 0,
+      statKeyA: 1,
+      statKeyB: 2,
+      statOp: 2,
+      resolutionPeriod: 0, // full-time
     });
     await sendTx(rpc, admin, [ix]);
     return `config_id ${CONFIG_ID}: predicate (stat1 - stat2) > 0`;
@@ -607,17 +605,18 @@ async function main() {
       fixtureId,
       kickoffTs,
       freezeTs,
-      seedYes: SEED_YES,
-      seedNo: SEED_NO,
+      b: LMSR_B,
+      seedQ: SEED_Q,
       seedLiquidity: SEED_LIQUIDITY,
     });
     await sendTx(rpc, admin, [ix]);
     const market = await fetchMarket(rpc, marketPda);
     assert(market.data.state === MarketState.Open, "market not Open");
-    assert(market.data.lastPriceBps === 5_000, "seed price != 5000 bps");
+    // equal seed offsets → even 3-way odds: Team1 opening price ≈ 3333 bps.
+    assert(market.data.lastPriceBps === 3_333, `seed price != 3333 bps (got ${market.data.lastPriceBps})`);
     const vaultBal = await usdtBalance(rpc, vaultPda);
     assert(vaultBal === SEED_LIQUIDITY, `vault ${vaultBal} != seed ${SEED_LIQUIDITY}`);
-    return `fixture ${fixtureId}, market ${marketPda}, price 5000 bps, vault ${vaultBal}`;
+    return `fixture ${fixtureId}, market ${marketPda}, price 3333 bps, vault ${vaultBal}`;
   });
 
   // ---- 4c. open_position ----
@@ -629,7 +628,10 @@ async function main() {
     });
     await sendTx(rpc, admin, [ix]);
     const pos = await fetchPosition(rpc, positionPda);
-    assert(pos.data.yesTokens === 0n && pos.data.noTokens === 0n, "position not empty");
+    assert(
+      pos.data.tokens.every((t) => t === 0n),
+      "position not empty",
+    );
     return `position ${positionPda}`;
   });
 
@@ -643,9 +645,9 @@ async function main() {
       vault: vaultPda,
       usdtMint: USDT_MINT,
       tokenProgram: TOKEN_PROGRAM,
-      side: Side.Yes,
+      outcome: BUY_OUTCOME, // Team1
       usdtIn: BUY_USDT_IN,
-      minOut: 1n,
+      minTokensOut: 1n,
     });
 
   // ---- 4d. lifecycle guard: buy before activate must fail ----
@@ -672,23 +674,23 @@ async function main() {
   });
 
   // ---- 4f. buy: position credited, price moved, vault increased ----
-  await step("buy (YES): position credited + price moved", async () => {
+  await step("buy (Team1): position credited + price moved", async () => {
     const before = await fetchMarket(rpc, marketPda);
     const vaultBefore = await usdtBalance(rpc, vaultPda);
     await sendTx(rpc, admin, [await buyIx()]);
     const after = await fetchMarket(rpc, marketPda);
     const pos = await fetchPosition(rpc, positionPda);
     const vaultAfter = await usdtBalance(rpc, vaultPda);
-    assert(pos.data.yesTokens > 0n, "yes_tokens not credited");
+    assert(pos.data.tokens[BUY_OUTCOME] > 0n, "Team1 tokens not credited");
     assert(
       after.data.lastPriceBps > before.data.lastPriceBps,
-      `YES price did not rise: ${before.data.lastPriceBps} -> ${after.data.lastPriceBps}`,
+      `Team1 price did not rise: ${before.data.lastPriceBps} -> ${after.data.lastPriceBps}`,
     );
     assert(
       vaultAfter === vaultBefore + BUY_USDT_IN,
       `vault delta ${vaultAfter - vaultBefore} != usdt_in ${BUY_USDT_IN}`,
     );
-    return `yes_tokens=${pos.data.yesTokens}, price ${before.data.lastPriceBps}→${after.data.lastPriceBps} bps, vault +${BUY_USDT_IN}`;
+    return `team1_tokens=${pos.data.tokens[BUY_OUTCOME]}, price ${before.data.lastPriceBps}→${after.data.lastPriceBps} bps, vault +${BUY_USDT_IN}`;
   });
 
   // ---- 4g. timeTravel past freeze → freeze ----
@@ -724,15 +726,12 @@ async function main() {
       marketConfig: marketConfigPda,
       txlineProgram: TXLINE_PROGRAM,
       dailyScoresMerkleRoots: rootsPda,
-      outcomeHint: Side.Yes,
+      hint: 0, // outcome index 0=Team1 (validated against the proof outcome)
       ts,
-      // fixtureSummary became a nested struct once ScoresBatchSummary stopped
-      // being single-use (resolve_1x2 reuses it) — same wire bytes.
-      fixtureSummary: {
-        fixtureId,
-        updateStats: { updateCount: 1, minTimestamp: ts, maxTimestamp: ts },
-        eventsSubTreeRoot: new Uint8Array(32),
-      },
+      // fixtureSummary is flattened into the instruction args in the canonical IDL.
+      fixtureId,
+      updateStats: { updateCount: 1, minTimestamp: ts, maxTimestamp: ts },
+      eventsSubTreeRoot: new Uint8Array(32),
       fixtureProof: [],
       mainTreeProof: [],
       statA: {
@@ -865,8 +864,8 @@ async function main() {
     return `epoch_day ${existingRootsDay}, ms ts ${lastTsMs}${hit6007 ? ` (after ${hit6007}× 6007 RootNotAvailable on empty slots)` : ""} → real binary returned ${last.customError}${errLine ? ` (${errLine.replace("Program log: ", "")})` : ""}`;
   });
 
-  // ---- 6a. force Resolved(Yes) via surfnet_setAccount (state patch) ----
-  await step("surfnet_setAccount: force state=Resolved outcome=Yes", async () => {
+  // ---- 6a. force Resolved(Team1) via surfnet_setAccount (state patch) ----
+  await step("surfnet_setAccount: force state=Resolved outcome=Team1", async () => {
     const info = await rpc.getAccountInfo(marketPda, { encoding: "base64" }).send();
     assert(info.value, "market account missing");
     const bytes = getBase64Encoder().encode(info.value.data[0]);
@@ -874,7 +873,7 @@ async function main() {
     const patched = getMarketEncoder().encode({
       ...decoded,
       state: MarketState.Resolved,
-      outcome: Outcome.Yes,
+      outcome: Outcome.Team1,
     });
     await rawRpc("surfnet_setAccount", [
       marketPda,
@@ -887,14 +886,14 @@ async function main() {
     ]);
     const market = await fetchMarket(rpc, marketPda);
     assert(market.data.state === MarketState.Resolved, "state not Resolved");
-    assert(market.data.outcome === Outcome.Yes, "outcome not Yes");
-    return "market patched to Resolved / Yes (verified via decode)";
+    assert(market.data.outcome === Outcome.Team1, "outcome not Team1");
+    return "market patched to Resolved / Team1 (verified via decode)";
   });
 
-  // ---- 6b. redeem: winner gets 1 USDT per YES token ----
-  await step("redeem: winner payout 1 USDT per YES token", async () => {
+  // ---- 6b. redeem: winner gets 1 USDT per Team1 token ----
+  await step("redeem: winner payout 1 USDT per Team1 token", async () => {
     const posBefore = await fetchPosition(rpc, positionPda);
-    const expected = posBefore.data.yesTokens;
+    const expected = posBefore.data.tokens[BUY_OUTCOME];
     const balBefore = await usdtBalance(rpc, adminUsdt);
     const ix = await getRedeemInstructionAsync({
       owner: admin,
@@ -911,7 +910,7 @@ async function main() {
     assert(expected > 0n, "nothing to redeem");
     assert(
       balAfter - balBefore === expected,
-      `payout ${balAfter - balBefore} != yes_tokens ${expected}`,
+      `payout ${balAfter - balBefore} != team1_tokens ${expected}`,
     );
     assert(pos.data.redeemed, "position not flagged redeemed");
     return `payout ${expected} (raw USDT) — balance delta matches, position flagged`;

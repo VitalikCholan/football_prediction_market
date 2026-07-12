@@ -1,8 +1,27 @@
-//! `init_market` — create the `Market` + USDT escrow vault, seed reserves and
-//! liquidity (plan §4.3). Admin-gated.
+//! `init_market` — create the `Market` + USDT escrow vault, seed the LMSR
+//! curve and liquidity (SPEC §3.1). Admin-gated. D-2 posture: curve state
+//! sets odds only, the vault holds all real USDT.
 //!
-//! D-2: reserves are virtual (odds only). Seed USDT = the real collateral the
-//! admin deposits so the vault starts solvent for both sides.
+//! ## Seeding approach (documented decision)
+//!
+//! The admin passes the LMSR liquidity `b` and per-outcome seed offsets
+//! `seed_q = [q1, qx, q2]` — the opening odds are the softmax of `seed_q/b`
+//! (symmetric `[0,0,0]` → 1/3 each; a larger `seed_q[i]` makes outcome i more
+//! expensive). Seed offsets are POOL-OWNED (not user supply): `supply` starts
+//! at `[0,0,0]` and only user trades move it.
+//!
+//! ## Solvency-at-init requirement (structural, makes the invariant
+//! self-maintaining)
+//!
+//! `seed_liquidity ≥ C(seed_q, b) − min_i(seed_q_i)`.
+//!
+//! Proof that `vault ≥ max_i(supply_i)` then holds after ANY trade sequence:
+//! collected premiums telescope to `≥ C(q) − C(seed_q)` (buy=ceil,
+//! sell=floor, pool-favorable), so
+//! `vault ≥ seed + C(q) − C(seed_q) ≥ C(q) − min(seed_q)
+//!        ≥ max_i(q_i) − min(seed_q) ≥ max_i(q_i − seed_q_i) = max_i(supply_i)`.
+//! For symmetric seeding this is the classic `b·ln 3` LMSR subsidy.
+//! `assert_solvent_multi` still re-checks after every mutation (belt).
 
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
@@ -11,8 +30,10 @@ use anchor_spl::token_interface::{
 
 use crate::constants::{CONFIG_SEED, MARKET_SEED, MKT_CONFIG_SEED, VAULT_SEED};
 use crate::error::AmmError;
-use crate::math;
-use crate::state::{GlobalConfig, Market, MarketConfig, MarketCreated, MarketState, Outcome};
+use crate::lmsr;
+use crate::state::{
+    GlobalConfig, Market, MarketCreated, MarketConfig, MarketState, Outcome,
+};
 
 #[derive(Accounts)]
 #[instruction(fixture_id: i64)]
@@ -75,29 +96,36 @@ pub(crate) fn handler(
     fixture_id: i64,
     kickoff_ts: i64,
     freeze_ts: i64,
-    seed_yes: u64,
-    seed_no: u64,
+    b: u64,
+    seed_q: [u64; 3],
     seed_liquidity: u64,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
 
-    // ---- timing + seed validation ----
+    // ---- timing validation ----
     require!(kickoff_ts < freeze_ts, AmmError::InvalidTiming);
     require!(kickoff_ts > now, AmmError::InvalidTiming);
-    require!(seed_yes > 0 && seed_no > 0, AmmError::InvalidSeedLiquidity);
+
+    // ---- LMSR seed validation: ranges + the solvency-at-init bound ----
+    // `cost` validates b ∈ [B_MIN, B_MAX] and every seed_q[i] ≤ Q_MAX.
+    let seed_cost = lmsr::cost(&seed_q, b)?;
+    let min_q = seed_q[0].min(seed_q[1]).min(seed_q[2]);
+    let min_seed = seed_cost
+        .checked_sub(min_q)
+        .ok_or(AmmError::MathOverflow)?; // cost ≥ max(q) ≥ min(q) structurally
+    require!(seed_liquidity >= min_seed, AmmError::InvalidSeedLiquidity);
     require!(seed_liquidity > 0, AmmError::InvalidSeedLiquidity);
 
-    let price_bps = math::price_yes_bps(seed_yes, seed_no)?;
+    let prices = lmsr::prices_bps(&seed_q, b)?;
 
     // ---- write market state ----
     let market = &mut ctx.accounts.market;
     market.config = ctx.accounts.market_config.key();
     market.fixture_id = fixture_id;
-    market.yes_reserve = seed_yes;
-    market.no_reserve = seed_no;
+    market.q = seed_q;
+    market.b = b;
     market.usdt_collateral = seed_liquidity;
-    market.yes_supply = 0;
-    market.no_supply = 0;
+    market.supply = [0u64; 3];
     market.state = MarketState::Open;
     market.outcome = Outcome::Unset;
     market.vault = ctx.accounts.vault.key();
@@ -105,13 +133,15 @@ pub(crate) fn handler(
     market.kickoff_ts = kickoff_ts;
     market.freeze_ts = freeze_ts;
     market.usdt_mint = ctx.accounts.usdt_mint.key();
-    market.last_price_bps = price_bps;
+    // arm the fee state with the Team1 opening price (documented convention:
+    // last_price_bps always tracks the most recently TRADED outcome's price).
+    market.last_price_bps = prices[0];
     market.last_ts = now;
     market.v_acc = 0;
     market.bump = ctx.bumps.market;
     market._reserved = [0u8; 64];
 
-    // ---- transfer seed liquidity: authority_usdt -> vault (authority signs) ----
+    // ---- transfer seed liquidity: authority_usdt -> vault ----
     let decimals = ctx.accounts.usdt_mint.decimals;
     let before = ctx.accounts.vault.amount;
 
@@ -132,19 +162,20 @@ pub(crate) fn handler(
         .amount
         .checked_sub(before)
         .ok_or(AmmError::MathOverflow)?;
-    // usdt_collateral tracks the real vault balance credited.
+    // the solvency-at-init bound must hold for what actually LANDED.
+    require!(credited >= min_seed, AmmError::InvalidSeedLiquidity);
     let market = &mut ctx.accounts.market;
     market.usdt_collateral = credited;
 
-    // solvency holds trivially (supplies are 0).
-    math::assert_solvent(ctx.accounts.vault.amount, market.yes_supply, market.no_supply)?;
+    // solvency holds trivially (supplies are 0); belt anyway.
+    lmsr::assert_solvent_multi(ctx.accounts.vault.amount, &market.supply)?;
 
     emit!(MarketCreated {
         fixture_id,
         config: market.config,
-        yes_reserve: market.yes_reserve,
-        no_reserve: market.no_reserve,
-        price_bps,
+        b,
+        q: seed_q,
+        prices_bps: prices,
     });
     Ok(())
 }

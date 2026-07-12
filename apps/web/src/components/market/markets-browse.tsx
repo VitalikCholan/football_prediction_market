@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { AnyMarketDto } from "@fpm/shared";
+import type { MarketDto } from "@fpm/shared";
 import { MatchCard } from "@/components/market/match-card";
 import { useSearch } from "@/lib/search";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ type Sort = "volume" | "closing";
 // built dynamically from the loaded markets.
 type Filter =
   | { kind: "all" }
-  | { kind: "state"; state: AnyMarketDto["state"] }
+  | { kind: "state"; state: MarketDto["state"] }
   | { kind: "competition"; competition: string };
 
 interface Pill {
@@ -33,7 +33,7 @@ interface Pill {
 const ALL_PILL: Pill = { id: "all", label: "All markets", filter: { kind: "all" } };
 
 /** Build the pill list from the markets actually loaded (null-safe, no empties). */
-function buildPills(markets: AnyMarketDto[]): Pill[] {
+function buildPills(markets: MarketDto[]): Pill[] {
   const pills: Pill[] = [ALL_PILL];
 
   // One pill per distinct non-null competition, in first-seen order.
@@ -68,7 +68,7 @@ function buildPills(markets: AnyMarketDto[]): Pill[] {
   return pills;
 }
 
-function matches(m: AnyMarketDto, filter: Filter): boolean {
+function matches(m: MarketDto, filter: Filter): boolean {
   switch (filter.kind) {
     case "all":
       return true;
@@ -80,7 +80,7 @@ function matches(m: AnyMarketDto, filter: Filter): boolean {
 }
 
 /** Free-text search over team names + competition (case-insensitive substring). */
-function matchesQuery(m: AnyMarketDto, q: string): boolean {
+function matchesQuery(m: MarketDto, q: string): boolean {
   if (!q) return true;
   const needle = q.toLowerCase();
   return [m.homeTeam, m.awayTeam, m.competition].some(
@@ -88,7 +88,7 @@ function matchesQuery(m: AnyMarketDto, q: string): boolean {
   );
 }
 
-export function MarketsBrowse({ markets }: { markets: AnyMarketDto[] }) {
+export function MarketsBrowse({ markets }: { markets: MarketDto[] }) {
   const [activeId, setActiveId] = useState<string>(ALL_PILL.id);
   const [sort, setSort] = useState<Sort>("volume");
   const { query } = useSearch();

@@ -1,5 +1,5 @@
 //! `activate_market` — keeper-gated (D-1), clock-guarded `Open → Trading`
-//! transition (plan §4.4).
+//! transition to Open → Trading.
 
 use anchor_lang::prelude::*;
 

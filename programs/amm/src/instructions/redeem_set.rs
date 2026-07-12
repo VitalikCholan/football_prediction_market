@@ -1,10 +1,10 @@
-//! `redeem_set_1x2(amount)` — burn a COMPLETE SET back to par: burn `amount`
+//! `redeem_set(amount)` — burn a COMPLETE SET back to par: burn `amount`
 //! base-unit tokens of EVERY outcome {Team1, Draw, Team2}, receive EXACTLY
-//! `amount` USDT (SPEC §3.1 phase C-add). The exact inverse of `mint_set_1x2`.
+//! `amount` USDT (SPEC §3.1 phase C-add). The exact inverse of `mint_set`.
 //!
 //! A complete set is worth exactly `amount` USDT (one guaranteed winner at
 //! resolution), so burning one pays the flat `amount` — fee-free, slippage-free,
-//! price-neutral. See `mint_set_1x2` for the full rationale.
+//! price-neutral. See `mint_set` for the full rationale.
 //!
 //! ## Posture (inverse of mint_set)
 //!
@@ -13,7 +13,7 @@
 //!   (equal shift, softmax shift-invariance) and the `q = seed_q + supply`
 //!   invariant preserved.
 //! * **NO dynamic fee** (directionally neutral).
-//! * `collateral -= amount` (saturating, mirroring `sell_1x2`'s basis reduction)
+//! * `collateral -= amount` (saturating, mirroring `sell`'s basis reduction)
 //!   so a later Void refund basis stays correct.
 //! * **Checks-effects-interactions**: decrement position balances, supply, and
 //!   collateral BEFORE the PDA-signed payout CPI.
@@ -22,39 +22,38 @@
 //!
 //! State gate: `Trading` only (v0 simplicity — a par exit before resolution
 //! lives in the same window as buy/sell; `Locked`/`Resolved` exits go through
-//! `resolve` + `redeem_1x2`). Position must already exist.
+//! `resolve` + `redeem`). Position must already exist.
 
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
     self, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
-use crate::constants::{MARKET_1X2_SEED, POSITION_1X2_SEED};
+use crate::constants::{MARKET_SEED, POSITION_SEED};
 use crate::error::AmmError;
 use crate::lmsr;
-use crate::math;
-use crate::state::{Market1x2, MarketState, Position1x2, SetRedeemed1x2};
+use crate::state::{Market, MarketState, Position, SetRedeemed};
 
 #[derive(Accounts)]
-pub struct RedeemSet1x2<'info> {
+pub struct RedeemSet<'info> {
     #[account(mut)]
     pub trader: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [MARKET_1X2_SEED, &market.fixture_id.to_le_bytes()],
+        seeds = [MARKET_SEED, &market.fixture_id.to_le_bytes()],
         bump = market.bump,
     )]
-    pub market: Box<Account<'info, Market1x2>>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(
         mut,
-        seeds = [POSITION_1X2_SEED, market.key().as_ref(), trader.key().as_ref()],
+        seeds = [POSITION_SEED, market.key().as_ref(), trader.key().as_ref()],
         bump = position.bump,
         constraint = position.owner == trader.key() @ AmmError::Unauthorized,
         constraint = position.market == market.key() @ AmmError::Unauthorized,
     )]
-    pub position: Box<Account<'info, Position1x2>>,
+    pub position: Box<Account<'info, Position>>,
 
     #[account(
         mut,
@@ -73,7 +72,7 @@ pub struct RedeemSet1x2<'info> {
     pub token_program: Interface<'info, TokenInterface>,
 }
 
-pub(crate) fn handler(ctx: Context<RedeemSet1x2>, amount: u64) -> Result<()> {
+pub(crate) fn handler(ctx: Context<RedeemSet>, amount: u64) -> Result<()> {
     // ---- gates ----
     require!(
         ctx.accounts.market.state == MarketState::Trading,
@@ -122,7 +121,7 @@ pub(crate) fn handler(ctx: Context<RedeemSet1x2>, amount: u64) -> Result<()> {
     // ---- interaction: pay EXACTLY `amount` USDT, vault -> trader, PDA-signed ----
     let decimals = ctx.accounts.usdt_mint.decimals;
     let fixture_le = fixture_id.to_le_bytes();
-    let signer_seeds: &[&[&[u8]]] = &[&[MARKET_1X2_SEED, &fixture_le, &[market_bump]]];
+    let signer_seeds: &[&[&[u8]]] = &[&[MARKET_SEED, &fixture_le, &[market_bump]]];
 
     let cpi_accounts = TransferChecked {
         from: ctx.accounts.vault.to_account_info(),
@@ -140,9 +139,9 @@ pub(crate) fn handler(ctx: Context<RedeemSet1x2>, amount: u64) -> Result<()> {
     // ---- re-validate solvency ----
     ctx.accounts.vault.reload()?;
     let market = &ctx.accounts.market;
-    math::assert_solvent_multi(ctx.accounts.vault.amount, &market.supply)?;
+    lmsr::assert_solvent_multi(ctx.accounts.vault.amount, &market.supply)?;
 
-    emit!(SetRedeemed1x2 {
+    emit!(SetRedeemed {
         fixture_id,
         owner: ctx.accounts.trader.key(),
         amount,
