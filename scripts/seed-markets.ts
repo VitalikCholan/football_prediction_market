@@ -590,9 +590,32 @@ async function main() {
   for (const fx of future) {
     const [marketPda] = await findMarketPda(fx.fixtureId);
     const [vaultPda] = await findVaultPda(marketPda);
-    const existing = await withRpc("fetchMaybeMarket", (rpc) =>
-      fetchMaybeMarket(rpc, marketPda),
-    );
+    let existing;
+    try {
+      existing = await withRpc(
+        "fetchMaybeMarket",
+        (rpc) => fetchMaybeMarket(rpc, marketPda),
+        2,
+      );
+    } catch (e) {
+      // A stale account from the pre-refactor binary program can occupy this
+      // PDA: the old binary market used seed b"market" (now the canonical 1X2
+      // seed), same "Market" discriminator but an incompatible 254-byte layout,
+      // so decode fails. We cannot init over an occupied PDA — skip the fixture.
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("decode")) {
+        report.skippedExisting.push({
+          fixtureId: fx.fixtureId.toString(),
+          teams: `${fx.home} vs ${fx.away}`,
+          state: "GHOST (stale binary account at PDA — cannot seed)",
+        });
+        console.warn(
+          `    GHOST at Market PDA for ${fx.fixtureId} (${fx.home} vs ${fx.away}) — stale pre-refactor account, skip`,
+        );
+        continue;
+      }
+      throw e;
+    }
     if (existing.exists) {
       report.skippedExisting.push({
         fixtureId: fx.fixtureId.toString(),

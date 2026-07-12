@@ -116,7 +116,7 @@ pub struct MarketConfig {
 //            = 133
 
 // ===========================================================================
-// Market — seeds [b"market", fixture_id LE]  (space 8 + 270 = 278)
+// Market — seeds [b"market_v2", fixture_id LE]  (space 8 + 270 = 278)
 // ===========================================================================
 
 /// One 3-way (Team1/Draw/Team2) LMSR market per match/fixture.

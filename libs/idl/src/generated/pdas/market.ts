@@ -14,5 +14,5 @@ fixtureId: number | bigint;
 
 export async function findMarketPda(seeds: MarketSeeds, config: { programAddress?: Address | undefined } = {}): Promise<ProgramDerivedAddress> {
   const { programAddress = 'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY' as Address<'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY'> } = config;
-  return await getProgramDerivedAddress({ programAddress, seeds: [getBytesEncoder().encode(new Uint8Array([109, 97, 114, 107, 101, 116])), getI64Encoder().encode(seeds.fixtureId)]});
+  return await getProgramDerivedAddress({ programAddress, seeds: [getBytesEncoder().encode(new Uint8Array([109, 97, 114, 107, 101, 116, 95, 118, 50])), getI64Encoder().encode(seeds.fixtureId)]});
 }

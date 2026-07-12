@@ -17,10 +17,12 @@ pub const CONFIG_SEED: &[u8] = b"config";
 #[constant]
 pub const MKT_CONFIG_SEED: &[u8] = b"mkt_config";
 
-/// `Market` — seeds `[b"market", fixture_id: i64 LE]` (D-7). The 3-way (1X2)
-/// LMSR market is the program's sole market type.
+/// `Market` — seeds `[b"market_v2", fixture_id: i64 LE]` (D-7). The 3-way (1X2)
+/// LMSR market is the program's sole market type. The `_v2` suffix keeps the
+/// PDA namespace distinct from pre-refactor accounts (old binary `b"market"`
+/// and old 1X2 `b"market3"`), so canonical markets never collide with ghosts.
 #[constant]
-pub const MARKET_SEED: &[u8] = b"market";
+pub const MARKET_SEED: &[u8] = b"market_v2";
 
 /// `Position` — seeds `[b"position", market: Pubkey, owner: Pubkey]`.
 #[constant]

@@ -20,13 +20,13 @@ export const AMM_PROGRAM_ID: Address = address(
  *
  *   CONFIG_SEED      = b"config"
  *   MKT_CONFIG_SEED  = b"mkt_config" + config_id: u16 LE
- *   MARKET_SEED      = b"market"     + fixture_id: i64 LE   (D-7)
+ *   MARKET_SEED      = b"market_v2"  + fixture_id: i64 LE   (D-7)
  *   POSITION_SEED    = b"position"   + market: Pubkey + owner: Pubkey
  *   VAULT_SEED       = b"vault"      + market: Pubkey
  * ------------------------------------------------------------------------ */
 export const CONFIG_SEED = "config";
 export const MKT_CONFIG_SEED = "mkt_config";
-export const MARKET_SEED = "market";
+export const MARKET_SEED = "market_v2";
 export const POSITION_SEED = "position";
 export const VAULT_SEED = "vault";
 
