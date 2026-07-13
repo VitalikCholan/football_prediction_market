@@ -87,10 +87,13 @@ const RESOLUTION_PERIOD = 100;
 
 const ONE_USDT = 1_000_000n; // 6 decimals
 // LMSR liquidity depth `b` (raw USDT units). Symmetric subsidy = ceil(b·ln3).
-const SEED_B = 100n * ONE_USDT; // 100 USDT depth (mirrors LiteSVM tests)
+// Sized to the devnet USDT faucet budget (b·ln3 collateral is a hard solvency
+// requirement, so shallower `b` = less collateral per market = more markets per
+// faucet claim). b=50 keeps a usable book while fitting ~4 markets in 245 USDT.
+const SEED_B = 50n * ONE_USDT; // 50 USDT depth
 // Real collateral seeded into the vault. Must be >= C(seed_q,b) - min(seed_q).
-// For symmetric [0,0,0]: ceil(b·ln3) ≈ 109.86 USDT. We seed 200 USDT (headroom).
-const SEED_LIQUIDITY = 200n * ONE_USDT;
+// For symmetric [0,0,0]: ceil(b·ln3) ≈ 54.93 USDT. We seed 60 USDT (small buffer).
+const SEED_LIQUIDITY = 60n * ONE_USDT;
 // Clamp implied probs so no outcome degenerates to a ~0/100¢ seed offset.
 const MIN_PROB = 0.02;
 const KICKOFF_BUFFER_SECS = 120n;
