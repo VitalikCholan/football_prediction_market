@@ -6,6 +6,7 @@
   "scripts": {
     "close:market": "tsx close-market.ts",
     "devnet:init": "tsx devnet-init.ts",
+    "fund-usdt": "tsx fund-usdt.ts",
     "full-circle": "tsx full-circle.ts",
     "seed-markets": "tsx seed-markets.ts",
     "txline:token": "tsx txline-token.ts",
