@@ -69,10 +69,13 @@ const ONE_USDT = 1_000_000n; // 6 decimals
 const FAUCET_AMOUNT = 100n * ONE_USDT; // fixed 100 USDT per call
 const TARGET_USDT =
   BigInt(process.env.TARGET_USDT ?? process.argv[2] ?? "420") * ONE_USDT;
-// SOL handed to each temp wallet: covers the USDT ATA rent (~0.00204, refunded
-// to admin on close) + a few tx fees. Most comes back via close + sweep.
-const FUND_LAMPORTS = 3_000_000n; // 0.003 SOL
+// SOL handed to each temp wallet: covers the USDT ATA rent (~0.00204, created by
+// the faucet CPI and refunded to admin on close) + tx fees. Most comes back via
+// close + sweep, so over-funding is ~free (net admin cost ≈ fees).
+const FUND_LAMPORTS = 5_000_000n; // 0.005 SOL
 const SWEEP_RESERVE = 5_000n; // leave for the sweep tx fee
+const CU_LIMIT = 700_000; // faucet CPI (create ATA + mint) uses ~600k CU
+const CU_PRICE = 20_000n; // micro-lamports/CU; bounds priority fee to ~14k lamports
 
 const FAUCET_DISCRIMINATOR = new Uint8Array([49, 178, 104, 8, 23, 120, 186, 21]);
 const FAUCET_TRACKER_SEED = "faucet_tracker";
@@ -133,6 +136,28 @@ async function sendTx(
     const signed = await signTransactionMessageWithSigners(message);
     const wire = getBase64EncodedWireTransaction(signed);
     const signature = getSignatureFromTransaction(signed);
+    // Simulate first and surface program logs — a failed sim otherwise hides
+    // behind a generic "Transaction simulation failed" and 18 useless retries.
+    const sim = await withRpc(
+      `${label}: simulate`,
+      (rpc) =>
+        rpc
+          .simulateTransaction(wire, {
+            encoding: "base64",
+            sigVerify: false,
+            replaceRecentBlockhash: true,
+          })
+          .send(),
+      2,
+    );
+    if (sim.value.err) {
+      const errStr = JSON.stringify(sim.value.err, (_k, v) =>
+        typeof v === "bigint" ? v.toString() : v,
+      );
+      console.error(`    ${label} SIM ERR: ${errStr}`);
+      for (const l of (sim.value.logs ?? []).slice(-12)) console.error(`      ${l}`);
+      throw new Error(`${label} sim: ${errStr}`);
+    }
     try {
       await withRpc(`${label}: sendTransaction`, (rpc) =>
         rpc
@@ -175,6 +200,23 @@ function u64le(v: bigint): Uint8Array {
   const b = new Uint8Array(8);
   new DataView(b.buffer).setBigUint64(0, v, true);
   return b;
+}
+
+function u32le(v: number): Uint8Array {
+  const b = new Uint8Array(4);
+  new DataView(b.buffer).setUint32(0, v, true);
+  return b;
+}
+
+/** ComputeBudget SetComputeUnitLimit (ix 2) — bounds the tx's max CU (and thus
+ *  the priority fee = limit × price). Without it the default limit inflates the
+ *  fee and can starve the fee payer of rent for the ATA it must create. */
+function cuLimitIx(units: number): Instruction {
+  return {
+    programAddress: COMPUTE_BUDGET,
+    accounts: [],
+    data: new Uint8Array([2, ...u32le(units)]),
+  };
 }
 
 /** ComputeBudget SetComputeUnitPrice (ix 3) — priority fee for congested devnet. */
@@ -333,7 +375,11 @@ async function main() {
       // 1. admin -> temp SOL (fees + ATA rent)
       await sendTx(
         admin,
-        [priorityIx(200_000n), systemTransferIx(admin, temp.address, FUND_LAMPORTS)],
+        [
+          cuLimitIx(CU_LIMIT),
+          priorityIx(CU_PRICE),
+          systemTransferIx(admin, temp.address, FUND_LAMPORTS),
+        ],
         `fund temp ${i}`,
       );
 
@@ -341,7 +387,8 @@ async function main() {
       await sendTx(
         temp,
         [
-          priorityIx(200_000n),
+          cuLimitIx(CU_LIMIT),
+          priorityIx(CU_PRICE),
           await buildFaucetIx(temp.address, tempUsdtAta),
           transferCheckedIx(
             tempUsdtAta,
