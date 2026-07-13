@@ -204,11 +204,21 @@ async function listMarkets(
       encoding: "base64",
       filters: [
         { memcmp: { offset: 0n, bytes: discriminator, encoding: "base58" } },
+        // The pre-refactor binary `Market` struct shares this account
+        // discriminator (same struct name) but a shorter 254-byte layout.
+        // Filter by the canonical size (8 disc + 270 InitSpace = 278) so those
+        // ghost accounts are excluded server-side and never mis-decoded.
+        { dataSize: 278n },
       ],
     })
     .send();
-  return accounts.map((a) => ({
-    address: a.pubkey,
-    data: decoder.decode(base64.encode(a.account.data[0])),
-  }));
+  // Belt-and-suspenders: skip any account that still fails to decode rather
+  // than aborting the whole listing.
+  return accounts.flatMap((a) => {
+    try {
+      return [{ address: a.pubkey, data: decoder.decode(base64.encode(a.account.data[0])) }];
+    } catch {
+      return [];
+    }
+  });
 }
