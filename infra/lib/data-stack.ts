@@ -28,7 +28,7 @@ export class DataStack extends Stack {
 
     this.dbSecurityGroup = new ec2.SecurityGroup(this, "DbSg", {
       vpc: props.vpc,
-      description: "RDS Postgres — ingress added per-consumer (indexer only)",
+      description: "RDS Postgres - ingress added per-consumer (indexer only)",
       allowAllOutbound: false,
     });
 
