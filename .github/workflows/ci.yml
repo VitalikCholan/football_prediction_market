@@ -53,6 +53,11 @@ jobs:
       # the committed client still matches. We only build here, never deploy.
       - name: anchor build
         run: NO_DNA=1 anchor build --ignore-keys
+      # The LiteSVM resolve tests load a mock TxLINE oracle .so that isn't part
+      # of the anchor workspace build — build it explicitly (cargo build-sbf
+      # ships with the Solana CLI installed above).
+      - name: Build mock TxLINE oracle (LiteSVM resolve tests)
+        run: cargo build-sbf --manifest-path tests/mock-txoracle/Cargo.toml
       - name: cargo test (LiteSVM)
         run: cargo test --workspace
       # Regenerate the client and fail if the committed output drifted from the IDL.
