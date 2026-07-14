@@ -3,6 +3,7 @@ import * as cdk from "aws-cdk-lib";
 import { NetworkStack } from "../lib/network-stack";
 import { DataStack } from "../lib/data-stack";
 import { RegistryStack } from "../lib/registry-stack";
+import { IndexerServiceStack } from "../lib/indexer-service-stack";
 
 /**
  * FPM off-chain infra — ECS Fargate (keeper, indexer) + RDS Postgres.
@@ -22,8 +23,18 @@ const env: cdk.Environment = {
 
 const network = new NetworkStack(app, "FpmNetwork", { env });
 
-new DataStack(app, "FpmData", { env, vpc: network.vpc });
+const data = new DataStack(app, "FpmData", { env, vpc: network.vpc });
 
-new RegistryStack(app, "FpmRegistry", { env });
+const registry = new RegistryStack(app, "FpmRegistry", { env });
+
+// Phase 2 — indexer Fargate service behind an ALB. Consumes the Phase-1
+// stacks' exposed properties (VPC, RDS instance + its SG, ECR indexer repo).
+new IndexerServiceStack(app, "FpmIndexerService", {
+  env,
+  vpc: network.vpc,
+  db: data.db,
+  dbSecurityGroup: data.dbSecurityGroup,
+  indexerRepo: registry.indexerRepo,
+});
 
 app.synth();
