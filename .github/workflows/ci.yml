@@ -42,11 +42,11 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
       - uses: dtolnay/rust-toolchain@stable # actual version pinned by rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
-      - name: Install Anchor 1.0.2 (avm)
-        run: |
-          cargo install --git https://github.com/solana-foundation/anchor avm --locked
-          avm install 1.0.2
-          avm use 1.0.2
+      # Install the anchor-cli directly from the pinned release tag. Building
+      # `avm` from the anchor git HEAD broke (avm v1.1.2 fails to compile), so
+      # we skip avm entirely and install the 1.0.2 CLI from its tag.
+      - name: Install Anchor 1.0.2 (anchor-cli)
+        run: cargo install --git https://github.com/solana-foundation/anchor --tag v1.0.2 anchor-cli --locked
       - name: anchor build
         run: NO_DNA=1 anchor build
       - name: cargo test (LiteSVM)
