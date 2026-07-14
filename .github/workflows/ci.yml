@@ -47,8 +47,12 @@ jobs:
       # we skip avm entirely and install the 1.0.2 CLI from its tag.
       - name: Install Anchor 1.0.2 (anchor-cli)
         run: cargo install --git https://github.com/solana-foundation/anchor --tag v1.0.2 anchor-cli --locked
+      # --ignore-keys: CI has no program keypair (target/ is gitignored), so
+      # anchor would flag a program-ID mismatch vs declare_id!. The emitted IDL
+      # address comes from declare_id! (H59q, in source), not the keypair, so
+      # the committed client still matches. We only build here, never deploy.
       - name: anchor build
-        run: NO_DNA=1 anchor build
+        run: NO_DNA=1 anchor build --ignore-keys
       - name: cargo test (LiteSVM)
         run: cargo test --workspace
       # Regenerate the client and fail if the committed output drifted from the IDL.
