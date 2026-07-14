@@ -1,0 +1,26 @@
+{
+  "name": "@fpm/infra",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AWS CDK app — ECS Fargate (keeper, indexer) + RDS Postgres, eu-central-1",
+  "bin": { "fpm-infra": "bin/app.ts" },
+  "scripts": {
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy",
+    "bootstrap": "cdk bootstrap",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "aws-cdk": "^2.1000.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.160.0",
+    "constructs": "^10.3.0"
+  }
+}
