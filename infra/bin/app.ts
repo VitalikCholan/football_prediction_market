@@ -4,6 +4,7 @@ import { NetworkStack } from "../lib/network-stack";
 import { DataStack } from "../lib/data-stack";
 import { RegistryStack } from "../lib/registry-stack";
 import { IndexerServiceStack } from "../lib/indexer-service-stack";
+import { KeeperServiceStack } from "../lib/keeper-service-stack";
 
 /**
  * FPM off-chain infra — ECS Fargate (keeper, indexer) + RDS Postgres.
@@ -35,6 +36,16 @@ new IndexerServiceStack(app, "FpmIndexerService", {
   db: data.db,
   dbSecurityGroup: data.dbSecurityGroup,
   indexerRepo: registry.indexerRepo,
+});
+
+// Phase 3 — keeper Fargate WORKER service. No ALB, no inbound: the keeper only
+// makes outbound calls (TxLINE + Solana RPC) and signs txs. Consumes the VPC and
+// the ECR keeper repo. Its two secrets (signer, TxLINE token) are created empty
+// here and filled in the console.
+new KeeperServiceStack(app, "FpmKeeperService", {
+  env,
+  vpc: network.vpc,
+  keeperRepo: registry.keeperRepo,
 });
 
 app.synth();
