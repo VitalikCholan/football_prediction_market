@@ -140,8 +140,12 @@ export class KeeperServiceStack extends Stack {
         //   3. Force a new deployment so the task picks up the pasted secret
         //      values (secrets are injected only at task launch, no hot-reload):
         //      aws ecs update-service --force-new-deployment ...
-        DRY_RUN: "1",
-        ENABLE_SCORE_STREAM: "0",
+        // Live-drive toggle: `KEEPER_LIVE=1 cdk deploy FpmKeeperService` sends
+        // real activate/freeze/resolve txs + opens the SSE score stream. Default
+        // (unset) stays in safe simulate mode. Requires both secrets filled and
+        // the signer funded with devnet SOL.
+        DRY_RUN: process.env.KEEPER_LIVE === "1" ? "0" : "1",
+        ENABLE_SCORE_STREAM: process.env.KEEPER_LIVE === "1" ? "1" : "0",
       },
       // Injected only inside the running task (fetched by the execution role at
       // launch) — never in plain env / code / image.
