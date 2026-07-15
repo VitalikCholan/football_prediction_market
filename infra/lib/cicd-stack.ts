@@ -90,6 +90,18 @@ export class CicdStack extends Stack {
       }),
     );
 
+    // Read-only: the workflow resolves the ECS cluster/service names from the
+    // two service stacks' outputs. Scoped to only those stacks.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["cloudformation:DescribeStacks"],
+        resources: [
+          `arn:aws:cloudformation:${this.region}:${this.account}:stack/FpmIndexerService/*`,
+          `arn:aws:cloudformation:${this.region}:${this.account}:stack/FpmKeeperService/*`,
+        ],
+      }),
+    );
+
     new CfnOutput(this, "DeployRoleArn", {
       value: role.roleArn,
       description: "role-to-assume for aws-actions/configure-aws-credentials",
