@@ -81,20 +81,23 @@ export class KeeperServiceStack extends Stack {
       allowAllOutbound: true,
     });
 
-    // ---- Secrets Manager placeholders (EMPTY — human pastes values later) ----
-    // secretStringValue with an empty UnsafePlainText commits NO value to code
-    // and creates the secret ready to hold the real value. (Using an empty string
-    // is the documented way to create a placeholder without a generated secret;
-    // no real key is present in code.)
-    const signerSecret = new secretsmanager.Secret(this, "KeeperSignerSecret", {
-      secretName: "fpm/keeper/signer",
-      description: "Keeper signer keypair (base58 or JSON array) - paste value in console; injected as env KEEPER_KEYPAIR",
-    });
+    // ---- Secrets Manager (REFERENCED, not created here) ----
+    // The two secrets are created + populated OUT OF BAND (aws secretsmanager
+    // create-secret, then the human pastes the real values). We only REFERENCE
+    // them so the secret VALUES never live in this stack: a failed first deploy
+    // rolls back the service without deleting the secrets, and the keeper only
+    // starts once the signer secret holds a valid key (it exits without one).
+    const signerSecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      "KeeperSignerSecret",
+      "fpm/keeper/signer",
+    );
 
-    const txlineTokenSecret = new secretsmanager.Secret(this, "KeeperTxlineTokenSecret", {
-      secretName: "fpm/keeper/txline-api-token",
-      description: "TxLINE X-Api-Token - paste value in console; injected as env TXLINE_API_TOKEN",
-    });
+    const txlineTokenSecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      "KeeperTxlineTokenSecret",
+      "fpm/keeper/txline-api-token",
+    );
 
     // ---- Task definition (0.25 vCPU / 0.5 GB, X86_64 — image built amd64) ----
     const taskDef = new ecs.FargateTaskDefinition(this, "KeeperTaskDef", {
