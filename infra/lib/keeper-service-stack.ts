@@ -177,6 +177,9 @@ export class KeeperServiceStack extends Stack {
       value: service.serviceName,
       description: "Keeper Fargate service name (verify via CloudWatch logs; no ALB)",
     });
+    // Uniform outputs consumed by .github/workflows/deploy.yml.
+    new CfnOutput(this, "ClusterName", { value: cluster.clusterName });
+    new CfnOutput(this, "ServiceName", { value: service.serviceName });
 
     new CfnOutput(this, "KeeperLogGroupName", {
       value: logGroup.logGroupName,

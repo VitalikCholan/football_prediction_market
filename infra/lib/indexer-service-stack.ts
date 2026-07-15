@@ -187,5 +187,8 @@ export class IndexerServiceStack extends Stack {
       value: alb.loadBalancerDnsName,
       description: "Public DNS of the indexer ALB (GET /markets, /health)",
     });
+    // Consumed by .github/workflows/deploy.yml to target `ecs update-service`.
+    new CfnOutput(this, "ClusterName", { value: cluster.clusterName });
+    new CfnOutput(this, "ServiceName", { value: service.serviceName });
   }
 }

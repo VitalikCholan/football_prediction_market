@@ -5,6 +5,7 @@ import { DataStack } from "../lib/data-stack";
 import { RegistryStack } from "../lib/registry-stack";
 import { IndexerServiceStack } from "../lib/indexer-service-stack";
 import { KeeperServiceStack } from "../lib/keeper-service-stack";
+import { CicdStack } from "../lib/cicd-stack";
 
 /**
  * FPM off-chain infra — ECS Fargate (keeper, indexer) + RDS Postgres.
@@ -45,6 +46,13 @@ new IndexerServiceStack(app, "FpmIndexerService", {
 new KeeperServiceStack(app, "FpmKeeperService", {
   env,
   vpc: network.vpc,
+  keeperRepo: registry.keeperRepo,
+});
+
+// Phase 4 — GitHub Actions OIDC deploy identity (build->ECR->ecs update-service).
+new CicdStack(app, "FpmCicd", {
+  env,
+  indexerRepo: registry.indexerRepo,
   keeperRepo: registry.keeperRepo,
 });
 

@@ -1,0 +1,112 @@
+name: Deploy
+
+# Build the changed service image, push to ECR, and force a new ECS deployment.
+# GitHub -> OIDC -> ECR -> ECS. No long-lived AWS keys (see infra CicdStack).
+#
+# We deliberately do NOT run `cdk deploy` here and do NOT touch the task
+# definition. `ecs update-service --force-new-deployment` re-pulls the `:latest`
+# image while preserving the existing task-def env — so the keeper's live
+# DRY_RUN=0 / ENABLE_SCORE_STREAM=1 settings (set by a KEEPER_LIVE cdk deploy)
+# survive a CI deploy. Task defs stay owned by CDK; CI only ships images.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/indexer/**"
+      - "apps/keeper/**"
+      - "libs/**"
+      - "infra/lib/indexer-service-stack.ts"
+      - "infra/lib/keeper-service-stack.ts"
+      - ".github/workflows/deploy.yml"
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # OIDC assume-role
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+  ROLE_ARN: arn:aws:iam::635769555441:role/github-actions-deploy
+  ECR: 635769555441.dkr.ecr.eu-central-1.amazonaws.com
+
+jobs:
+  # Which services' code changed? A libs/** change ships BOTH.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      indexer: ${{ steps.filter.outputs.indexer }}
+      keeper: ${{ steps.filter.outputs.keeper }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            indexer:
+              - 'apps/indexer/**'
+              - 'libs/**'
+              - 'infra/lib/indexer-service-stack.ts'
+            keeper:
+              - 'apps/keeper/**'
+              - 'libs/**'
+              - 'infra/lib/keeper-service-stack.ts'
+
+  indexer:
+    needs: changes
+    if: needs.changes.outputs.indexer == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Build + push indexer image (amd64)
+        run: |
+          docker build --platform linux/amd64 -f apps/indexer/Dockerfile \
+            -t "$ECR/fpm-indexer:latest" -t "$ECR/fpm-indexer:$GITHUB_SHA" .
+          docker push "$ECR/fpm-indexer:latest"
+          docker push "$ECR/fpm-indexer:$GITHUB_SHA"
+      - name: Force new ECS deployment
+        run: |
+          CLUSTER=$(aws cloudformation describe-stacks --stack-name FpmIndexerService \
+            --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
+          SERVICE=$(aws cloudformation describe-stacks --stack-name FpmIndexerService \
+            --query "Stacks[0].Outputs[?OutputKey=='ServiceName'].OutputValue" --output text)
+          echo "Deploying indexer to $CLUSTER / $SERVICE"
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --service "$SERVICE"
+
+  keeper:
+    needs: changes
+    if: needs.changes.outputs.keeper == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Build + push keeper image (amd64)
+        run: |
+          docker build --platform linux/amd64 -f apps/keeper/Dockerfile \
+            -t "$ECR/fpm-keeper:latest" -t "$ECR/fpm-keeper:$GITHUB_SHA" .
+          docker push "$ECR/fpm-keeper:latest"
+          docker push "$ECR/fpm-keeper:$GITHUB_SHA"
+      - name: Force new ECS deployment
+        run: |
+          CLUSTER=$(aws cloudformation describe-stacks --stack-name FpmKeeperService \
+            --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
+          SERVICE=$(aws cloudformation describe-stacks --stack-name FpmKeeperService \
+            --query "Stacks[0].Outputs[?OutputKey=='ServiceName'].OutputValue" --output text)
+          echo "Deploying keeper to $CLUSTER / $SERVICE"
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --service "$SERVICE"
