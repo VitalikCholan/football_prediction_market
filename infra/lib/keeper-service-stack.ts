@@ -124,6 +124,11 @@ export class KeeperServiceStack extends Stack {
         PRIORITY_FEE_MODE: "dynamic",
         SCHEDULER_TICK_MS: "5000",
         ENABLE_AUTO_SEED: "0",
+        // Fixtures the scheduler drives (activate/freeze/resolve), as
+        // "fixtureId:kickoffTs:endTs" comma-separated. The keeper reads env
+        // `FIXTURES` (index.ts). Passed at deploy via `KEEPER_FIXTURES=... cdk
+        // deploy`. Empty = keeper idles (drives nothing).
+        FIXTURES: process.env.KEEPER_FIXTURES ?? "",
         // --- SAFE MODE (default) ---
         // DRY_RUN=1: simulate every tx, never send — safe with an empty signer.
         // ENABLE_SCORE_STREAM=0: don't open the SSE stream — it needs a real
