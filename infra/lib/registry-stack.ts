@@ -12,6 +12,7 @@ import * as ecr from "aws-cdk-lib/aws-ecr";
 export class RegistryStack extends Stack {
   public readonly indexerRepo: ecr.Repository;
   public readonly keeperRepo: ecr.Repository;
+  public readonly webRepo: ecr.Repository;
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -37,7 +38,16 @@ export class RegistryStack extends Stack {
       lifecycleRules,
     });
 
+    this.webRepo = new ecr.Repository(this, "WebRepo", {
+      repositoryName: "fpm-web",
+      imageScanOnPush: true,
+      emptyOnDelete: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+      lifecycleRules,
+    });
+
     new CfnOutput(this, "IndexerRepoUri", { value: this.indexerRepo.repositoryUri });
     new CfnOutput(this, "KeeperRepoUri", { value: this.keeperRepo.repositoryUri });
+    new CfnOutput(this, "WebRepoUri", { value: this.webRepo.repositoryUri });
   }
 }

@@ -15,9 +15,11 @@ on:
     paths:
       - "apps/indexer/**"
       - "apps/keeper/**"
+      - "apps/web/**"
       - "libs/**"
       - "infra/lib/indexer-service-stack.ts"
       - "infra/lib/keeper-service-stack.ts"
+      - "infra/lib/web-service-stack.ts"
       - ".github/workflows/deploy.yml"
 
 concurrency:
@@ -40,6 +42,7 @@ jobs:
     outputs:
       indexer: ${{ steps.filter.outputs.indexer }}
       keeper: ${{ steps.filter.outputs.keeper }}
+      web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -54,6 +57,10 @@ jobs:
               - 'apps/keeper/**'
               - 'libs/**'
               - 'infra/lib/keeper-service-stack.ts'
+            web:
+              - 'apps/web/**'
+              - 'libs/**'
+              - 'infra/lib/web-service-stack.ts'
 
   indexer:
     needs: changes
@@ -107,6 +114,44 @@ jobs:
           SERVICE=$(aws cloudformation describe-stacks --stack-name FpmKeeperService \
             --query "Stacks[0].Outputs[?OutputKey=='ServiceName'].OutputValue" --output text)
           echo "Deploying keeper to $CLUSTER / $SERVICE"
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --service "$SERVICE"
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    # NEXT_PUBLIC_* are INLINED by Next at build time (not read at runtime), so
+    # they MUST be passed as --build-arg here, before `next build`. The indexer
+    # URL is the indexer ALB's public DNS (Phase 2).
+    env:
+      NEXT_PUBLIC_INDEXER_URL: http://FpmInd-Index-BFX4DQHQcKe0-1474036300.eu-central-1.elb.amazonaws.com
+      NEXT_PUBLIC_SOLANA_RPC_URL: https://api.devnet.solana.com
+      NEXT_PUBLIC_CLUSTER: devnet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Build + push web image (amd64)
+        run: |
+          docker build --platform linux/amd64 -f apps/web/Dockerfile \
+            --build-arg NEXT_PUBLIC_INDEXER_URL="$NEXT_PUBLIC_INDEXER_URL" \
+            --build-arg NEXT_PUBLIC_SOLANA_RPC_URL="$NEXT_PUBLIC_SOLANA_RPC_URL" \
+            --build-arg NEXT_PUBLIC_CLUSTER="$NEXT_PUBLIC_CLUSTER" \
+            -t "$ECR/fpm-web:latest" -t "$ECR/fpm-web:$GITHUB_SHA" .
+          docker push "$ECR/fpm-web:latest"
+          docker push "$ECR/fpm-web:$GITHUB_SHA"
+      - name: Force new ECS deployment
+        run: |
+          CLUSTER=$(aws cloudformation describe-stacks --stack-name FpmWebService \
+            --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
+          SERVICE=$(aws cloudformation describe-stacks --stack-name FpmWebService \
+            --query "Stacks[0].Outputs[?OutputKey=='ServiceName'].OutputValue" --output text)
+          echo "Deploying web to $CLUSTER / $SERVICE"
           aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
             --force-new-deployment >/dev/null
           aws ecs wait services-stable --cluster "$CLUSTER" --service "$SERVICE"

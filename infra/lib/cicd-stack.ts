@@ -6,6 +6,7 @@ import * as ecr from "aws-cdk-lib/aws-ecr";
 interface CicdStackProps extends StackProps {
   indexerRepo: ecr.IRepository;
   keeperRepo: ecr.IRepository;
+  webRepo: ecr.IRepository;
 }
 
 /**
@@ -73,11 +74,12 @@ export class CicdStack extends Stack {
         resources: [
           props.indexerRepo.repositoryArn,
           props.keeperRepo.repositoryArn,
+          props.webRepo.repositoryArn,
         ],
       }),
     );
 
-    // Force a new deployment on ONLY our two ECS services. The service ARNs
+    // Force a new deployment on ONLY our ECS services. The service ARNs
     // embed the CDK-generated cluster + service names; wildcards match them
     // without a cross-stack dependency.
     role.addToPolicy(
@@ -86,6 +88,7 @@ export class CicdStack extends Stack {
         resources: [
           `arn:aws:ecs:${this.region}:${this.account}:service/FpmIndexerService-*/*`,
           `arn:aws:ecs:${this.region}:${this.account}:service/FpmKeeperService-*/*`,
+          `arn:aws:ecs:${this.region}:${this.account}:service/FpmWebService-*/*`,
         ],
       }),
     );
@@ -98,6 +101,7 @@ export class CicdStack extends Stack {
         resources: [
           `arn:aws:cloudformation:${this.region}:${this.account}:stack/FpmIndexerService/*`,
           `arn:aws:cloudformation:${this.region}:${this.account}:stack/FpmKeeperService/*`,
+          `arn:aws:cloudformation:${this.region}:${this.account}:stack/FpmWebService/*`,
         ],
       }),
     );

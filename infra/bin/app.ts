@@ -5,6 +5,7 @@ import { DataStack } from "../lib/data-stack";
 import { RegistryStack } from "../lib/registry-stack";
 import { IndexerServiceStack } from "../lib/indexer-service-stack";
 import { KeeperServiceStack } from "../lib/keeper-service-stack";
+import { WebServiceStack } from "../lib/web-service-stack";
 import { CicdStack } from "../lib/cicd-stack";
 
 /**
@@ -49,11 +50,21 @@ new KeeperServiceStack(app, "FpmKeeperService", {
   keeperRepo: registry.keeperRepo,
 });
 
+// Phase 5 — Next.js web app as its OWN Fargate service behind its OWN ALB.
+// No DB, no secrets: NEXT_PUBLIC_* config is inlined into the image at build
+// time. Consumes the VPC and the ECR web repo.
+new WebServiceStack(app, "FpmWebService", {
+  env,
+  vpc: network.vpc,
+  webRepo: registry.webRepo,
+});
+
 // Phase 4 — GitHub Actions OIDC deploy identity (build->ECR->ecs update-service).
 new CicdStack(app, "FpmCicd", {
   env,
   indexerRepo: registry.indexerRepo,
   keeperRepo: registry.keeperRepo,
+  webRepo: registry.webRepo,
 });
 
 app.synth();
