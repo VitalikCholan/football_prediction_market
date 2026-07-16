@@ -6,6 +6,7 @@ import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 
 interface IndexerServiceStackProps extends StackProps {
   vpc: ec2.Vpc;
@@ -96,6 +97,14 @@ export class IndexerServiceStack extends Stack {
     }
     const dbSecret = db.secret;
 
+    // Reuse the keeper's TxLINE token secret so the indexer can enrich
+    // fixture_id -> team names / competition (else /markets shows null teams).
+    const txlineTokenSecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      "TxlineToken",
+      "fpm/keeper/txline-api-token",
+    );
+
     // Compose DATABASE_URL from the injected secret fields, run migrations, serve.
     // urlencode the password (may contain URL-reserved chars from generation).
     const startupCommand = [
@@ -129,6 +138,7 @@ export class IndexerServiceStack extends Stack {
         DB_HOST: ecs.Secret.fromSecretsManager(dbSecret, "host"),
         DB_PORT: ecs.Secret.fromSecretsManager(dbSecret, "port"),
         DB_NAME: ecs.Secret.fromSecretsManager(dbSecret, "dbname"),
+        TXLINE_API_TOKEN: ecs.Secret.fromSecretsManager(txlineTokenSecret),
       },
     });
 
