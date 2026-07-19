@@ -1,5 +1,7 @@
 import { Stack, StackProps, CfnOutput, Duration } from "aws-cdk-lib";
 import { Construct } from "constructs";
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ecr from "aws-cdk-lib/aws-ecr";
@@ -193,9 +195,33 @@ export class IndexerServiceStack extends Stack {
       deregistrationDelay: Duration.seconds(30),
     });
 
+    // ---- CloudFront (HTTPS without a custom domain) ----
+    // The web app is served over HTTPS (WebCdn) — browsers block mixed-content
+    // fetches to a plain-HTTP API, so the indexer needs an HTTPS front too.
+    // REST responses are dynamic: never cache at the edge.
+    const cdn = new cloudfront.Distribution(this, "IndexerCdn", {
+      defaultBehavior: {
+        origin: new origins.LoadBalancerV2Origin(alb, {
+          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+        }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        originRequestPolicy:
+          cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+      },
+      comment: "fpm indexer API (HTTPS front for the indexer ALB)",
+    });
+
+    new CfnOutput(this, "IndexerCdnUrl", {
+      value: `https://${cdn.distributionDomainName}`,
+      description:
+        "HTTPS indexer API URL (CloudFront; use as NEXT_PUBLIC_INDEXER_URL)",
+    });
+
     new CfnOutput(this, "AlbDnsName", {
       value: alb.loadBalancerDnsName,
-      description: "Public DNS of the indexer ALB (GET /markets, /health)",
+      description: "Public DNS of the indexer ALB (HTTP origin; prefer IndexerCdnUrl)",
     });
     // Consumed by .github/workflows/deploy.yml to target `ecs update-service`.
     new CfnOutput(this, "ClusterName", { value: cluster.clusterName });
