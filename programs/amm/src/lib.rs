@@ -222,4 +222,14 @@ pub mod amm {
     pub fn expire_position(ctx: Context<ExpirePosition>) -> Result<()> {
         expire_position::handler(ctx)
     }
+
+    /// Admin retro-update of ONLY the 7 leverage params on an existing shared
+    /// `MarketConfig` — effective immediately for every market referencing it;
+    /// predicate + fee fields stay immutable by design (D-8).
+    pub fn update_leverage_params(
+        ctx: Context<UpdateLeverageParams>,
+        params: LeverageParamsArgs,
+    ) -> Result<()> {
+        update_leverage_params::handler(ctx, params)
+    }
 }

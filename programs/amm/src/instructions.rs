@@ -20,6 +20,7 @@ pub mod request_withdraw;
 pub mod resolve;
 pub mod sell;
 pub mod set_risk_valve;
+pub mod update_leverage_params;
 pub mod withdraw_lp;
 
 // The `#[program]` macro needs each instruction module's generated
@@ -48,4 +49,5 @@ pub use request_withdraw::*;
 pub use resolve::*;
 pub use sell::*;
 pub use set_risk_valve::*;
+pub use update_leverage_params::*;
 pub use withdraw_lp::*;

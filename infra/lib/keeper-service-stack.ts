@@ -124,11 +124,22 @@ export class KeeperServiceStack extends Stack {
         PRIORITY_FEE_MODE: "dynamic",
         SCHEDULER_TICK_MS: "5000",
         ENABLE_AUTO_SEED: "0",
-        // Fixtures the scheduler drives (activate/freeze/resolve), as
-        // "fixtureId:kickoffTs:endTs" comma-separated. The keeper reads env
-        // `FIXTURES` (index.ts). Passed at deploy via `KEEPER_FIXTURES=... cdk
-        // deploy`. Empty = keeper idles (drives nothing).
+        // Fixture source for the lifecycle scheduler + mark poster:
+        // "onchain" derives the schedule from live Market PDAs (kickoff_ts/
+        // freeze_ts/state) — new markets self-appear, no env list to keep in
+        // sync (PLAN §12 BUG-1 proper fix). The static FIXTURES env below is
+        // then ignored (kept as a manual fallback: unset FIXTURE_SOURCE to
+        // fall back to it).
+        FIXTURE_SOURCE: "onchain",
+        // Static fallback schedule, "fixtureId:kickoffTs:endTs" comma-separated
+        // (read only when FIXTURE_SOURCE != "onchain"). Passed at deploy via
+        // `KEEPER_FIXTURES=... cdk deploy`.
         FIXTURES: process.env.KEEPER_FIXTURES ?? "",
+        // Post leverage marks (post_mark) for Trading markets that have a
+        // LeveragePool — keeps the leverage panel's marks fresh (opens are
+        // rejected once older than max_mark_age_secs). Safe: no-op on markets
+        // without a pool; respects DRY_RUN.
+        ENABLE_MARK_POSTER: "1",
         // --- SAFE MODE (default) ---
         // DRY_RUN=1: simulate every tx, never send — safe with an empty signer.
         // ENABLE_SCORE_STREAM=0: don't open the SSE stream — it needs a real

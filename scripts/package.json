@@ -11,7 +11,8 @@
     "seed-markets": "tsx seed-markets.ts",
     "txline:token": "tsx txline-token.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "leverage-circle": "tsx leverage-circle.ts"
+    "leverage-circle": "tsx leverage-circle.ts",
+    "enable-leverage": "tsx enable-leverage.ts"
   },
   "dependencies": {
     "@fpm/idl": "workspace:*",

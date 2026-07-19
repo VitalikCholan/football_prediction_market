@@ -19,7 +19,7 @@ use amm::constants::{
 };
 use amm::error::AmmError;
 use amm::funding;
-use amm::state::{LeveragePool, LevPosition, LpAccount, Market, MarketState, Outcome};
+use amm::state::{LeveragePool, LevPosition, LpAccount, Market, MarketConfig, MarketState, Outcome};
 
 use crate::common::*;
 
@@ -54,6 +54,23 @@ struct Lev {
 /// Bootstrap: config (leverage-enabled `params`) + market + leverage pool,
 /// funded trader/LP wallets. Market is left in `Open`.
 fn bootstrap(params: amm::FeeParamsArgs) -> Lev {
+    let mut live = bootstrap_without_pool(params);
+    let admin = live.h.admin.insecure_clone();
+    let mint = live.h.usdt_mint;
+    live.h
+        .send(
+            &[&admin],
+            &admin.pubkey(),
+            ix_init_leverage_pool(&admin.pubkey(), CFG_ID, FIXTURE, &mint),
+        )
+        .unwrap();
+    live
+}
+
+/// `bootstrap` minus `init_leverage_pool` — the `update_leverage_params`
+/// retro-enable tests start from a leverage-DISABLED config where pool
+/// creation must fail first.
+fn bootstrap_without_pool(params: amm::FeeParamsArgs) -> Lev {
     let mut h = Harness::new_with_oracle();
     let admin = h.admin.pubkey();
     let keeper = h.keeper.pubkey();
@@ -81,12 +98,6 @@ fn bootstrap(params: amm::FeeParamsArgs) -> Lev {
         ix_init_market(
             &admin, CFG_ID, FIXTURE, kickoff, freeze, B, SEED_Q, SEED_LIQ, &mint, &admin_ata,
         ),
-    )
-    .unwrap();
-    h.send(
-        &[&h.admin.insecure_clone()],
-        &admin,
-        ix_init_leverage_pool(&admin, CFG_ID, FIXTURE, &mint),
     )
     .unwrap();
 
@@ -947,4 +958,147 @@ fn valve_out_of_bounds_rejected() {
             ),
         )
         .unwrap();
+}
+
+// ===========================================================================
+// (9) update_leverage_params — retro-enable leverage on a shared config
+// ===========================================================================
+#[test]
+fn update_leverage_params_retro_enables_shared_config() {
+    // config + market created with the 7 leverage fields all ZERO (disabled)
+    let mut live = bootstrap_without_pool(default_fee_params());
+    let admin = live.h.admin.insecure_clone();
+    let mint = live.h.usdt_mint;
+
+    // pool creation is refused while the config says disabled
+    let res = send_tx(
+        &mut live.h.svm,
+        &[&admin],
+        &admin.pubkey(),
+        ix_init_leverage_pool(&admin.pubkey(), CFG_ID, FIXTURE, &mint),
+    );
+    assert_amm_error(&res, AmmError::LeverageDisabled);
+
+    // retro-enable: mutate ONLY the leverage fields on the shared config
+    send_tx(
+        &mut live.h.svm,
+        &[&admin],
+        &admin.pubkey(),
+        ix_update_leverage_params(&admin.pubkey(), CFG_ID, leverage_params_args()),
+    )
+    .unwrap();
+
+    // the SAME pre-existing market (config read live) now accepts the pool …
+    send_tx(
+        &mut live.h.svm,
+        &[&admin],
+        &admin.pubkey(),
+        ix_init_leverage_pool(&admin.pubkey(), CFG_ID, FIXTURE, &mint),
+    )
+    .unwrap();
+
+    // … and a full open works after LP funding + a fresh mark
+    lp_join(&mut live, 10_000 * ONE_USDT);
+    to_trading(&mut live);
+    post_mark(&mut live, MARKS0).unwrap();
+    let collateral = 100 * ONE_USDT;
+    open_leverage(&mut live, 0, collateral, 3).unwrap();
+
+    let pos: LevPosition = get_anchor(
+        &live.h.svm,
+        &lev_position_pda(&market_pda(FIXTURE), &live.trader.pubkey()),
+    );
+    assert_eq!(pos.leverage, 3);
+    assert_eq!(pos.collateral, collateral);
+    assert_eq!(pos.entry_mark_bps, MARKS0[0]);
+    let pool = pool_state(&live);
+    assert_eq!(pool.open_interest, collateral * 3);
+}
+
+#[test]
+fn update_leverage_params_rejects_non_authority() {
+    let mut live = bootstrap_without_pool(default_fee_params());
+    let mallory = Keypair::new();
+    live.h.svm.airdrop(&mallory.pubkey(), 10_000_000_000).unwrap();
+
+    let res = send_tx(
+        &mut live.h.svm,
+        &[&mallory],
+        &mallory.pubkey(),
+        ix_update_leverage_params(&mallory.pubkey(), CFG_ID, leverage_params_args()),
+    );
+    assert_amm_error(&res, AmmError::Unauthorized);
+
+    // config untouched: leverage still disabled
+    let mc: MarketConfig = get_anchor(&live.h.svm, &market_config_pda(CFG_ID));
+    assert_eq!(mc.max_leverage, 0);
+}
+
+#[test]
+fn update_leverage_params_rejects_invalid_params() {
+    let mut live = bootstrap_without_pool(default_fee_params());
+    let admin = live.h.admin.insecure_clone();
+
+    // enabling (max_leverage > 0) with funding_epoch_secs = 0 — the same rule
+    // create_market_config enforces, via the shared validator
+    let bad = amm::LeverageParamsArgs { funding_epoch_secs: 0, ..leverage_params_args() };
+    let res = send_tx(
+        &mut live.h.svm,
+        &[&admin],
+        &admin.pubkey(),
+        ix_update_leverage_params(&admin.pubkey(), CFG_ID, bad),
+    );
+    assert_amm_error(&res, AmmError::InvalidFeeParams);
+
+    // config untouched: leverage still disabled
+    let mc: MarketConfig = get_anchor(&live.h.svm, &market_config_pda(CFG_ID));
+    assert_eq!(mc.max_leverage, 0);
+}
+
+#[test]
+fn update_leverage_params_leaves_predicate_and_fees_untouched() {
+    let mut live = bootstrap_without_pool(default_fee_params());
+    let admin = live.h.admin.insecure_clone();
+    let cfg_key = market_config_pda(CFG_ID);
+    let before: MarketConfig = get_anchor(&live.h.svm, &cfg_key);
+
+    let args = leverage_params_args();
+    send_tx(
+        &mut live.h.svm,
+        &[&admin],
+        &admin.pubkey(),
+        ix_update_leverage_params(&admin.pubkey(), CFG_ID, args.clone()),
+    )
+    .unwrap();
+    let after: MarketConfig = get_anchor(&live.h.svm, &cfg_key);
+
+    // exactly the 7 leverage fields moved, to exactly the requested values
+    assert_eq!(after.max_open_interest, args.max_open_interest);
+    assert_eq!(after.time_fee_num, args.time_fee_num);
+    assert_eq!(after.funding_epoch_secs, args.funding_epoch_secs);
+    assert_eq!(after.max_mark_age_secs, args.max_mark_age_secs);
+    assert_eq!(after.leverage_cutoff_secs, args.leverage_cutoff_secs);
+    assert_eq!(after.max_leverage, args.max_leverage);
+    assert_eq!(after.min_coverage_bps, args.min_coverage_bps);
+
+    // EVERYTHING else — identity, fee params, resolution predicate (D-8),
+    // grace, bump, period, reserved — is byte-identical: revert just the 7
+    // leverage fields and the serialized accounts must match exactly.
+    let mut reverted = after.clone();
+    reverted.max_open_interest = before.max_open_interest;
+    reverted.time_fee_num = before.time_fee_num;
+    reverted.funding_epoch_secs = before.funding_epoch_secs;
+    reverted.max_mark_age_secs = before.max_mark_age_secs;
+    reverted.leverage_cutoff_secs = before.leverage_cutoff_secs;
+    reverted.max_leverage = before.max_leverage;
+    reverted.min_coverage_bps = before.min_coverage_bps;
+    let mut before_bytes = Vec::new();
+    anchor_lang::AccountSerialize::try_serialize(&before, &mut before_bytes).unwrap();
+    let mut reverted_bytes = Vec::new();
+    anchor_lang::AccountSerialize::try_serialize(&reverted, &mut reverted_bytes).unwrap();
+    assert_eq!(
+        reverted_bytes, before_bytes,
+        "update_leverage_params must not touch any non-leverage field \
+         (predicate immutability, D-8)"
+    );
 }

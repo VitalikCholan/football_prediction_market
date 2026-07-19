@@ -293,6 +293,21 @@ pub fn leverage_fee_params() -> amm::FeeParamsArgs {
     }
 }
 
+/// The 7-field `LeverageParamsArgs` mirror of `leverage_fee_params()` —
+/// the enable payload for `update_leverage_params` retro-enable tests.
+pub fn leverage_params_args() -> amm::LeverageParamsArgs {
+    let p = leverage_fee_params();
+    amm::LeverageParamsArgs {
+        max_open_interest: p.max_open_interest,
+        time_fee_num: p.time_fee_num,
+        funding_epoch_secs: p.funding_epoch_secs,
+        max_mark_age_secs: p.max_mark_age_secs,
+        leverage_cutoff_secs: p.leverage_cutoff_secs,
+        max_leverage: p.max_leverage,
+        min_coverage_bps: p.min_coverage_bps,
+    }
+}
+
 pub fn sys_program() -> Pubkey {
     Pubkey::new_from_array(anchor_lang::system_program::ID.to_bytes())
 }
@@ -820,6 +835,25 @@ pub fn ix_init_leverage_pool(
         }
         .to_account_metas(None),
         data: amm::instruction::InitLeveragePool {}.data(),
+    }
+}
+
+/// `update_leverage_params` — admin retro-update of the 7 leverage fields on
+/// an existing shared `MarketConfig`.
+pub fn ix_update_leverage_params(
+    authority: &Pubkey,
+    config_id: u16,
+    params: amm::LeverageParamsArgs,
+) -> Instruction {
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::UpdateLeverageParams {
+            authority: *authority,
+            global: config_pda(),
+            market_config: market_config_pda(config_id),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::UpdateLeverageParams { params }.data(),
     }
 }
 

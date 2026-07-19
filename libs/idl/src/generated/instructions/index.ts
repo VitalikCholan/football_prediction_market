@@ -28,4 +28,5 @@ export * from './requestWithdraw';
 export * from './resolve';
 export * from './sell';
 export * from './setRiskValve';
+export * from './updateLeverageParams';
 export * from './withdrawLp';
