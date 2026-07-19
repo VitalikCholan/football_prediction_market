@@ -15,6 +15,10 @@ import {
 import {
   AMM_PROGRAM_ID,
   CONFIG_SEED,
+  LEV_LP_SEED,
+  LEV_POOL_SEED,
+  LEV_POSITION_SEED,
+  LEV_VAULT_SEED,
   MARKET_SEED,
   MKT_CONFIG_SEED,
   POSITION_SEED,
@@ -67,6 +71,60 @@ export async function findPositionPda(
     programAddress,
     seeds: [
       POSITION_SEED,
+      addressEncoder.encode(market),
+      addressEncoder.encode(owner),
+    ],
+  });
+}
+
+/** LeveragePool: seeds = [LEV_POOL_SEED, market: Pubkey] (leverage-v1 §2). */
+export async function findLevPoolPda(
+  market: Address,
+  programAddress: Address = AMM_PROGRAM_ID,
+): Promise<ProgramDerivedAddress> {
+  return getProgramDerivedAddress({
+    programAddress,
+    seeds: [LEV_POOL_SEED, addressEncoder.encode(market)],
+  });
+}
+
+/** Lev vault token account: seeds = [LEV_VAULT_SEED, market: Pubkey] (leverage-v1 §2). */
+export async function findLevVaultPda(
+  market: Address,
+  programAddress: Address = AMM_PROGRAM_ID,
+): Promise<ProgramDerivedAddress> {
+  return getProgramDerivedAddress({
+    programAddress,
+    seeds: [LEV_VAULT_SEED, addressEncoder.encode(market)],
+  });
+}
+
+/** LevPosition: seeds = [LEV_POSITION_SEED, market: Pubkey, owner: Pubkey] (leverage-v1 §2). */
+export async function findLevPositionPda(
+  market: Address,
+  owner: Address,
+  programAddress: Address = AMM_PROGRAM_ID,
+): Promise<ProgramDerivedAddress> {
+  return getProgramDerivedAddress({
+    programAddress,
+    seeds: [
+      LEV_POSITION_SEED,
+      addressEncoder.encode(market),
+      addressEncoder.encode(owner),
+    ],
+  });
+}
+
+/** LpAccount: seeds = [LEV_LP_SEED, market: Pubkey, owner: Pubkey] (leverage-v1 §2). */
+export async function findLpAccountPda(
+  market: Address,
+  owner: Address,
+  programAddress: Address = AMM_PROGRAM_ID,
+): Promise<ProgramDerivedAddress> {
+  return getProgramDerivedAddress({
+    programAddress,
+    seeds: [
+      LEV_LP_SEED,
       addressEncoder.encode(market),
       addressEncoder.encode(owner),
     ],

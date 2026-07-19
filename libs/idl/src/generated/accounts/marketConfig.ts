@@ -50,7 +50,21 @@ bump: number;
  * replay guard, O-1x2-1). 100 = TxLINE full-time final stats.
  */
 resolutionPeriod: number; 
-/** Future (v1 leverage: max_open_interest, theta params, min_coverage_bps). */
+/** Cap on Σ notional of open leveraged positions. 0 = leverage disabled. */
+maxOpenInterest: bigint; 
+/** Theta slope numerator in the funding-rate formula. */
+timeFeeNum: number; 
+/** Keeper mark cadence (secs) — informational + min-post-interval. */
+fundingEpochSecs: number; 
+/** Max age (secs) of the posted mark before opens/closes reject as stale. */
+maxMarkAgeSecs: number; 
+/** No leveraged opens within this window (secs) before `freeze_ts`. */
+leverageCutoffSecs: number; 
+/** Max leverage multiple (whole ×). 0 = leverage disabled. */
+maxLeverage: number; 
+/** Min pool coverage ratio (bps), e.g. 12_000 = 120%. */
+minCoverageBps: number; 
+/** Future. */
 reserved: ReadonlyUint8Array;  };
 
 export type MarketConfigArgs = { 
@@ -91,17 +105,31 @@ bump: number;
  * replay guard, O-1x2-1). 100 = TxLINE full-time final stats.
  */
 resolutionPeriod: number; 
-/** Future (v1 leverage: max_open_interest, theta params, min_coverage_bps). */
+/** Cap on Σ notional of open leveraged positions. 0 = leverage disabled. */
+maxOpenInterest: number | bigint; 
+/** Theta slope numerator in the funding-rate formula. */
+timeFeeNum: number; 
+/** Keeper mark cadence (secs) — informational + min-post-interval. */
+fundingEpochSecs: number; 
+/** Max age (secs) of the posted mark before opens/closes reject as stale. */
+maxMarkAgeSecs: number; 
+/** No leveraged opens within this window (secs) before `freeze_ts`. */
+leverageCutoffSecs: number; 
+/** Max leverage multiple (whole ×). 0 = leverage disabled. */
+maxLeverage: number; 
+/** Min pool coverage ratio (bps), e.g. 12_000 = 120%. */
+minCoverageBps: number; 
+/** Future. */
 reserved: ReadonlyUint8Array;  };
 
 /** Gets the encoder for {@link MarketConfigArgs} account data. */
 export function getMarketConfigEncoder(): FixedSizeEncoder<MarketConfigArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['configId', getU16Encoder()], ['authority', getAddressEncoder()], ['baseFeeBps', getU16Encoder()], ['maxFeeBps', getU16Encoder()], ['vfcNum', getU32Encoder()], ['filterPeriod', getU32Encoder()], ['decayPeriod', getU32Encoder()], ['reductionBps', getU16Encoder()], ['maxVAcc', getU64Encoder()], ['resolutionGraceSecs', getI64Encoder()], ['resolutionThreshold', getI32Encoder()], ['resolutionComparison', getU8Encoder()], ['statKeyA', getU32Encoder()], ['statKeyB', getU32Encoder()], ['statOp', getU8Encoder()], ['bump', getU8Encoder()], ['resolutionPeriod', getI32Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 40)]]), (value) => ({ ...value, discriminator: MARKET_CONFIG_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['configId', getU16Encoder()], ['authority', getAddressEncoder()], ['baseFeeBps', getU16Encoder()], ['maxFeeBps', getU16Encoder()], ['vfcNum', getU32Encoder()], ['filterPeriod', getU32Encoder()], ['decayPeriod', getU32Encoder()], ['reductionBps', getU16Encoder()], ['maxVAcc', getU64Encoder()], ['resolutionGraceSecs', getI64Encoder()], ['resolutionThreshold', getI32Encoder()], ['resolutionComparison', getU8Encoder()], ['statKeyA', getU32Encoder()], ['statKeyB', getU32Encoder()], ['statOp', getU8Encoder()], ['bump', getU8Encoder()], ['resolutionPeriod', getI32Encoder()], ['maxOpenInterest', getU64Encoder()], ['timeFeeNum', getU32Encoder()], ['fundingEpochSecs', getU32Encoder()], ['maxMarkAgeSecs', getU32Encoder()], ['leverageCutoffSecs', getU32Encoder()], ['maxLeverage', getU16Encoder()], ['minCoverageBps', getU16Encoder()], ['reserved', fixEncoderSize(getBytesEncoder(), 12)]]), (value) => ({ ...value, discriminator: MARKET_CONFIG_DISCRIMINATOR }));
 }
 
 /** Gets the decoder for {@link MarketConfig} account data. */
 export function getMarketConfigDecoder(): FixedSizeDecoder<MarketConfig> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['configId', getU16Decoder()], ['authority', getAddressDecoder()], ['baseFeeBps', getU16Decoder()], ['maxFeeBps', getU16Decoder()], ['vfcNum', getU32Decoder()], ['filterPeriod', getU32Decoder()], ['decayPeriod', getU32Decoder()], ['reductionBps', getU16Decoder()], ['maxVAcc', getU64Decoder()], ['resolutionGraceSecs', getI64Decoder()], ['resolutionThreshold', getI32Decoder()], ['resolutionComparison', getU8Decoder()], ['statKeyA', getU32Decoder()], ['statKeyB', getU32Decoder()], ['statOp', getU8Decoder()], ['bump', getU8Decoder()], ['resolutionPeriod', getI32Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 40)]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['configId', getU16Decoder()], ['authority', getAddressDecoder()], ['baseFeeBps', getU16Decoder()], ['maxFeeBps', getU16Decoder()], ['vfcNum', getU32Decoder()], ['filterPeriod', getU32Decoder()], ['decayPeriod', getU32Decoder()], ['reductionBps', getU16Decoder()], ['maxVAcc', getU64Decoder()], ['resolutionGraceSecs', getI64Decoder()], ['resolutionThreshold', getI32Decoder()], ['resolutionComparison', getU8Decoder()], ['statKeyA', getU32Decoder()], ['statKeyB', getU32Decoder()], ['statOp', getU8Decoder()], ['bump', getU8Decoder()], ['resolutionPeriod', getI32Decoder()], ['maxOpenInterest', getU64Decoder()], ['timeFeeNum', getU32Decoder()], ['fundingEpochSecs', getU32Decoder()], ['maxMarkAgeSecs', getU32Decoder()], ['leverageCutoffSecs', getU32Decoder()], ['maxLeverage', getU16Decoder()], ['minCoverageBps', getU16Decoder()], ['reserved', fixDecoderSize(getBytesDecoder(), 12)]]);
 }
 
 /** Gets the codec for {@link MarketConfig} account data. */

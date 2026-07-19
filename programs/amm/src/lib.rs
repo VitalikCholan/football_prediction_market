@@ -1,6 +1,7 @@
 pub mod constants;
 pub mod error;
 pub mod fee;
+pub mod funding;
 pub mod instructions;
 pub mod lmsr;
 pub mod state;
@@ -155,5 +156,70 @@ pub mod amm {
     /// Admin teardown after the grace window: sweep vault, close accounts.
     pub fn close_market(ctx: Context<CloseMarket>) -> Result<()> {
         close_market::handler(ctx)
+    }
+
+    // ---- v1 leverage layer (plans/leverage-v1.md — appended, IDL-additive) ----
+
+    /// Create the LP-funded `LeveragePool` + lev vault for a market (admin-gated).
+    pub fn init_leverage_pool(ctx: Context<InitLeveragePool>) -> Result<()> {
+        init_leverage_pool::handler(ctx)
+    }
+
+    /// Explicitly create an LP's `LpAccount` PDA (D-3; no init_if_needed).
+    pub fn open_lp_account(ctx: Context<OpenLpAccount>) -> Result<()> {
+        open_lp_account::handler(ctx)
+    }
+
+    /// Deposit USDT into the leverage pool for internal LP shares.
+    pub fn deposit_lp(ctx: Context<DepositLp>, amount: u64) -> Result<()> {
+        deposit_lp::handler(ctx, amount)
+    }
+
+    /// Earmark LP shares for withdrawal and start the exit lockup (coverage-guarded).
+    pub fn request_withdraw(ctx: Context<RequestWithdraw>, shares: u64) -> Result<()> {
+        request_withdraw::handler(ctx, shares)
+    }
+
+    /// Claim an unlocked pending LP withdrawal from the lev vault.
+    pub fn withdraw_lp(ctx: Context<WithdrawLp>) -> Result<()> {
+        withdraw_lp::handler(ctx)
+    }
+
+    /// Keeper-posted marks; accrues the cumulative funding index over the
+    /// elapsed segment at the PREVIOUS marks (Drift pattern).
+    pub fn post_mark(ctx: Context<PostMark>, marks: [u16; 3]) -> Result<()> {
+        post_mark::handler(ctx, marks)
+    }
+
+    /// Keeper risk valve: bounded pause on new opens + bounded funding multiplier window.
+    pub fn set_risk_valve(
+        ctx: Context<SetRiskValve>,
+        pause_secs: i64,
+        multiplier_bps: u16,
+        window_secs: i64,
+    ) -> Result<()> {
+        set_risk_valve::handler(ctx, pause_secs, multiplier_bps, window_secs)
+    }
+
+    /// Open a no-liquidation leveraged position: a cash-settled binary option
+    /// on `outcome`, marked to the posted TxLINE mark; max loss = collateral.
+    pub fn open_leverage(
+        ctx: Context<OpenLeverage>,
+        outcome: u8,
+        collateral: u64,
+        leverage: u16,
+    ) -> Result<()> {
+        open_leverage::handler(ctx, outcome, collateral, leverage)
+    }
+
+    /// Owner-close a leveraged position: payout = max(0, C + pnl − F).
+    pub fn close_leverage(ctx: Context<CloseLeverage>) -> Result<()> {
+        close_leverage::handler(ctx)
+    }
+
+    /// Permissionless crank: settle a fee-dead position (F ≥ C); payout and
+    /// rent go to the position owner, never the cranker.
+    pub fn expire_position(ctx: Context<ExpirePosition>) -> Result<()> {
+        expire_position::handler(ctx)
     }
 }

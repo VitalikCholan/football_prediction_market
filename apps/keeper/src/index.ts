@@ -25,6 +25,7 @@ import { HistoryClient } from "./txline/history.ts";
 import { LifecycleStateMachine } from "./lifecycle/stateMachine.ts";
 import { Scheduler } from "./lifecycle/scheduler.ts";
 import { MarketSeeder } from "./lifecycle/seeder.ts";
+import { MarkPoster } from "./lifecycle/markPoster.ts";
 import { runSmoke } from "./smoke.ts";
 import { runSmokeTxline } from "./smokeTxline.ts";
 import { runSmokeSeed } from "./smokeSeed.ts";
@@ -93,6 +94,22 @@ async function main(): Promise<void> {
   scheduler.start();
   log.info({ tickMs: config.schedulerTickMs }, "lifecycle scheduler started");
 
+  // --- Mark poster (opt-in): post_mark for Trading markets with a lev pool ---
+  let markPoster: MarkPoster | undefined;
+  if (config.enableMarkPoster) {
+    markPoster = new MarkPoster(ctx, fixtures, auth);
+    markPoster.start();
+    log.info(
+      { tickMs: config.schedulerTickMs, dryRun: config.dryRun },
+      "mark poster started (post cadence = each config's funding_epoch_secs)",
+    );
+  } else {
+    log.info(
+      "ENABLE_MARK_POSTER off — leverage mark poster NOT started. " +
+        "Set ENABLE_MARK_POSTER=1 to post marks for markets with a LeveragePool.",
+    );
+  }
+
   // --- Auto-seed loop (opt-in): new upcoming markets self-appear on-chain ---
   let seeder: MarketSeeder | undefined;
   if (config.enableAutoSeed) {
@@ -141,6 +158,7 @@ async function main(): Promise<void> {
       stream.stop();
       scheduler.stop();
       seeder?.stop();
+      markPoster?.stop();
       process.exit(0);
     });
   } else {
@@ -148,6 +166,7 @@ async function main(): Promise<void> {
     process.on("SIGINT", () => {
       scheduler.stop();
       seeder?.stop();
+      markPoster?.stop();
       process.exit(0);
     });
   }

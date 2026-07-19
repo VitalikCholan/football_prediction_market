@@ -547,6 +547,14 @@ async function main() {
       statKeyA: 1,
       statKeyB: 2,
       statOp: 2,
+      // v1 leverage — disabled on this config (maxLeverage 0).
+      maxOpenInterest: 0n,
+      timeFeeNum: 0,
+      fundingEpochSecs: 0,
+      maxMarkAgeSecs: 0,
+      leverageCutoffSecs: 0,
+      maxLeverage: 0,
+      minCoverageBps: 0,
       resolutionPeriod: 0, // full-time
     });
     await sendTx(rpc, admin, [ix]);

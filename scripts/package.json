@@ -10,7 +10,8 @@
     "full-circle": "tsx full-circle.ts",
     "seed-markets": "tsx seed-markets.ts",
     "txline:token": "tsx txline-token.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "leverage-circle": "tsx leverage-circle.ts"
   },
   "dependencies": {
     "@fpm/idl": "workspace:*",

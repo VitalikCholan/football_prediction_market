@@ -28,6 +28,24 @@ const AMM_MESSAGES: Readonly<Record<number, string>> = {
   6017: "The match result proof was rejected.",
   6018: "This position has already been redeemed.",
   6024: "The settlement grace period hasn't elapsed yet.",
+  // Leverage layer (leverage-v1 §4) — codes 6031..6047.
+  6031: "Leverage isn't enabled for this market.",
+  6032: "That leverage is above the cap at the current price — lower it.",
+  6033: "Leverage must be at least 2×.",
+  6034: "No mark price has been posted yet — try again shortly.",
+  6035: "The mark price is stale — wait for the next keeper update.",
+  6036: "Mark price is out of range.",
+  6037: "Leveraged opens are temporarily paused (risk valve).",
+  6038: "Risk valve parameters are out of bounds.",
+  6039: "Too close to match freeze to open a leveraged position.",
+  6040: "The pool's open-interest cap is full — try a smaller size.",
+  6041: "The pool can't cover this position right now — try a smaller size.",
+  6042: "This leveraged position is already settled.",
+  6043: "This position hasn't expired — funding hasn't consumed the collateral yet.",
+  6044: "Withdrawal is still locked — wait for the unlock time.",
+  6045: "No pending withdrawal to claim.",
+  6046: "Not enough free LP shares.",
+  6047: "Funding math error — please try again.",
 };
 
 const TXLINE_MESSAGES: Readonly<Record<number, string>> = {

@@ -10,6 +10,7 @@ import { OutcomesList } from "@/components/market/outcomes-list";
 import { MarketInfo } from "@/components/market/market-info";
 import { ResolutionPanel } from "@/components/market/resolution-panel";
 import { TradePanel, type TradeIntent } from "@/components/trade/trade-panel";
+import { LeveragePanel } from "@/components/trade/leverage-panel";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -90,6 +91,10 @@ export function MarketDetail({
         intent={intent}
         onClose={() => setIntent(null)}
       />
+
+      {/* Leverage layer (leverage-v1 wave F) — renders only when this
+          market's LeveragePool PDA exists on-chain. */}
+      <LeveragePanel market={market} />
     </div>
   );
 }

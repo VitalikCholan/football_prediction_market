@@ -18,16 +18,16 @@ export function getCreateMarketConfigDiscriminatorBytes() { return fixEncoderSiz
 export type CreateMarketConfigInstruction<TProgram extends string = typeof AMM_PROGRAM_ADDRESS, TAccountAuthority extends string | AccountMeta<string> = string, TAccountGlobal extends string | AccountMeta<string> = string, TAccountMarketConfig extends string | AccountMeta<string> = string, TAccountSystemProgram extends string | AccountMeta<string> = "11111111111111111111111111111111", TRemainingAccounts extends readonly AccountMeta<string>[] = []> =
 Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<[TAccountAuthority extends string ? WritableSignerAccount<TAccountAuthority> & AccountSignerMeta<TAccountAuthority> : TAccountAuthority, TAccountGlobal extends string ? ReadonlyAccount<TAccountGlobal> : TAccountGlobal, TAccountMarketConfig extends string ? WritableAccount<TAccountMarketConfig> : TAccountMarketConfig, TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram, ...TRemainingAccounts]>;
 
-export type CreateMarketConfigInstructionData = { discriminator: ReadonlyUint8Array; configId: number; baseFeeBps: number; maxFeeBps: number; vfcNum: number; filterPeriod: number; decayPeriod: number; reductionBps: number; maxVAcc: bigint; resolutionGraceSecs: bigint; resolutionThreshold: number; resolutionComparison: number; statKeyA: number; statKeyB: number; statOp: number; resolutionPeriod: number;  };
+export type CreateMarketConfigInstructionData = { discriminator: ReadonlyUint8Array; configId: number; baseFeeBps: number; maxFeeBps: number; vfcNum: number; filterPeriod: number; decayPeriod: number; reductionBps: number; maxVAcc: bigint; resolutionGraceSecs: bigint; resolutionThreshold: number; resolutionComparison: number; statKeyA: number; statKeyB: number; statOp: number; maxOpenInterest: bigint; timeFeeNum: number; fundingEpochSecs: number; maxMarkAgeSecs: number; leverageCutoffSecs: number; maxLeverage: number; minCoverageBps: number; resolutionPeriod: number;  };
 
-export type CreateMarketConfigInstructionDataArgs = { configId: number; baseFeeBps: number; maxFeeBps: number; vfcNum: number; filterPeriod: number; decayPeriod: number; reductionBps: number; maxVAcc: number | bigint; resolutionGraceSecs: number | bigint; resolutionThreshold: number; resolutionComparison: number; statKeyA: number; statKeyB: number; statOp: number; resolutionPeriod: number;  };
+export type CreateMarketConfigInstructionDataArgs = { configId: number; baseFeeBps: number; maxFeeBps: number; vfcNum: number; filterPeriod: number; decayPeriod: number; reductionBps: number; maxVAcc: number | bigint; resolutionGraceSecs: number | bigint; resolutionThreshold: number; resolutionComparison: number; statKeyA: number; statKeyB: number; statOp: number; maxOpenInterest: number | bigint; timeFeeNum: number; fundingEpochSecs: number; maxMarkAgeSecs: number; leverageCutoffSecs: number; maxLeverage: number; minCoverageBps: number; resolutionPeriod: number;  };
 
 export function getCreateMarketConfigInstructionDataEncoder(): FixedSizeEncoder<CreateMarketConfigInstructionDataArgs> {
-    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['configId', getU16Encoder()], ['baseFeeBps', getU16Encoder()], ['maxFeeBps', getU16Encoder()], ['vfcNum', getU32Encoder()], ['filterPeriod', getU32Encoder()], ['decayPeriod', getU32Encoder()], ['reductionBps', getU16Encoder()], ['maxVAcc', getU64Encoder()], ['resolutionGraceSecs', getI64Encoder()], ['resolutionThreshold', getI32Encoder()], ['resolutionComparison', getU8Encoder()], ['statKeyA', getU32Encoder()], ['statKeyB', getU32Encoder()], ['statOp', getU8Encoder()], ['resolutionPeriod', getI32Encoder()]]), (value) => ({ ...value, discriminator: CREATE_MARKET_CONFIG_DISCRIMINATOR }));
+    return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)], ['configId', getU16Encoder()], ['baseFeeBps', getU16Encoder()], ['maxFeeBps', getU16Encoder()], ['vfcNum', getU32Encoder()], ['filterPeriod', getU32Encoder()], ['decayPeriod', getU32Encoder()], ['reductionBps', getU16Encoder()], ['maxVAcc', getU64Encoder()], ['resolutionGraceSecs', getI64Encoder()], ['resolutionThreshold', getI32Encoder()], ['resolutionComparison', getU8Encoder()], ['statKeyA', getU32Encoder()], ['statKeyB', getU32Encoder()], ['statOp', getU8Encoder()], ['maxOpenInterest', getU64Encoder()], ['timeFeeNum', getU32Encoder()], ['fundingEpochSecs', getU32Encoder()], ['maxMarkAgeSecs', getU32Encoder()], ['leverageCutoffSecs', getU32Encoder()], ['maxLeverage', getU16Encoder()], ['minCoverageBps', getU16Encoder()], ['resolutionPeriod', getI32Encoder()]]), (value) => ({ ...value, discriminator: CREATE_MARKET_CONFIG_DISCRIMINATOR }));
 }
 
 export function getCreateMarketConfigInstructionDataDecoder(): FixedSizeDecoder<CreateMarketConfigInstructionData> {
-    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['configId', getU16Decoder()], ['baseFeeBps', getU16Decoder()], ['maxFeeBps', getU16Decoder()], ['vfcNum', getU32Decoder()], ['filterPeriod', getU32Decoder()], ['decayPeriod', getU32Decoder()], ['reductionBps', getU16Decoder()], ['maxVAcc', getU64Decoder()], ['resolutionGraceSecs', getI64Decoder()], ['resolutionThreshold', getI32Decoder()], ['resolutionComparison', getU8Decoder()], ['statKeyA', getU32Decoder()], ['statKeyB', getU32Decoder()], ['statOp', getU8Decoder()], ['resolutionPeriod', getI32Decoder()]]);
+    return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)], ['configId', getU16Decoder()], ['baseFeeBps', getU16Decoder()], ['maxFeeBps', getU16Decoder()], ['vfcNum', getU32Decoder()], ['filterPeriod', getU32Decoder()], ['decayPeriod', getU32Decoder()], ['reductionBps', getU16Decoder()], ['maxVAcc', getU64Decoder()], ['resolutionGraceSecs', getI64Decoder()], ['resolutionThreshold', getI32Decoder()], ['resolutionComparison', getU8Decoder()], ['statKeyA', getU32Decoder()], ['statKeyB', getU32Decoder()], ['statOp', getU8Decoder()], ['maxOpenInterest', getU64Decoder()], ['timeFeeNum', getU32Decoder()], ['fundingEpochSecs', getU32Decoder()], ['maxMarkAgeSecs', getU32Decoder()], ['leverageCutoffSecs', getU32Decoder()], ['maxLeverage', getU16Decoder()], ['minCoverageBps', getU16Decoder()], ['resolutionPeriod', getI32Decoder()]]);
 }
 
 export function getCreateMarketConfigInstructionDataCodec(): FixedSizeCodec<CreateMarketConfigInstructionDataArgs, CreateMarketConfigInstructionData> {
@@ -53,6 +53,13 @@ resolutionComparison: CreateMarketConfigInstructionDataArgs["resolutionCompariso
 statKeyA: CreateMarketConfigInstructionDataArgs["statKeyA"];
 statKeyB: CreateMarketConfigInstructionDataArgs["statKeyB"];
 statOp: CreateMarketConfigInstructionDataArgs["statOp"];
+maxOpenInterest: CreateMarketConfigInstructionDataArgs["maxOpenInterest"];
+timeFeeNum: CreateMarketConfigInstructionDataArgs["timeFeeNum"];
+fundingEpochSecs: CreateMarketConfigInstructionDataArgs["fundingEpochSecs"];
+maxMarkAgeSecs: CreateMarketConfigInstructionDataArgs["maxMarkAgeSecs"];
+leverageCutoffSecs: CreateMarketConfigInstructionDataArgs["leverageCutoffSecs"];
+maxLeverage: CreateMarketConfigInstructionDataArgs["maxLeverage"];
+minCoverageBps: CreateMarketConfigInstructionDataArgs["minCoverageBps"];
 resolutionPeriod: CreateMarketConfigInstructionDataArgs["resolutionPeriod"];
 }
 
@@ -103,6 +110,13 @@ resolutionComparison: CreateMarketConfigInstructionDataArgs["resolutionCompariso
 statKeyA: CreateMarketConfigInstructionDataArgs["statKeyA"];
 statKeyB: CreateMarketConfigInstructionDataArgs["statKeyB"];
 statOp: CreateMarketConfigInstructionDataArgs["statOp"];
+maxOpenInterest: CreateMarketConfigInstructionDataArgs["maxOpenInterest"];
+timeFeeNum: CreateMarketConfigInstructionDataArgs["timeFeeNum"];
+fundingEpochSecs: CreateMarketConfigInstructionDataArgs["fundingEpochSecs"];
+maxMarkAgeSecs: CreateMarketConfigInstructionDataArgs["maxMarkAgeSecs"];
+leverageCutoffSecs: CreateMarketConfigInstructionDataArgs["leverageCutoffSecs"];
+maxLeverage: CreateMarketConfigInstructionDataArgs["maxLeverage"];
+minCoverageBps: CreateMarketConfigInstructionDataArgs["minCoverageBps"];
 resolutionPeriod: CreateMarketConfigInstructionDataArgs["resolutionPeriod"];
 }
 
