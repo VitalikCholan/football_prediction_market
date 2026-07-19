@@ -18,6 +18,26 @@ use crate::error::AmmError;
 use crate::instructions::resolve::predicate::{validate_config, StoredPredicate};
 use crate::state::{GlobalConfig, MarketConfig};
 
+/// Shared v1 leverage-param validation (leverage-v1.md §2), only checked when
+/// leverage is being enabled (`max_leverage > 0`). Called by BOTH
+/// `create_market_config` and `update_leverage_params` so the two paths can
+/// never drift apart.
+pub(crate) fn validate_leverage_params(
+    max_leverage: u16,
+    time_fee_num: u32,
+    funding_epoch_secs: u32,
+    max_mark_age_secs: u32,
+    min_coverage_bps: u16,
+) -> Result<()> {
+    if max_leverage > 0 {
+        require!(funding_epoch_secs > 0, AmmError::InvalidFeeParams);
+        require!(max_mark_age_secs > 0, AmmError::InvalidFeeParams);
+        require!(u64::from(min_coverage_bps) >= BPS_DENOM, AmmError::InvalidFeeParams);
+        require!(time_fee_num > 0, AmmError::InvalidFeeParams);
+    }
+    Ok(())
+}
+
 /// Plain args struct mirroring the fee fields + grace + resolution predicate (D-8).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct FeeParamsArgs {
@@ -98,15 +118,13 @@ pub(crate) fn handler(
     require!(params.stat_op <= 2, AmmError::InvalidFeeParams);
 
     // ---- v1 leverage params (leverage-v1.md §2): only checked when enabled ----
-    if params.max_leverage > 0 {
-        require!(params.funding_epoch_secs > 0, AmmError::InvalidFeeParams);
-        require!(params.max_mark_age_secs > 0, AmmError::InvalidFeeParams);
-        require!(
-            (params.min_coverage_bps as u64) >= BPS_DENOM,
-            AmmError::InvalidFeeParams
-        );
-        require!(params.time_fee_num > 0, AmmError::InvalidFeeParams);
-    }
+    validate_leverage_params(
+        params.max_leverage,
+        params.time_fee_num,
+        params.funding_epoch_secs,
+        params.max_mark_age_secs,
+        params.min_coverage_bps,
+    )?;
 
     // ---- 1X2 predicate shape: two distinct stat keys, Subtract ----
     validate_config(&StoredPredicate {

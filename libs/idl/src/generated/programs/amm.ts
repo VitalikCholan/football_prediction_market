@@ -7,7 +7,7 @@
  */
 
 import { assertIsInstructionWithAccounts, containsBytes, fixEncoderSize, getBytesEncoder, type Address, type Instruction, type InstructionWithData, type ReadonlyUint8Array } from '@solana/kit';
-import { parseActivateMarketInstruction, parseBuyInstruction, parseCloseLeverageInstruction, parseCloseMarketInstruction, parseCreateMarketConfigInstruction, parseDepositLpInstruction, parseExpirePositionInstruction, parseFreezeMarketInstruction, parseInitializeConfigInstruction, parseInitLeveragePoolInstruction, parseInitMarketInstruction, parseMintSetInstruction, parseOpenLeverageInstruction, parseOpenLpAccountInstruction, parseOpenPositionInstruction, parsePostMarkInstruction, parseRedeemInstruction, parseRedeemSetInstruction, parseRequestWithdrawInstruction, parseResolveInstruction, parseSellInstruction, parseSetRiskValveInstruction, parseWithdrawLpInstruction, type ParsedActivateMarketInstruction, type ParsedBuyInstruction, type ParsedCloseLeverageInstruction, type ParsedCloseMarketInstruction, type ParsedCreateMarketConfigInstruction, type ParsedDepositLpInstruction, type ParsedExpirePositionInstruction, type ParsedFreezeMarketInstruction, type ParsedInitializeConfigInstruction, type ParsedInitLeveragePoolInstruction, type ParsedInitMarketInstruction, type ParsedMintSetInstruction, type ParsedOpenLeverageInstruction, type ParsedOpenLpAccountInstruction, type ParsedOpenPositionInstruction, type ParsedPostMarkInstruction, type ParsedRedeemInstruction, type ParsedRedeemSetInstruction, type ParsedRequestWithdrawInstruction, type ParsedResolveInstruction, type ParsedSellInstruction, type ParsedSetRiskValveInstruction, type ParsedWithdrawLpInstruction } from '../instructions';
+import { parseActivateMarketInstruction, parseBuyInstruction, parseCloseLeverageInstruction, parseCloseMarketInstruction, parseCreateMarketConfigInstruction, parseDepositLpInstruction, parseExpirePositionInstruction, parseFreezeMarketInstruction, parseInitializeConfigInstruction, parseInitLeveragePoolInstruction, parseInitMarketInstruction, parseMintSetInstruction, parseOpenLeverageInstruction, parseOpenLpAccountInstruction, parseOpenPositionInstruction, parsePostMarkInstruction, parseRedeemInstruction, parseRedeemSetInstruction, parseRequestWithdrawInstruction, parseResolveInstruction, parseSellInstruction, parseSetRiskValveInstruction, parseUpdateLeverageParamsInstruction, parseWithdrawLpInstruction, type ParsedActivateMarketInstruction, type ParsedBuyInstruction, type ParsedCloseLeverageInstruction, type ParsedCloseMarketInstruction, type ParsedCreateMarketConfigInstruction, type ParsedDepositLpInstruction, type ParsedExpirePositionInstruction, type ParsedFreezeMarketInstruction, type ParsedInitializeConfigInstruction, type ParsedInitLeveragePoolInstruction, type ParsedInitMarketInstruction, type ParsedMintSetInstruction, type ParsedOpenLeverageInstruction, type ParsedOpenLpAccountInstruction, type ParsedOpenPositionInstruction, type ParsedPostMarkInstruction, type ParsedRedeemInstruction, type ParsedRedeemSetInstruction, type ParsedRequestWithdrawInstruction, type ParsedResolveInstruction, type ParsedSellInstruction, type ParsedSetRiskValveInstruction, type ParsedUpdateLeverageParamsInstruction, type ParsedWithdrawLpInstruction } from '../instructions';
 
 export const AMM_PROGRAM_ADDRESS = 'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY' as Address<'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY'>;
 
@@ -25,7 +25,7 @@ if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Arr
 throw new Error("The provided account could not be identified as a amm account.")
 }
 
-export enum AmmInstruction { ActivateMarket, Buy, CloseLeverage, CloseMarket, CreateMarketConfig, DepositLp, ExpirePosition, FreezeMarket, InitLeveragePool, InitMarket, InitializeConfig, MintSet, OpenLeverage, OpenLpAccount, OpenPosition, PostMark, Redeem, RedeemSet, RequestWithdraw, Resolve, Sell, SetRiskValve, WithdrawLp }
+export enum AmmInstruction { ActivateMarket, Buy, CloseLeverage, CloseMarket, CreateMarketConfig, DepositLp, ExpirePosition, FreezeMarket, InitLeveragePool, InitMarket, InitializeConfig, MintSet, OpenLeverage, OpenLpAccount, OpenPosition, PostMark, Redeem, RedeemSet, RequestWithdraw, Resolve, Sell, SetRiskValve, UpdateLeverageParams, WithdrawLp }
 
 export function identifyAmmInstruction(instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array): AmmInstruction {
 const data = 'data' in instruction ? instruction.data : instruction;
@@ -51,6 +51,7 @@ if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Arr
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([246, 150, 236, 206, 108, 63, 58, 10])), 0)) { return AmmInstruction.Resolve; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([51, 230, 133, 164, 1, 127, 131, 173])), 0)) { return AmmInstruction.Sell; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([99, 242, 58, 101, 4, 179, 61, 99])), 0)) { return AmmInstruction.SetRiskValve; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([124, 110, 232, 241, 151, 34, 0, 181])), 0)) { return AmmInstruction.UpdateLeverageParams; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([225, 221, 45, 211, 49, 60, 51, 163])), 0)) { return AmmInstruction.WithdrawLp; }
 throw new Error("The provided instruction could not be identified as a amm instruction.")
 }
@@ -78,6 +79,7 @@ export type ParsedAmmInstruction<TProgram extends string = 'H59qQz8DXzUWWc3L528i
 | { instructionType: AmmInstruction.Resolve } & ParsedResolveInstruction<TProgram>
 | { instructionType: AmmInstruction.Sell } & ParsedSellInstruction<TProgram>
 | { instructionType: AmmInstruction.SetRiskValve } & ParsedSetRiskValveInstruction<TProgram>
+| { instructionType: AmmInstruction.UpdateLeverageParams } & ParsedUpdateLeverageParamsInstruction<TProgram>
 | { instructionType: AmmInstruction.WithdrawLp } & ParsedWithdrawLpInstruction<TProgram>
 
 
@@ -131,6 +133,8 @@ case AmmInstruction.Sell: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.Sell, ...parseSellInstruction(instruction) }; }
 case AmmInstruction.SetRiskValve: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.SetRiskValve, ...parseSetRiskValveInstruction(instruction) }; }
+case AmmInstruction.UpdateLeverageParams: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.UpdateLeverageParams, ...parseUpdateLeverageParamsInstruction(instruction) }; }
 case AmmInstruction.WithdrawLp: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.WithdrawLp, ...parseWithdrawLpInstruction(instruction) }; }
                 default: throw new Error(`Unrecognized instruction type: ${instructionType as string}`);

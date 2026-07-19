@@ -510,6 +510,17 @@ pub struct LeverageOpened {
     pub entry_mark_bps: u16,
 }
 
+/// Emitted by `update_leverage_params`: the shared config's 7 leverage
+/// fields changed — effective immediately for EVERY market referencing the
+/// config (live-read, marginfi configure_bank pattern). Predicate + fee
+/// fields are untouched by design (D-8).
+#[event]
+pub struct LeverageParamsUpdated {
+    pub config: Pubkey,
+    pub max_leverage: u16,
+    pub time_fee_num: u32,
+}
+
 #[event]
 pub struct LeverageSettled {
     pub market: Pubkey,
