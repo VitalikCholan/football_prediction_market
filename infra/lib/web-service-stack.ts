@@ -1,5 +1,7 @@
 import { Stack, StackProps, CfnOutput, Duration } from "aws-cdk-lib";
 import { Construct } from "constructs";
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ecr from "aws-cdk-lib/aws-ecr";
@@ -130,9 +132,46 @@ export class WebServiceStack extends Stack {
       deregistrationDelay: Duration.seconds(30),
     });
 
+    // ---- CloudFront (HTTPS without a custom domain) ----
+    // Browsers only expose WebCrypto (`crypto.subtle`) in a SECURE CONTEXT:
+    // the plain-HTTP ALB URL breaks every PDA derivation in the client (the
+    // leverage panel silently hides) and blocks wallet connect. CloudFront's
+    // default *.cloudfront.net certificate gives us HTTPS with zero domain
+    // setup; the origin stays the HTTP ALB (private hop, HTTP-only origin).
+    const cdn = new cloudfront.Distribution(this, "WebCdn", {
+      defaultBehavior: {
+        origin: new origins.LoadBalancerV2Origin(alb, {
+          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+        }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        // SSR pages are dynamic — never cache them at the edge.
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        originRequestPolicy:
+          cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+      },
+      additionalBehaviors: {
+        // Hashed immutable assets — safe to cache aggressively at the edge.
+        "/_next/static/*": {
+          origin: new origins.LoadBalancerV2Origin(alb, {
+            protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+          }),
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        },
+      },
+      comment: "fpm web (HTTPS front for the web ALB)",
+    });
+
+    new CfnOutput(this, "WebCdnUrl", {
+      value: `https://${cdn.distributionDomainName}`,
+      description: "HTTPS web app URL (CloudFront; use THIS, not the ALB)",
+    });
+
     new CfnOutput(this, "AlbDnsName", {
       value: alb.loadBalancerDnsName,
-      description: "Public DNS of the web ALB (the web app URL)",
+      description: "Public DNS of the web ALB (HTTP origin; prefer WebCdnUrl)",
     });
     // Consumed by .github/workflows/deploy.yml to target `ecs update-service`.
     new CfnOutput(this, "ClusterName", { value: cluster.clusterName });

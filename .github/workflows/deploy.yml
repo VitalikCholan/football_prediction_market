@@ -124,9 +124,11 @@ jobs:
     runs-on: ubuntu-latest
     # NEXT_PUBLIC_* are INLINED by Next at build time (not read at runtime), so
     # they MUST be passed as --build-arg here, before `next build`. The indexer
-    # URL is the indexer ALB's public DNS (Phase 2).
+    # URL is the indexer's CloudFront HTTPS front (IndexerCdnUrl stack output) —
+    # the web app itself is served over HTTPS (WebCdn), and browsers block
+    # mixed-content fetches to a plain-HTTP API.
     env:
-      NEXT_PUBLIC_INDEXER_URL: http://FpmInd-Index-BFX4DQHQcKe0-1474036300.eu-central-1.elb.amazonaws.com
+      NEXT_PUBLIC_INDEXER_URL: https://d3oqvu2dk2gvv9.cloudfront.net
       NEXT_PUBLIC_SOLANA_RPC_URL: https://api.devnet.solana.com
       NEXT_PUBLIC_CLUSTER: devnet
     steps:
