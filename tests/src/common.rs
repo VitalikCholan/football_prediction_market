@@ -23,8 +23,8 @@ use solana_transaction::Transaction;
 use spl_associated_token_account::get_associated_token_address;
 
 use amm::constants::{
-    CONFIG_SEED, DAILY_SCORES_ROOTS_SEED, MARKET_SEED, MKT_CONFIG_SEED, POSITION_SEED,
-    MILLIS_PER_DAY, VAULT_SEED,
+    CONFIG_SEED, DAILY_SCORES_ROOTS_SEED, LEV_LP_SEED, LEV_POOL_SEED, LEV_POSITION_SEED,
+    LEV_VAULT_SEED, MARKET_SEED, MKT_CONFIG_SEED, POSITION_SEED, MILLIS_PER_DAY, VAULT_SEED,
 };
 
 pub const BASE_TS: i64 = 1_700_000_000;
@@ -257,6 +257,39 @@ pub fn default_fee_params() -> amm::FeeParamsArgs {
         stat_key_a: 1,
         stat_key_b: 2,
         stat_op: 2,
+        // v1 leverage disabled by default (max_leverage = 0); leverage tests
+        // override these via their own params helper.
+        max_open_interest: 0,
+        time_fee_num: 0,
+        funding_epoch_secs: 0,
+        max_mark_age_secs: 0,
+        leverage_cutoff_secs: 0,
+        max_leverage: 0,
+        min_coverage_bps: 0,
+    }
+}
+
+/// `default_fee_params()` with the v1 leverage layer ENABLED
+/// (leverage-v1.md §2 config carve). Values sized for LiteSVM scenarios:
+///
+/// * `time_fee_num = 2`: the locked funding shape is
+///   `F ≈ N · time_fee_num · p(1−p) · elapsed / t_rem` (funding.rs §1), so a
+///   small integer slope keeps a 60s epoch at p=5000 with hours remaining at
+///   a fraction of a percent of notional — positions survive the happy path.
+///   Fee-death tests override this with a large slope on their own config.
+/// * `max_mark_age_secs = 300` / `leverage_cutoff_secs = 600`: guardable with
+///   short Clock warps.
+/// * `min_coverage_bps = 12_000` (120%) — the plan §1 example value.
+pub fn leverage_fee_params() -> amm::FeeParamsArgs {
+    amm::FeeParamsArgs {
+        max_open_interest: 1_000_000_000 * ONE_USDT,
+        time_fee_num: 2,
+        funding_epoch_secs: 60,
+        max_mark_age_secs: 300,
+        leverage_cutoff_secs: 600,
+        max_leverage: 5,
+        min_coverage_bps: 12_000,
+        ..default_fee_params()
     }
 }
 
@@ -735,4 +768,274 @@ pub const CU_LIMIT_BUY: u32 = 1_400_000;
 
 pub fn ix_set_cu_limit(units: u32) -> Instruction {
     solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(units)
+}
+
+// ===========================================================================
+// v1 leverage layer (plans/leverage-v1.md) — PDAs + instruction builders
+// ===========================================================================
+
+pub fn lev_pool_pda(market: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[LEV_POOL_SEED, market.as_ref()], &program_id()).0
+}
+
+pub fn lev_vault_pda(market: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[LEV_VAULT_SEED, market.as_ref()], &program_id()).0
+}
+
+pub fn lev_position_pda(market: &Pubkey, owner: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[LEV_POSITION_SEED, market.as_ref(), owner.as_ref()],
+        &program_id(),
+    )
+    .0
+}
+
+pub fn lev_lp_pda(market: &Pubkey, owner: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[LEV_LP_SEED, market.as_ref(), owner.as_ref()],
+        &program_id(),
+    )
+    .0
+}
+
+pub fn ix_init_leverage_pool(
+    authority: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    mint: &Pubkey,
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::InitLeveragePool {
+            authority: *authority,
+            global: config_pda(),
+            market,
+            market_config: market_config_pda(config_id),
+            pool: lev_pool_pda(&market),
+            lev_vault: lev_vault_pda(&market),
+            usdt_mint: *mint,
+            token_program: token_program_id(),
+            system_program: sys_program(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::InitLeveragePool {}.data(),
+    }
+}
+
+pub fn ix_open_lp_account(owner: &Pubkey, fixture_id: i64) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::OpenLpAccount {
+            owner: *owner,
+            market,
+            lp_account: lev_lp_pda(&market, owner),
+            system_program: sys_program(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::OpenLpAccount {}.data(),
+    }
+}
+
+pub fn ix_deposit_lp(
+    owner: &Pubkey,
+    fixture_id: i64,
+    amount: u64,
+    mint: &Pubkey,
+    owner_ata: &Pubkey,
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::DepositLp {
+            owner: *owner,
+            market,
+            pool: lev_pool_pda(&market),
+            lp_account: lev_lp_pda(&market, owner),
+            lev_vault: lev_vault_pda(&market),
+            owner_usdt: *owner_ata,
+            usdt_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::DepositLp { amount }.data(),
+    }
+}
+
+pub fn ix_request_withdraw(
+    owner: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    shares: u64,
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::RequestWithdraw {
+            owner: *owner,
+            market,
+            market_config: market_config_pda(config_id),
+            pool: lev_pool_pda(&market),
+            lp_account: lev_lp_pda(&market, owner),
+            lev_vault: lev_vault_pda(&market),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::RequestWithdraw { shares }.data(),
+    }
+}
+
+pub fn ix_withdraw_lp(
+    owner: &Pubkey,
+    fixture_id: i64,
+    mint: &Pubkey,
+    owner_ata: &Pubkey,
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::WithdrawLp {
+            owner: *owner,
+            market,
+            pool: lev_pool_pda(&market),
+            lp_account: lev_lp_pda(&market, owner),
+            lev_vault: lev_vault_pda(&market),
+            owner_usdt: *owner_ata,
+            usdt_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::WithdrawLp {}.data(),
+    }
+}
+
+pub fn ix_post_mark(
+    keeper: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    marks: [u16; 3],
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::PostMark {
+            keeper: *keeper,
+            global: config_pda(),
+            market,
+            market_config: market_config_pda(config_id),
+            pool: lev_pool_pda(&market),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::PostMark { marks }.data(),
+    }
+}
+
+pub fn ix_set_risk_valve(
+    keeper: &Pubkey,
+    fixture_id: i64,
+    pause_secs: i64,
+    multiplier_bps: u16,
+    window_secs: i64,
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::SetRiskValve {
+            keeper: *keeper,
+            global: config_pda(),
+            market,
+            pool: lev_pool_pda(&market),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::SetRiskValve { pause_secs, multiplier_bps, window_secs }
+            .data(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ix_open_leverage(
+    trader: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    outcome: u8,
+    collateral: u64,
+    leverage: u16,
+    mint: &Pubkey,
+    trader_ata: &Pubkey,
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::OpenLeverage {
+            trader: *trader,
+            market,
+            market_config: market_config_pda(config_id),
+            pool: lev_pool_pda(&market),
+            lev_position: lev_position_pda(&market, trader),
+            lev_vault: lev_vault_pda(&market),
+            trader_usdt: *trader_ata,
+            usdt_mint: *mint,
+            token_program: token_program_id(),
+            system_program: sys_program(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::OpenLeverage { outcome, collateral, leverage }.data(),
+    }
+}
+
+pub fn ix_close_leverage(
+    owner: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    mint: &Pubkey,
+    owner_ata: &Pubkey,
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::CloseLeverage {
+            owner: *owner,
+            market,
+            market_config: market_config_pda(config_id),
+            pool: lev_pool_pda(&market),
+            lev_position: lev_position_pda(&market, owner),
+            lev_vault: lev_vault_pda(&market),
+            owner_usdt: *owner_ata,
+            usdt_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::CloseLeverage {}.data(),
+    }
+}
+
+/// `expire_position` — permissionless crank: `cranker` signs, but the payout
+/// token account and the rent refund belong to `position_owner`.
+#[allow(clippy::too_many_arguments)]
+pub fn ix_expire_position(
+    cranker: &Pubkey,
+    position_owner: &Pubkey,
+    config_id: u16,
+    fixture_id: i64,
+    mint: &Pubkey,
+    owner_usdt: &Pubkey,
+) -> Instruction {
+    let market = market_pda(fixture_id);
+    Instruction {
+        program_id: program_id(),
+        accounts: amm::accounts::ExpirePosition {
+            cranker: *cranker,
+            position_owner: *position_owner,
+            market,
+            market_config: market_config_pda(config_id),
+            pool: lev_pool_pda(&market),
+            lev_position: lev_position_pda(&market, position_owner),
+            lev_vault: lev_vault_pda(&market),
+            owner_usdt: *owner_usdt,
+            usdt_mint: *mint,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+        data: amm::instruction::ExpirePosition {}.data(),
+    }
 }

@@ -87,4 +87,40 @@ pub enum AmmError {
     // ---- 1X2 market (SPEC §3.1) -------------------------------------------
     #[msg("Proof stat period does not match the config's pinned resolution period")]
     ResolutionPeriodMismatch,
+
+    // ---- v1 leverage (leverage-v1.md §4 — appended, do not reorder) --------
+    #[msg("Leverage is disabled for this market config")]
+    LeverageDisabled,
+    #[msg("Leverage exceeds the tapered maximum for the current mark")]
+    LeverageTooHigh,
+    #[msg("Leverage must be at least 2x")]
+    LeverageTooLow,
+    #[msg("No mark has been posted for this pool yet")]
+    MarkNotPosted,
+    #[msg("Posted mark is older than max_mark_age_secs")]
+    MarkStale,
+    #[msg("Mark out of range (each must be in 1..BPS-1)")]
+    MarkOutOfRange,
+    #[msg("Risk valve: leveraged opens are paused")]
+    RiskValvePaused,
+    #[msg("Risk valve parameters exceed the hard bounds")]
+    ValveOutOfBounds,
+    #[msg("Too close to freeze: within the leverage cutoff window")]
+    LeverageCutoff,
+    #[msg("Open interest cap exceeded")]
+    OpenInterestExceeded,
+    #[msg("Pool coverage ratio would fall below min_coverage_bps")]
+    CoverageBreached,
+    #[msg("Leveraged position already settled")]
+    PositionSettled,
+    #[msg("Position not expired: accrued funding below collateral")]
+    PositionNotExpired,
+    #[msg("Withdrawal is still locked (unlock_ts not reached)")]
+    WithdrawLocked,
+    #[msg("No pending withdrawal to claim")]
+    NothingPending,
+    #[msg("Insufficient free LP shares")]
+    InsufficientShares,
+    #[msg("Funding math overflow / domain error")]
+    FundingMath,
 }

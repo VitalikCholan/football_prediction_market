@@ -45,6 +45,8 @@ import {
 import {
   fetchMaybePosition,
   getBuyInstructionAsync,
+  getCloseLeverageInstructionAsync,
+  getOpenLeverageInstructionAsync,
   getOpenPositionInstructionAsync,
   getPositionDecoder,
   getRedeemInstructionAsync,
@@ -52,6 +54,7 @@ import {
 } from "@fpm/idl";
 import {
   TXLINE,
+  findLevVaultPda,
   findPositionPda,
   findVaultPda,
   friendlyTxError as decodeProgramError,
@@ -515,6 +518,90 @@ export async function prepareClaim(
       preAmount: await getUsdtBalanceBase(owner),
     },
     "redeem",
+  );
+}
+
+/* --------------------------------------------------------------- leverage */
+
+export interface OpenLeverageTxParams {
+  /** Market PDA (base58) — the DTO `id`. */
+  marketId: string;
+  /** MarketConfig PDA (base58) — the DTO `configId`. */
+  configId: string;
+  /** Which outcome the leveraged option is written on. */
+  outcome: Exclude<Outcome, "Void">;
+  /** Collateral C in USDT base units (u64 as string). */
+  collateralBase: string;
+  /** Whole leverage multiple L (2..max_leverage). */
+  leverage: number;
+}
+
+/**
+ * Open a no-liquidation leveraged position (leverage-v1 §4 `open_leverage`).
+ * The LevPosition PDA is init'd inside the instruction — no separate account
+ * step. Pool + LevPosition PDAs resolve inside the generated async builder;
+ * the lev vault comes from @fpm/shared. Simulated, not signed.
+ */
+export async function prepareOpenLeverage(
+  auth: TxAuthority,
+  params: OpenLeverageTxParams,
+): Promise<PreparedTx> {
+  const owner = authorityAddress(auth);
+  const signer = authoritySigner(auth);
+  const market = address(params.marketId);
+  const [levVault] = await findLevVaultPda(market);
+  const traderUsdt = await findUsdtAta(owner);
+
+  const ix = await getOpenLeverageInstructionAsync({
+    trader: signer,
+    market,
+    marketConfig: address(params.configId),
+    levVault,
+    traderUsdt,
+    usdtMint: USDT_MINT,
+    tokenProgram: TOKEN_PROGRAM,
+    outcome: OUTCOME_IDX[params.outcome],
+    collateral: BigInt(params.collateralBase),
+    leverage: params.leverage,
+  });
+
+  return buildPrepared(auth, [ix], null, "open leverage");
+}
+
+/**
+ * Close (or, once the market is Resolved, settle) the caller's leveraged
+ * position — payout = max(0, C + pnl − F) lands in the owner's USDT ATA,
+ * which is probed so the review box shows the exact simulated payout.
+ */
+export async function prepareCloseLeverage(
+  auth: TxAuthority,
+  params: ClaimTxParams & { configId: string },
+): Promise<PreparedTx> {
+  const owner = authorityAddress(auth);
+  const signer = authoritySigner(auth);
+  const market = address(params.marketId);
+  const [levVault] = await findLevVaultPda(market);
+  const ownerUsdt = await findUsdtAta(owner);
+
+  const ix = await getCloseLeverageInstructionAsync({
+    owner: signer,
+    market,
+    marketConfig: address(params.configId),
+    levVault,
+    ownerUsdt,
+    usdtMint: USDT_MINT,
+    tokenProgram: TOKEN_PROGRAM,
+  });
+
+  return buildPrepared(
+    auth,
+    [ix],
+    {
+      kind: "tokenAccount",
+      address: ownerUsdt,
+      preAmount: await getUsdtBalanceBase(owner),
+    },
+    "close leverage",
   );
 }
 

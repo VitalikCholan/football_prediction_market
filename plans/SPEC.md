@@ -32,7 +32,7 @@ All shipped in v0 unless marked STAGED. One line each; deliberation dropped.
 
 ---
 
-## 2. v1 leverage — on-chain mechanics (UNBUILT)
+## 2. v1 leverage — on-chain mechanics (BUILT 2026-07-19 — see `plans/leverage-v1.md` for the as-executed spec incl. deviations: new PDAs instead of Position carve, cumulative funding index instead of epoch walk)
 
 **Not on the shipped path.** The live program is a pure spot LMSR 1X2 market with no leverage fields. Since the LMSR refactor was a breaking reshape anyway (seed `market_v2`), v1 leverage fields go into `_reserved` carve-outs or new PDAs — no live-account migration constraint. Economic framing: `PLAN.md` roadmap; below is the concrete on-chain design.
 

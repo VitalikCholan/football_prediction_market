@@ -11,7 +11,9 @@
 
 use anchor_lang::prelude::*;
 
-use crate::constants::{CONFIG_SEED, MAX_FEE_BPS_CAP, MKT_CONFIG_SEED, REDUCTION_FACTOR_DENOMINATOR};
+use crate::constants::{
+    BPS_DENOM, CONFIG_SEED, MAX_FEE_BPS_CAP, MKT_CONFIG_SEED, REDUCTION_FACTOR_DENOMINATOR,
+};
 use crate::error::AmmError;
 use crate::instructions::resolve::predicate::{validate_config, StoredPredicate};
 use crate::state::{GlobalConfig, MarketConfig};
@@ -33,6 +35,15 @@ pub struct FeeParamsArgs {
     pub stat_key_a: u32,
     pub stat_key_b: u32,
     pub stat_op: u8,
+    // v1 leverage (leverage-v1.md §2) — APPENDED, IDL-additive.
+    // Zero everywhere = leverage disabled.
+    pub max_open_interest: u64,
+    pub time_fee_num: u32,
+    pub funding_epoch_secs: u32,
+    pub max_mark_age_secs: u32,
+    pub leverage_cutoff_secs: u32,
+    pub max_leverage: u16,
+    pub min_coverage_bps: u16,
 }
 
 #[derive(Accounts)]
@@ -86,6 +97,17 @@ pub(crate) fn handler(
     require!(params.resolution_comparison <= 2, AmmError::InvalidFeeParams);
     require!(params.stat_op <= 2, AmmError::InvalidFeeParams);
 
+    // ---- v1 leverage params (leverage-v1.md §2): only checked when enabled ----
+    if params.max_leverage > 0 {
+        require!(params.funding_epoch_secs > 0, AmmError::InvalidFeeParams);
+        require!(params.max_mark_age_secs > 0, AmmError::InvalidFeeParams);
+        require!(
+            (params.min_coverage_bps as u64) >= BPS_DENOM,
+            AmmError::InvalidFeeParams
+        );
+        require!(params.time_fee_num > 0, AmmError::InvalidFeeParams);
+    }
+
     // ---- 1X2 predicate shape: two distinct stat keys, Subtract ----
     validate_config(&StoredPredicate {
         resolution_threshold: params.resolution_threshold,
@@ -112,6 +134,14 @@ pub(crate) fn handler(
     mc.stat_op = params.stat_op;
     mc.bump = ctx.bumps.market_config;
     mc.resolution_period = resolution_period;
-    mc._reserved = [0u8; 40];
+    // v1 leverage (zero everywhere = disabled)
+    mc.max_open_interest = params.max_open_interest;
+    mc.time_fee_num = params.time_fee_num;
+    mc.funding_epoch_secs = params.funding_epoch_secs;
+    mc.max_mark_age_secs = params.max_mark_age_secs;
+    mc.leverage_cutoff_secs = params.leverage_cutoff_secs;
+    mc.max_leverage = params.max_leverage;
+    mc.min_coverage_bps = params.min_coverage_bps;
+    mc._reserved = [0u8; 12];
     Ok(())
 }

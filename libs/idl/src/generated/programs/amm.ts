@@ -7,55 +7,78 @@
  */
 
 import { assertIsInstructionWithAccounts, containsBytes, fixEncoderSize, getBytesEncoder, type Address, type Instruction, type InstructionWithData, type ReadonlyUint8Array } from '@solana/kit';
-import { parseActivateMarketInstruction, parseBuyInstruction, parseCloseMarketInstruction, parseCreateMarketConfigInstruction, parseFreezeMarketInstruction, parseInitializeConfigInstruction, parseInitMarketInstruction, parseMintSetInstruction, parseOpenPositionInstruction, parseRedeemInstruction, parseRedeemSetInstruction, parseResolveInstruction, parseSellInstruction, type ParsedActivateMarketInstruction, type ParsedBuyInstruction, type ParsedCloseMarketInstruction, type ParsedCreateMarketConfigInstruction, type ParsedFreezeMarketInstruction, type ParsedInitializeConfigInstruction, type ParsedInitMarketInstruction, type ParsedMintSetInstruction, type ParsedOpenPositionInstruction, type ParsedRedeemInstruction, type ParsedRedeemSetInstruction, type ParsedResolveInstruction, type ParsedSellInstruction } from '../instructions';
+import { parseActivateMarketInstruction, parseBuyInstruction, parseCloseLeverageInstruction, parseCloseMarketInstruction, parseCreateMarketConfigInstruction, parseDepositLpInstruction, parseExpirePositionInstruction, parseFreezeMarketInstruction, parseInitializeConfigInstruction, parseInitLeveragePoolInstruction, parseInitMarketInstruction, parseMintSetInstruction, parseOpenLeverageInstruction, parseOpenLpAccountInstruction, parseOpenPositionInstruction, parsePostMarkInstruction, parseRedeemInstruction, parseRedeemSetInstruction, parseRequestWithdrawInstruction, parseResolveInstruction, parseSellInstruction, parseSetRiskValveInstruction, parseWithdrawLpInstruction, type ParsedActivateMarketInstruction, type ParsedBuyInstruction, type ParsedCloseLeverageInstruction, type ParsedCloseMarketInstruction, type ParsedCreateMarketConfigInstruction, type ParsedDepositLpInstruction, type ParsedExpirePositionInstruction, type ParsedFreezeMarketInstruction, type ParsedInitializeConfigInstruction, type ParsedInitLeveragePoolInstruction, type ParsedInitMarketInstruction, type ParsedMintSetInstruction, type ParsedOpenLeverageInstruction, type ParsedOpenLpAccountInstruction, type ParsedOpenPositionInstruction, type ParsedPostMarkInstruction, type ParsedRedeemInstruction, type ParsedRedeemSetInstruction, type ParsedRequestWithdrawInstruction, type ParsedResolveInstruction, type ParsedSellInstruction, type ParsedSetRiskValveInstruction, type ParsedWithdrawLpInstruction } from '../instructions';
 
 export const AMM_PROGRAM_ADDRESS = 'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY' as Address<'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY'>;
 
-export enum AmmAccount { GlobalConfig, Market, MarketConfig, Position }
+export enum AmmAccount { GlobalConfig, LevPosition, LeveragePool, LpAccount, Market, MarketConfig, Position }
 
 export function identifyAmmAccount(account: { data: ReadonlyUint8Array } | ReadonlyUint8Array): AmmAccount {
 const data = 'data' in account ? account.data : account;
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([149, 8, 156, 202, 160, 252, 176, 217])), 0)) { return AmmAccount.GlobalConfig; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([192, 105, 7, 71, 142, 158, 187, 18])), 0)) { return AmmAccount.LevPosition; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([226, 50, 217, 18, 167, 210, 119, 192])), 0)) { return AmmAccount.LeveragePool; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([23, 166, 251, 222, 23, 27, 215, 48])), 0)) { return AmmAccount.LpAccount; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([219, 190, 213, 55, 0, 227, 198, 154])), 0)) { return AmmAccount.Market; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([119, 255, 200, 88, 252, 82, 128, 24])), 0)) { return AmmAccount.MarketConfig; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([170, 188, 143, 228, 122, 64, 247, 208])), 0)) { return AmmAccount.Position; }
 throw new Error("The provided account could not be identified as a amm account.")
 }
 
-export enum AmmInstruction { ActivateMarket, Buy, CloseMarket, CreateMarketConfig, FreezeMarket, InitMarket, InitializeConfig, MintSet, OpenPosition, Redeem, RedeemSet, Resolve, Sell }
+export enum AmmInstruction { ActivateMarket, Buy, CloseLeverage, CloseMarket, CreateMarketConfig, DepositLp, ExpirePosition, FreezeMarket, InitLeveragePool, InitMarket, InitializeConfig, MintSet, OpenLeverage, OpenLpAccount, OpenPosition, PostMark, Redeem, RedeemSet, RequestWithdraw, Resolve, Sell, SetRiskValve, WithdrawLp }
 
 export function identifyAmmInstruction(instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array): AmmInstruction {
 const data = 'data' in instruction ? instruction.data : instruction;
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([10, 26, 197, 116, 113, 99, 72, 89])), 0)) { return AmmInstruction.ActivateMarket; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([102, 6, 61, 18, 1, 218, 235, 234])), 0)) { return AmmInstruction.Buy; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([45, 157, 207, 176, 194, 6, 218, 253])), 0)) { return AmmInstruction.CloseLeverage; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([88, 154, 248, 186, 48, 14, 123, 244])), 0)) { return AmmInstruction.CloseMarket; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([33, 94, 138, 19, 111, 112, 91, 111])), 0)) { return AmmInstruction.CreateMarketConfig; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([83, 107, 16, 26, 26, 20, 130, 56])), 0)) { return AmmInstruction.DepositLp; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([146, 203, 82, 231, 253, 127, 123, 214])), 0)) { return AmmInstruction.ExpirePosition; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([184, 154, 237, 98, 127, 82, 217, 180])), 0)) { return AmmInstruction.FreezeMarket; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([225, 60, 127, 178, 18, 29, 7, 1])), 0)) { return AmmInstruction.InitLeveragePool; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([33, 253, 15, 116, 89, 25, 127, 236])), 0)) { return AmmInstruction.InitMarket; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([208, 127, 21, 1, 194, 190, 196, 70])), 0)) { return AmmInstruction.InitializeConfig; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([91, 117, 1, 75, 201, 110, 110, 189])), 0)) { return AmmInstruction.MintSet; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([182, 198, 96, 61, 133, 28, 41, 16])), 0)) { return AmmInstruction.OpenLeverage; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([58, 171, 21, 132, 175, 145, 82, 32])), 0)) { return AmmInstruction.OpenLpAccount; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([135, 128, 47, 77, 15, 152, 240, 49])), 0)) { return AmmInstruction.OpenPosition; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([224, 48, 77, 105, 2, 74, 42, 145])), 0)) { return AmmInstruction.PostMark; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([184, 12, 86, 149, 70, 196, 97, 225])), 0)) { return AmmInstruction.Redeem; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([167, 80, 14, 7, 40, 75, 188, 216])), 0)) { return AmmInstruction.RedeemSet; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([137, 95, 187, 96, 250, 138, 31, 182])), 0)) { return AmmInstruction.RequestWithdraw; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([246, 150, 236, 206, 108, 63, 58, 10])), 0)) { return AmmInstruction.Resolve; }
 if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([51, 230, 133, 164, 1, 127, 131, 173])), 0)) { return AmmInstruction.Sell; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([99, 242, 58, 101, 4, 179, 61, 99])), 0)) { return AmmInstruction.SetRiskValve; }
+if (containsBytes(data, fixEncoderSize(getBytesEncoder(), 8).encode(new Uint8Array([225, 221, 45, 211, 49, 60, 51, 163])), 0)) { return AmmInstruction.WithdrawLp; }
 throw new Error("The provided instruction could not be identified as a amm instruction.")
 }
 
 export type ParsedAmmInstruction<TProgram extends string = 'H59qQz8DXzUWWc3L528iTCFL36ozwBhJc4tHzuwL2JuY'> =
 | { instructionType: AmmInstruction.ActivateMarket } & ParsedActivateMarketInstruction<TProgram>
 | { instructionType: AmmInstruction.Buy } & ParsedBuyInstruction<TProgram>
+| { instructionType: AmmInstruction.CloseLeverage } & ParsedCloseLeverageInstruction<TProgram>
 | { instructionType: AmmInstruction.CloseMarket } & ParsedCloseMarketInstruction<TProgram>
 | { instructionType: AmmInstruction.CreateMarketConfig } & ParsedCreateMarketConfigInstruction<TProgram>
+| { instructionType: AmmInstruction.DepositLp } & ParsedDepositLpInstruction<TProgram>
+| { instructionType: AmmInstruction.ExpirePosition } & ParsedExpirePositionInstruction<TProgram>
 | { instructionType: AmmInstruction.FreezeMarket } & ParsedFreezeMarketInstruction<TProgram>
+| { instructionType: AmmInstruction.InitLeveragePool } & ParsedInitLeveragePoolInstruction<TProgram>
 | { instructionType: AmmInstruction.InitMarket } & ParsedInitMarketInstruction<TProgram>
 | { instructionType: AmmInstruction.InitializeConfig } & ParsedInitializeConfigInstruction<TProgram>
 | { instructionType: AmmInstruction.MintSet } & ParsedMintSetInstruction<TProgram>
+| { instructionType: AmmInstruction.OpenLeverage } & ParsedOpenLeverageInstruction<TProgram>
+| { instructionType: AmmInstruction.OpenLpAccount } & ParsedOpenLpAccountInstruction<TProgram>
 | { instructionType: AmmInstruction.OpenPosition } & ParsedOpenPositionInstruction<TProgram>
+| { instructionType: AmmInstruction.PostMark } & ParsedPostMarkInstruction<TProgram>
 | { instructionType: AmmInstruction.Redeem } & ParsedRedeemInstruction<TProgram>
 | { instructionType: AmmInstruction.RedeemSet } & ParsedRedeemSetInstruction<TProgram>
+| { instructionType: AmmInstruction.RequestWithdraw } & ParsedRequestWithdrawInstruction<TProgram>
 | { instructionType: AmmInstruction.Resolve } & ParsedResolveInstruction<TProgram>
 | { instructionType: AmmInstruction.Sell } & ParsedSellInstruction<TProgram>
+| { instructionType: AmmInstruction.SetRiskValve } & ParsedSetRiskValveInstruction<TProgram>
+| { instructionType: AmmInstruction.WithdrawLp } & ParsedWithdrawLpInstruction<TProgram>
 
 
         export function parseAmmInstruction<TProgram extends string>(
@@ -68,28 +91,48 @@ export type ParsedAmmInstruction<TProgram extends string = 'H59qQz8DXzUWWc3L528i
 return { instructionType: AmmInstruction.ActivateMarket, ...parseActivateMarketInstruction(instruction) }; }
 case AmmInstruction.Buy: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.Buy, ...parseBuyInstruction(instruction) }; }
+case AmmInstruction.CloseLeverage: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.CloseLeverage, ...parseCloseLeverageInstruction(instruction) }; }
 case AmmInstruction.CloseMarket: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.CloseMarket, ...parseCloseMarketInstruction(instruction) }; }
 case AmmInstruction.CreateMarketConfig: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.CreateMarketConfig, ...parseCreateMarketConfigInstruction(instruction) }; }
+case AmmInstruction.DepositLp: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.DepositLp, ...parseDepositLpInstruction(instruction) }; }
+case AmmInstruction.ExpirePosition: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.ExpirePosition, ...parseExpirePositionInstruction(instruction) }; }
 case AmmInstruction.FreezeMarket: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.FreezeMarket, ...parseFreezeMarketInstruction(instruction) }; }
+case AmmInstruction.InitLeveragePool: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.InitLeveragePool, ...parseInitLeveragePoolInstruction(instruction) }; }
 case AmmInstruction.InitMarket: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.InitMarket, ...parseInitMarketInstruction(instruction) }; }
 case AmmInstruction.InitializeConfig: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.InitializeConfig, ...parseInitializeConfigInstruction(instruction) }; }
 case AmmInstruction.MintSet: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.MintSet, ...parseMintSetInstruction(instruction) }; }
+case AmmInstruction.OpenLeverage: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.OpenLeverage, ...parseOpenLeverageInstruction(instruction) }; }
+case AmmInstruction.OpenLpAccount: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.OpenLpAccount, ...parseOpenLpAccountInstruction(instruction) }; }
 case AmmInstruction.OpenPosition: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.OpenPosition, ...parseOpenPositionInstruction(instruction) }; }
+case AmmInstruction.PostMark: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.PostMark, ...parsePostMarkInstruction(instruction) }; }
 case AmmInstruction.Redeem: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.Redeem, ...parseRedeemInstruction(instruction) }; }
 case AmmInstruction.RedeemSet: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.RedeemSet, ...parseRedeemSetInstruction(instruction) }; }
+case AmmInstruction.RequestWithdraw: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.RequestWithdraw, ...parseRequestWithdrawInstruction(instruction) }; }
 case AmmInstruction.Resolve: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.Resolve, ...parseResolveInstruction(instruction) }; }
 case AmmInstruction.Sell: { assertIsInstructionWithAccounts(instruction);
 return { instructionType: AmmInstruction.Sell, ...parseSellInstruction(instruction) }; }
+case AmmInstruction.SetRiskValve: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.SetRiskValve, ...parseSetRiskValveInstruction(instruction) }; }
+case AmmInstruction.WithdrawLp: { assertIsInstructionWithAccounts(instruction);
+return { instructionType: AmmInstruction.WithdrawLp, ...parseWithdrawLpInstruction(instruction) }; }
                 default: throw new Error(`Unrecognized instruction type: ${instructionType as string}`);
             }
         }

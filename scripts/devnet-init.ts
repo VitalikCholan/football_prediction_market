@@ -383,6 +383,14 @@ async function main() {
       statKeyA: 1, // P1 (home) goals
       statKeyB: 2, // P2 (away) goals
       statOp: 2, // Subtract
+      // v1 leverage — disabled on this config (maxLeverage 0).
+      maxOpenInterest: 0n,
+      timeFeeNum: 0,
+      fundingEpochSecs: 0,
+      maxMarkAgeSecs: 0,
+      leverageCutoffSecs: 0,
+      maxLeverage: 0,
+      minCoverageBps: 0,
       resolutionPeriod: RESOLUTION_PERIOD,
     });
     await sendTx(admin, [ix], "create_market_config");

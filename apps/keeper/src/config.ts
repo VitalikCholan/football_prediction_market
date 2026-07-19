@@ -65,6 +65,14 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v === "1" || v === "true"),
+
+  // Mark poster (v1 leverage): post_mark for Trading markets that have a
+  // LeveragePool, at each config's funding_epoch_secs cadence. OFF by default
+  // (additive — leverage-less deployments are unaffected).
+  ENABLE_MARK_POSTER: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
 });
 
 export interface KeeperConfig {
@@ -89,6 +97,7 @@ export interface KeeperConfig {
   autoSeedIntervalMs: number;
   maxSeedPerRun: number;
   autoSeedDryRun: boolean;
+  enableMarkPoster: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
@@ -127,5 +136,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     autoSeedIntervalMs: p.AUTO_SEED_INTERVAL_MS,
     maxSeedPerRun: p.MAX_SEED_PER_RUN,
     autoSeedDryRun: Boolean(p.AUTO_SEED_DRY_RUN),
+    enableMarkPoster: Boolean(p.ENABLE_MARK_POSTER),
   };
 }

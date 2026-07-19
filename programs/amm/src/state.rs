@@ -107,12 +107,31 @@ pub struct MarketConfig {
     /// replay guard, O-1x2-1). 100 = TxLINE full-time final stats.
     pub resolution_period: i32,
 
-    /// Future (v1 leverage: max_open_interest, theta params, min_coverage_bps).
-    pub _reserved: [u8; 40],
+    // ---- v1 leverage params (leverage-v1.md §2; carved from former
+    //      _reserved: [u8; 40] — zero-default = leverage DISABLED for existing
+    //      configs, so no migration and Borsh size is unchanged) ----
+    /// Cap on Σ notional of open leveraged positions. 0 = leverage disabled.
+    pub max_open_interest: u64,
+    /// Theta slope numerator in the funding-rate formula.
+    pub time_fee_num: u32,
+    /// Keeper mark cadence (secs) — informational + min-post-interval.
+    pub funding_epoch_secs: u32,
+    /// Max age (secs) of the posted mark before opens/closes reject as stale.
+    pub max_mark_age_secs: u32,
+    /// No leveraged opens within this window (secs) before `freeze_ts`.
+    pub leverage_cutoff_secs: u32,
+    /// Max leverage multiple (whole ×). 0 = leverage disabled.
+    pub max_leverage: u16,
+    /// Min pool coverage ratio (bps), e.g. 12_000 = 120%.
+    pub min_coverage_bps: u16,
+
+    /// Future.
+    pub _reserved: [u8; 12],
 }
 // INIT_SPACE = 2 + 32 + 2 + 2 + 4 + 4 + 4 + 2 + 8 + 8   (= 68, params+grace)
 //            + 4 + 1 + 4 + 4 + 1                        (= 14, predicate)
-//            + 1 + 4 + 40                               (= 45, bump+period+reserved)
+//            + 1 + 4                                    (=  5, bump+period)
+//            + 8 + 4 + 4 + 4 + 4 + 2 + 2 + 12           (= 40, leverage+reserved)
 //            = 133
 
 // ===========================================================================
@@ -296,4 +315,209 @@ pub struct SetRedeemed {
     pub owner: Pubkey,
     /// Base-unit tokens of each outcome burned = USDT paid out.
     pub amount: u64,
+}
+
+// ===========================================================================
+// LeveragePool — seeds [b"lev_pool", market]  (space 8 + 218 = 226)
+// ===========================================================================
+
+/// Protocol-owned options writer for the leverage layer (leverage-v1.md §0):
+/// LP-funded vault that is the counterparty to every leveraged position.
+/// Never touches the LMSR curve or the spot escrow. The pool PDA is the
+/// authority of the lev vault (`[b"lev_vault", market]`).
+#[account]
+#[derive(InitSpace)]
+pub struct LeveragePool {
+    /// The `Market` this pool writes options on; part of seeds.
+    pub market: Pubkey,
+    /// Lev vault token account (`[b"lev_vault", market]`).
+    pub vault: Pubkey,
+    /// LP share supply (internal accounting, no SPL mint).
+    pub total_shares: u64,
+    /// Shares earmarked by `request_withdraw`, awaiting `withdraw_lp`.
+    pub pending_withdraw_shares: u64,
+    /// Σ notional of open positions (bounded by `max_open_interest`).
+    pub open_interest: u64,
+    /// Σ `max_gain` of open positions — pool liability bound (coverage input).
+    pub total_max_payout: u64,
+    /// Last posted TxLINE marks (bps) [Team1, Draw, Team2].
+    pub mark_bps: [u16; 3],
+    /// Timestamp of the last `post_mark`; 0 until first post.
+    pub mark_ts: i64,
+    /// Timestamp the funding index last accrued to.
+    pub last_funding_ts: i64,
+    /// Cumulative funding index per outcome (INDEX_SCALE fixed point).
+    pub cum_funding_index: [u128; 3],
+    /// Opens rejected while `now < valve_paused_until`.
+    pub valve_paused_until: i64,
+    /// Funding multiplier (bps); BPS_DENOM = neutral, active in valve window.
+    pub valve_multiplier_bps: u16,
+    /// Multiplier applies while `now < valve_until_ts`.
+    pub valve_until_ts: i64,
+    /// Canonical bump.
+    pub bump: u8,
+    /// Canonical bump of the lev vault token account.
+    pub vault_bump: u8,
+    /// Future.
+    pub _reserved: [u8; 32],
+}
+// INIT_SPACE = 32 + 32                (market, vault)
+//            + 8 + 8 + 8 + 8          (shares, pending, OI, max_payout)
+//            + 6 + 8 + 8 + 48         (marks, mark_ts, funding_ts, cum index)
+//            + 8 + 2 + 8              (valve)
+//            + 1 + 1 + 32             (bumps, reserved)
+//            = 218
+
+// ===========================================================================
+// LevPosition — seeds [b"lev_pos", market, owner]  (space 8 + 135 = 143)
+// ===========================================================================
+
+/// One live leveraged position per user per market (`init` fails if exists).
+/// A cash-settled binary option on `outcome_idx`, written by the pool; marked
+/// to the posted TxLINE mark, never our own LMSR spot. Max loss = collateral.
+#[account]
+#[derive(InitSpace)]
+pub struct LevPosition {
+    /// Binds; part of seeds.
+    pub market: Pubkey,
+    /// Binds; part of seeds.
+    pub owner: Pubkey,
+    /// Outcome index: 0 = Team1, 1 = Draw, 2 = Team2.
+    pub outcome_idx: u8,
+    /// Leverage multiple L (whole ×).
+    pub leverage: u16,
+    /// Collateral C deposited into the lev vault at open.
+    pub collateral: u64,
+    /// Notional N = C·L.
+    pub notional: u64,
+    /// $1-payout-equivalent units U = floor(N·BPS / p_entry).
+    pub units: u64,
+    /// Posted mark (bps) at open.
+    pub entry_mark_bps: u16,
+    /// `cum_funding_index[outcome_idx]` snapshot at open.
+    pub funding_index_snap: u128,
+    /// Open timestamp.
+    pub open_ts: i64,
+    /// Settle guard (close/expire flips it; account then closed).
+    pub settled: bool,
+    /// Canonical bump.
+    pub bump: u8,
+    /// Future.
+    pub _reserved: [u8; 16],
+}
+// INIT_SPACE = 32 + 32               (market, owner)
+//            + 1 + 2 + 8 + 8 + 8 + 2 (outcome, leverage, C, N, U, entry mark)
+//            + 16 + 8 + 1            (index snap, open_ts, settled)
+//            + 1 + 16                (bump, reserved)
+//            = 135
+
+// ===========================================================================
+// LpAccount — seeds [b"lev_lp", market, owner]  (space 8 + 105 = 113)
+// ===========================================================================
+
+/// Per-LP share ledger in a `LeveragePool` (internal shares, no SPL mint).
+/// Withdrawal is two-step: `request_withdraw` earmarks `pending_shares` and
+/// starts the `LP_WITHDRAW_DELAY_SECS` clock; `withdraw_lp` pays after it.
+#[account]
+#[derive(InitSpace)]
+pub struct LpAccount {
+    /// Binds; part of seeds.
+    pub market: Pubkey,
+    /// Binds; part of seeds.
+    pub owner: Pubkey,
+    /// Free shares (excludes pending).
+    pub shares: u64,
+    /// Shares earmarked by `request_withdraw`.
+    pub pending_shares: u64,
+    /// Pending shares claimable after this timestamp.
+    pub unlock_ts: i64,
+    /// Canonical bump.
+    pub bump: u8,
+    /// Future.
+    pub _reserved: [u8; 16],
+}
+// INIT_SPACE = 32 + 32 + 8 + 8 + 8 + 1 + 16 = 105
+
+// ===========================================================================
+// v1 leverage events (leverage-v1.md §4)
+// ===========================================================================
+
+#[event]
+pub struct LeveragePoolInitialized {
+    pub market: Pubkey,
+    pub vault: Pubkey,
+}
+
+#[event]
+pub struct LpDeposited {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    /// USDT transferred into the lev vault.
+    pub amount: u64,
+    /// Shares minted for the deposit.
+    pub shares: u64,
+}
+
+#[event]
+pub struct LpWithdrawRequested {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    /// Shares earmarked for withdrawal.
+    pub shares: u64,
+    /// Claimable after this timestamp.
+    pub unlock_ts: i64,
+}
+
+#[event]
+pub struct LpWithdrawn {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    /// Shares burned.
+    pub shares: u64,
+    /// USDT paid out of the lev vault.
+    pub value: u64,
+}
+
+#[event]
+pub struct MarkPosted {
+    pub market: Pubkey,
+    /// Posted marks (bps) [Team1, Draw, Team2].
+    pub marks: [u16; 3],
+    /// Cumulative funding index per outcome after accrual.
+    pub idx: [u128; 3],
+}
+
+#[event]
+pub struct RiskValveSet {
+    pub market: Pubkey,
+    /// Opens rejected until this timestamp.
+    pub paused_until: i64,
+    /// Funding multiplier (bps) in force during the valve window.
+    pub multiplier_bps: u16,
+    /// Multiplier applies until this timestamp.
+    pub until_ts: i64,
+}
+
+#[event]
+pub struct LeverageOpened {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    /// Outcome index: 0 = Team1, 1 = Draw, 2 = Team2.
+    pub outcome: u8,
+    pub collateral: u64,
+    pub leverage: u16,
+    pub units: u64,
+    pub entry_mark_bps: u16,
+}
+
+#[event]
+pub struct LeverageSettled {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    /// USDT paid from the lev vault (max(0, C + pnl − F)).
+    pub payout: u64,
+    /// Funding retained by the pool (writer revenue).
+    pub funding_paid: u64,
+    /// 0 = closed, 1 = expired (fee-death), 2 = resolved, 3 = void.
+    pub reason: u8,
 }

@@ -29,9 +29,10 @@ export function notifyTxConfirmed(): void {
  * Core loop: run `task` now, on every tx-confirm signal, and on an interval
  * (skipped while the tab is hidden). Tasks must be memoized (useCallback) —
  * the loop re-arms whenever the task identity changes. Pass `null` to disable
- * (e.g. no connected wallet).
+ * (e.g. no connected wallet). Exported so feature panels (e.g. the leverage
+ * panel) can poll their own on-chain accounts on the same cadence pattern.
  */
-function useLiveTask(task: (() => void) | null, intervalMs: number): void {
+export function useLiveTask(task: (() => void) | null, intervalMs: number): void {
   useEffect(() => {
     if (!task) return;
     task();

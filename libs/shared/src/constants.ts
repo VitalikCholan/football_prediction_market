@@ -31,6 +31,19 @@ export const POSITION_SEED = "position";
 export const VAULT_SEED = "vault";
 
 /* --------------------------------------------------------------------------
+ * v1 leverage PDA seeds (leverage-v1.md §2)
+ *
+ *   LEV_POOL_SEED     = b"lev_pool"  + market: Pubkey
+ *   LEV_VAULT_SEED    = b"lev_vault" + market: Pubkey   (authority = pool PDA)
+ *   LEV_POSITION_SEED = b"lev_pos"   + market: Pubkey + owner: Pubkey
+ *   LEV_LP_SEED       = b"lev_lp"    + market: Pubkey + owner: Pubkey
+ * ------------------------------------------------------------------------ */
+export const LEV_POOL_SEED = "lev_pool";
+export const LEV_VAULT_SEED = "lev_vault";
+export const LEV_POSITION_SEED = "lev_pos";
+export const LEV_LP_SEED = "lev_lp";
+
+/* --------------------------------------------------------------------------
  * Fixed-point denominators (must match programs/amm/src/constants.rs)
  * ------------------------------------------------------------------------ */
 /** Basis-points denominator (fees, prices). */

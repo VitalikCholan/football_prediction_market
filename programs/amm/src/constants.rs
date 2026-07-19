@@ -66,3 +66,42 @@ pub const DYNAMIC_FEE_CONTROL_DENOMINATOR: u64 = 100_000;
 
 /// Hard upper bound on any configured fee (bps). `max_fee_bps <= MAX_FEE_BPS_CAP`.
 pub const MAX_FEE_BPS_CAP: u16 = 9_900;
+
+// ---------------------------------------------------------------------------
+// v1 leverage (plans/leverage-v1.md §2)
+// ---------------------------------------------------------------------------
+
+/// `LeveragePool` — seeds `[b"lev_pool", market: Pubkey]`.
+#[constant]
+pub const LEV_POOL_SEED: &[u8] = b"lev_pool";
+
+/// Leverage vault token account — seeds `[b"lev_vault", market: Pubkey]`
+/// (authority = the `LeveragePool` PDA).
+#[constant]
+pub const LEV_VAULT_SEED: &[u8] = b"lev_vault";
+
+/// `LevPosition` — seeds `[b"lev_pos", market: Pubkey, owner: Pubkey]`.
+#[constant]
+pub const LEV_POSITION_SEED: &[u8] = b"lev_pos";
+
+/// `LpAccount` — seeds `[b"lev_lp", market: Pubkey, owner: Pubkey]`.
+#[constant]
+pub const LEV_LP_SEED: &[u8] = b"lev_lp";
+
+/// Cumulative funding index scale (`cum_funding_index` fixed point;
+/// `F = floor(N * Δidx / INDEX_SCALE)`).
+pub const INDEX_SCALE: u128 = 1_000_000_000_000;
+
+/// Floor on `t_remaining` in the theta rate (no div-by-0 / funding blowup as
+/// `freeze_ts` approaches).
+pub const MIN_T_REMAINING_SECS: i64 = 60;
+
+/// Hard cap on the keeper's risk-valve funding multiplier (×5 at 50_000 bps —
+/// keeper can dampen, not rug).
+pub const VALVE_MAX_MULTIPLIER_BPS: u16 = 50_000;
+
+/// Hard cap on either risk-valve window (pause or multiplier), in seconds.
+pub const VALVE_MAX_DURATION_SECS: i64 = 600;
+
+/// Delay between `request_withdraw` and `withdraw_lp` (LP exit lockup).
+pub const LP_WITHDRAW_DELAY_SECS: i64 = 3_600;
