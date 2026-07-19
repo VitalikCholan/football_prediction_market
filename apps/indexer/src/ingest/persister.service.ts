@@ -278,11 +278,9 @@ export class EventPersister {
     // the three per-outcome prices with the traded one updated and the two
     // untraded held at their last snapshot (the account refresh overwrites all
     // three authoritatively on the next poll).
-    const team1PriceBps =
-      ev.outcome === 0 ? ev.priceBps : market.team1PriceBps;
+    const team1PriceBps = ev.outcome === 0 ? ev.priceBps : market.team1PriceBps;
     const drawPriceBps = ev.outcome === 1 ? ev.priceBps : market.drawPriceBps;
-    const team2PriceBps =
-      ev.outcome === 2 ? ev.priceBps : market.team2PriceBps;
+    const team2PriceBps = ev.outcome === 2 ? ev.priceBps : market.team2PriceBps;
 
     await this.prisma.$transaction([
       this.prisma.trade.create({

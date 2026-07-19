@@ -42,9 +42,7 @@ export class RpcService {
    * Run an RPC call with exponential backoff, rotating through the configured
    * endpoints (primary first) — public devnet 429s are expected.
    */
-  async withRetry<T>(
-    fn: (rpc: Rpc<SolanaRpcApi>) => Promise<T>,
-  ): Promise<T> {
+  async withRetry<T>(fn: (rpc: Rpc<SolanaRpcApi>) => Promise<T>): Promise<T> {
     const maxAttempts = 3 * this.rpcs.length;
     let delayMs = 500;
     let lastErr: unknown;
