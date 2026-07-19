@@ -114,7 +114,9 @@ export class FixturesService {
     }
     this.cache.set(key, teams);
     if (teams) {
-      this.logger.log(`enriched fixture ${key}: ${teams.home} vs ${teams.away}`);
+      this.logger.log(
+        `enriched fixture ${key}: ${teams.home} vs ${teams.away}`,
+      );
     } else {
       this.logger.warn(`no team names found for fixture ${key}`);
     }
@@ -128,9 +130,7 @@ export class FixturesService {
    * and index it by fixture id, then serve every lookup from that map. Returns
    * null on any miss or error — never throws.
    */
-  async getCompetition(
-    fixtureId: bigint,
-  ): Promise<FixtureCompetition | null> {
+  async getCompetition(fixtureId: bigint): Promise<FixtureCompetition | null> {
     const map = await this.competitionMap();
     return map.get(fixtureId.toString()) ?? null;
   }
@@ -187,7 +187,9 @@ export class FixturesService {
       const headers = await this.authHeaders();
       const url = `${this.config.txlineBaseUrl}/api/scores/snapshot/${fixtureId}`;
       const json = await this.getJson(url, headers);
-      const rows = Array.isArray(json) ? (json as Record<string, unknown>[]) : [];
+      const rows = Array.isArray(json)
+        ? (json as Record<string, unknown>[])
+        : [];
       if (rows.length === 0) return null;
       const finalised = rows.filter((r) => Number(r.StatusId) === 100);
       const row = (finalised.length > 0 ? finalised : rows)[
@@ -237,9 +239,8 @@ export class FixturesService {
   }
 
   private totalGoals(participant: unknown): number | null {
-    const total = (participant as Record<string, unknown> | undefined)?.Total as
-      | Record<string, unknown>
-      | undefined;
+    const total = (participant as Record<string, unknown> | undefined)
+      ?.Total as Record<string, unknown> | undefined;
     return this.num(total?.Goals);
   }
 
@@ -267,7 +268,9 @@ export class FixturesService {
       const headers = await this.authHeaders();
       const url = `${this.config.txlineBaseUrl}/api/odds/snapshot/${fixtureId}`;
       const json = await this.getJson(url, headers);
-      const rows = Array.isArray(json) ? (json as Record<string, unknown>[]) : [];
+      const rows = Array.isArray(json)
+        ? (json as Record<string, unknown>[])
+        : [];
       if (rows.length === 0) return null;
 
       // Prefer the freshest (max Ts) 1X2 row that yields three aligned prices.
@@ -314,7 +317,12 @@ export class FixturesService {
     }
     // Require a full 1X2 triple so we never publish a partial (soccer only).
     if (home == null || draw == null || away == null) return null;
-    return { homeBps: home, drawBps: draw, awayBps: away, ts: this.tsOf(row.Ts) };
+    return {
+      homeBps: home,
+      drawBps: draw,
+      awayBps: away,
+      ts: this.tsOf(row.Ts),
+    };
   }
 
   private tsOf(v: unknown): bigint | null {
@@ -355,7 +363,7 @@ export class FixturesService {
     const want = fixtureId.toString();
     for (const row of rows) {
       const o = row as Record<string, unknown>;
-      if (String(o.FixtureId ?? o.fixtureId ?? '') !== want) continue;
+      if ((this.str(o.FixtureId ?? o.fixtureId) ?? '') !== want) continue;
       const home = this.str(o.Participant1);
       const away = this.str(o.Participant2);
       if (!home || !away) return null;
@@ -409,9 +417,20 @@ export class FixturesService {
   }
 
   private str(v: unknown): string | undefined {
-    if (v == null) return undefined;
-    const s = String(v).trim();
-    return s.length > 0 ? s : undefined;
+    // Only stringify primitives with a safe toString (never objects/symbols —
+    // @typescript-eslint/no-base-to-string). JSON-parsed fields are unknown.
+    if (typeof v === 'string') {
+      const s = v.trim();
+      return s.length > 0 ? s : undefined;
+    }
+    if (
+      typeof v === 'number' ||
+      typeof v === 'boolean' ||
+      typeof v === 'bigint'
+    ) {
+      return String(v);
+    }
+    return undefined;
   }
 
   // ---- transport ------------------------------------------------------------

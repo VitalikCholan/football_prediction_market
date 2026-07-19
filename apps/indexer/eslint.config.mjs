@@ -6,7 +6,9 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs'],
+    // eslint.config.mjs: self. test/**: Nest e2e scaffold, not in tsconfig
+    // (src-only) so typed linting (projectService) can't resolve it.
+    ignores: ['eslint.config.mjs', 'test/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
